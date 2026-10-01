@@ -19,7 +19,7 @@ from ave.domain.sync_layout import (
     synced_clip,
 )
 from ave.errors import SourceBoundsError
-from ave.timebase import Interval
+from ave.timebase import Interval, ProjectTime, SourceTime
 from tests.compositions import LEFT, RIGHT, TRACKS, standard_sequence, sync_group
 
 B_TRUE = SyncMember(asset_id="B", a=Fraction(2), method="ground-truth", confidence=1.0)
@@ -116,6 +116,56 @@ def test_clock_drift_maps_to_source_speed_without_changing_duration() -> None:
     assert clip.source_speed == Fraction(1000, 1001)
     assert clip.duration == 8
     assert clip.source_in == (12 - 2) / Fraction(1001, 1000)
+
+
+def test_editorial_speed_is_separate_from_drift_correction() -> None:
+    """AVE-REQ-012 AC-4, AVE-REQ-012 AC-2: t = source_in + (T - timeline_start) * source_speed
+    * editorial_speed (ADR-004 decision 4); duration and the inverse mapping use the product;
+    documents without the field load with editorial speed 1; zero speed is rejected."""
+    clip = _clip(
+        "c", "v-b", 10, (3, 7), source_speed=Fraction(1000, 1001), editorial_speed=Fraction(2)
+    )
+    assert clip.speed == Fraction(2000, 1001)
+    assert clip.duration == Fraction(4 * 1001, 2000)
+    assert clip.source_time_at(ProjectTime(Fraction(11))) == 3 + Fraction(2000, 1001)
+    assert clip.project_time_of(SourceTime(3 + Fraction(2000, 1001))) == 11
+    legacy = _clip("c", "v-b", 10, (3, 7), source_speed=Fraction(1000, 1001)).model_dump(
+        mode="json"
+    )
+    del legacy["editorial_speed"]
+    loaded = Clip.model_validate(legacy)
+    assert loaded.editorial_speed == 1
+    assert loaded.speed == Fraction(1000, 1001)
+    assert Clip.model_validate_json(clip.model_dump_json()) == clip
+    with pytest.raises(ValidationError):
+        _clip("c", "v-b", 10, (3, 7), editorial_speed=0)
+
+
+def test_synced_builders_apply_editorial_speed_to_every_perspective() -> None:
+    """AVE-REQ-012 AC-4: a split-screen segment at editorial speed 2 keeps drift correction
+    1 / b in source_speed, halves the project duration of every clip and shows the same
+    reference instant in both perspectives at every project time."""
+    member = SyncMember(
+        asset_id="B", a=Fraction(2), b=Fraction(1001, 1000), method="m", confidence=1
+    )
+    group = sync_group(member)
+    clips = split_screen_clips(
+        group, Interval.of(12, 20), Fraction(14), LEFT, RIGHT, audio_asset_id="A",
+        id_prefix="s", editorial_speed=Fraction(2),
+    )  # fmt: skip
+    assert {c.editorial_speed for c in clips} == {2}
+    assert {c.duration for c in clips} == {4}
+    by_id = {c.id: c for c in clips}
+    left, right = by_id["s.left.video"], by_id["s.right.video"]
+    assert (left.source_speed, right.source_speed) == (1, Fraction(1000, 1001))
+    for project in (
+        ProjectTime(Fraction(14)),
+        ProjectTime(Fraction(31, 2)),
+        ProjectTime(Fraction(17)),
+    ):
+        reference_a = group.member("A").clock_map.to_reference(left.source_time_at(project))
+        reference_b = member.clock_map.to_reference(right.source_time_at(project))
+        assert reference_a == reference_b == 12 + 2 * (project - 14)
 
 
 def test_sequence_validation_rejects_inconsistent_documents() -> None:

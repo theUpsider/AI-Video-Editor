@@ -13,6 +13,11 @@ rate, unequal deltas mean variable frame rate.
 Source time convention: ``t_source = pts * time_base - container_start_time``. Normalizing by the
 container (format) start time keeps the relative offset between the audio and video streams of one
 file, exactly as FFmpeg does when it reads an input.
+
+File names are untrusted (AVE-REQ-004): every FFprobe call passes :data:`LITERAL_INPUT_ARGS`, so the
+image2 demuxer reads a name such as ``photo%d.png`` as that one file instead of expanding it as an
+image-sequence pattern (``photo1.png``, ``photo2.png``...). FFprobe skips the option for every other
+demuxer.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from ave.timebase import (
 
 __all__ = [
     "DEFAULT_PTS_PACKETS",
+    "LITERAL_INPUT_ARGS",
     "AudioStreamInfo",
     "FrameTiming",
     "OtherStreamInfo",
@@ -54,6 +60,11 @@ DEFAULT_PTS_PACKETS = 1200
 """Number of video packets whose PTS are inspected to classify CFR versus VFR."""
 
 FrameTiming = Literal["cfr", "vfr", "unknown"]
+
+LITERAL_INPUT_ARGS = ("-pattern_type", "none")
+"""Input options that make the image2 demuxer read the named file itself, never a numbered
+sequence derived from ``%`` patterns in the name (FFprobe ignores them for other demuxers; FFmpeg
+needs them together with ``-f image2``, see :mod:`ave.render.ffmpeg`)."""
 
 _PROBE_TIMEOUT_S = 60.0
 
@@ -366,6 +377,9 @@ def parse_probe_json(
                 OtherStreamInfo(**_common_fields(raw), codec_type=str(codec_type or "unknown"))
             )
     duration = _decimal_or_none(fmt.get("duration"))
+    # FFprobe prints the format start time with six decimals. That is exact: FFmpeg keeps the
+    # container start time (AVFormatContext.start_time) in AV_TIME_BASE units of one microsecond,
+    # and FFmpeg subtracts that same microsecond value from every timestamp when it reads the file.
     start = _decimal_or_none(fmt.get("start_time"))
     return ProbeInfo(
         format_name=str(fmt.get("format_name") or "unknown"),
@@ -390,6 +404,7 @@ def read_packet_pts(
     args = [
         "-v",
         "error",
+        *LITERAL_INPUT_ARGS,
         "-select_streams",
         str(stream_index),
         "-show_entries",
@@ -422,6 +437,7 @@ def probe(
     args = [
         "-v",
         "error",
+        *LITERAL_INPUT_ARGS,
         "-print_format",
         "json",
         "-show_format",

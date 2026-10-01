@@ -3,20 +3,25 @@
 Pipeline (every command is an argv list; filter graphs go through ``-filter_complex_script``
 files that never contain file paths):
 
-1. **Segments** - one FFmpeg run per segment: each layer input is seeked accurately near the needed
-   source time, mapped onto the output frame grid with exact integer timestamp arithmetic (see
+1. **Segments** - one FFmpeg run per segment: each video layer input is decoded from the keyframe
+   at or before its seek point (``-noaccurate_seek``, so no frame the frame rule may need is
+   discarded), mapped onto the output frame grid with exact integer timestamp arithmetic (see
    :mod:`ave.render.compiler`), scaled/cropped per the layout geometry and overlaid in z-order on
-   the background canvas. Every segment is encoded with identical libx264 settings into an MP4
-   whose video time scale represents the frame rate exactly; the first frame is an IDR frame and
-   GOPs are closed.
-2. **Audio** - one run renders the range's audio: sample-accurate trims, resampling to 48 kHz with
-   SoX, pitch-preserving time scaling (Rubber Band) when ``source_speed != 1``, gain, exact sample
+   the background canvas. Still images probed through the image2 demuxer are opened with
+   ``-f image2 -pattern_type none``, so a ``%`` in a file name never selects another file. Every
+   segment is encoded with identical libx264 settings into an MP4 whose video time scale
+   represents the frame rate exactly; the first frame is an IDR frame and GOPs are closed.
+2. **Audio** - one run renders the range's audio: samples placed by their presentation timestamps
+   relative to the seek point (``aresample`` with ``first_pts=0`` and ``min_comp=0`` pads a stream
+   that starts later with silence), sample-accurate trims, resampling to 48 kHz with SoX,
+   pitch-preserving time scaling (Rubber Band) when the clip speed is not 1, gain, exact sample
    delay and an un-normalized mix, written as 32-bit float PCM.
 3. **Assembly** - the segments are concatenated by stream copy (concat demuxer) and muxed with the
    AAC-encoded audio into an MP4 with ``+faststart``.
 4. **Validation and publish** - the result, written under a temporary name next to the
    destination, is validated by :func:`ave.render.validate.validate_output` and atomically renamed
-   only when every check passes; otherwise it is deleted. Partial output is never published.
+   only when every check passes; otherwise it is deleted. Partial output is never published, and a
+   destination that is one of the plan's input files is refused before anything runs.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ from ave.render.compiler import AudioClipPlan, RenderPlan, SegmentPlan, VideoLay
 from ave.render.validate import ExpectedOutput, ValidationResult, validate_output
 
 __all__ = [
+    "OUTPUT_PATH_CONFLICT",
     "CommandRecord",
     "RenderReport",
     "build_audio_command",
@@ -48,6 +54,11 @@ __all__ = [
 ]
 
 _BASE_ARGS = ["-hide_banner", "-nostdin", "-v", "error", "-y"]
+_LITERAL_IMAGE_ARGS = ["-f", "image2", "-pattern_type", "none"]
+"""Read an image2-probed file as itself (no ``%d`` sequence expansion of its name)."""
+
+OUTPUT_PATH_CONFLICT = "OUTPUT_PATH_CONFLICT"
+"""Error code: the render destination is one of the plan's input files (never overwritten)."""
 
 
 class _Frozen(BaseModel):
@@ -114,16 +125,22 @@ def _decimal(value: Fraction | int) -> str:
 
 
 def _video_input_args(layer: VideoLayerPlan, fps: Fraction) -> list[str]:
+    literal = _LITERAL_IMAGE_ARGS if layer.input_format == "image2" else []
     if layer.kind == "image":
+        if layer.read_duration is None:  # pragma: no cover - the compiler always sets it
+            raise ValueError("image layer without read duration")
         return [
-            "-loop", "1", "-framerate", _rate(fps),
-            "-t", str(float(layer.read_duration)), "-i", media_url(layer.input_path),
+            "-loop", "1", "-framerate", _rate(fps), "-t", str(float(layer.read_duration)),
+            *literal, "-i", media_url(layer.input_path),
         ]  # fmt: skip
     if layer.seek is None:  # pragma: no cover - the compiler always sets a seek for video
         raise ValueError("video layer without seek point")
+    # Keyframe seek without discarding frames before S0: the frame shown at the segment's first
+    # output frame may precede S0 by any gap (see ave.render.compiler). The trim at the end of the
+    # layer chain and -frames:v end decoding once the segment is complete.
     return [
-        "-ss", _decimal(layer.seek), "-t", _decimal(layer.read_duration),
-        "-i", media_url(layer.input_path),
+        "-noaccurate_seek", "-ss", _decimal(layer.seek),
+        *literal, "-i", media_url(layer.input_path),
     ]  # fmt: skip
 
 
@@ -206,7 +223,8 @@ def _audio_chain(index: int, clip: AudioClipPlan, plan: RenderPlan) -> str:
     end = start + clip.source_sample_count
     stretch = "" if clip.speed == 1 else f"rubberband=tempo={float(clip.speed)!r}:pitch=1,"
     return (
-        f"[{index}:{clip.stream_index}]aresample={plan.sample_rate}:resampler=soxr,"
+        f"[{index}:{clip.stream_index}]"
+        f"aresample={plan.sample_rate}:resampler=soxr:min_comp=0:first_pts=0,"
         f"{_channel_map(clip.channels)},"
         f"atrim=start_sample={start}:end_sample={end},asetpts=PTS-STARTPTS,{stretch}"
         f"apad=whole_len={clip.output_samples},atrim=end_sample={clip.output_samples},"
@@ -341,6 +359,27 @@ def _render_steps(
     )
 
 
+def _input_paths(plan: RenderPlan) -> set[str]:
+    paths = {layer.input_path for segment in plan.segments for layer in segment.layers}
+    return paths | {clip.input_path for clip in plan.audio}
+
+
+def _refuse_input_destination(plan: RenderPlan, destination: Path) -> None:
+    """Raises when ``destination`` is (a link to) one of the plan's input files."""
+    for raw in sorted(_input_paths(plan)):
+        source = Path(raw)
+        same = source.resolve() == destination
+        if not same and destination.exists() and source.exists():
+            same = source.samefile(destination)
+        if same:
+            raise AveError(
+                "the render destination is one of the plan's input files; originals are never "
+                "overwritten",
+                code=OUTPUT_PATH_CONFLICT,
+                destination=destination.name,
+            )
+
+
 def render(
     plan: RenderPlan,
     output_path: Path | str,
@@ -355,12 +394,14 @@ def render(
     ``var/render-work``), kept only with ``keep_work_dir``. ``timeout_scale`` bounds each FFmpeg
     step to ``120 s + timeout_scale * media seconds``.
     The returned report has ``status == "failed"`` (and nothing is published) when a command
-    fails or validation rejects the output.
+    fails or validation rejects the output. A destination that resolves to an input file of the
+    plan raises :class:`AveError` (code :data:`OUTPUT_PATH_CONFLICT`) before anything runs.
     """
     if not plan.segments:
         raise AveError("render plan has no output frames", code="INVALID_TIME_RANGE")
     started = time.monotonic()
     destination = Path(output_path).resolve()
+    _refuse_input_destination(plan, destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Intermediates live in a fresh directory owned by this render (removed afterwards).
     work = (work_dir or render_work_root()) / f"render-{uuid.uuid4().hex}"
