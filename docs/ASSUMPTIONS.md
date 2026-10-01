@@ -69,5 +69,6 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Reason:** The configured Git remote points to that GitHub repository.
 - **Impact:** If false, port [.github/workflows/verify.yml](../.github/workflows/verify.yml) to
   the actual CI system; it only runs `./scripts/verify.sh`.
-- **Status:** open — confirm with the first green CI run.
+- **Status:** confirmed — 2026-10-01 — first CI run green on commit f605c6c
+  (https://github.com/theUpsider/AI-Video-Editor/actions/runs/36851238702).
 - **Links:** [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)
