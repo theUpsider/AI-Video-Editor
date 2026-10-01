@@ -2,7 +2,7 @@
 id: AVE-REQ-024
 title: Audio-based offset estimation
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-004
 source: human
@@ -33,7 +33,10 @@ When recordings contain sufficiently correlated audio, the system shall estimate
 - [ ] AC-4 On the qualified synthetic fixtures in AT-04, alignment error is at most one project output frame; do not generalize this bound to arbitrary real footage.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Positive and negative offsets, sub-frame offsets, gain differences, noise, 44.1 vs 48 kHz, partial overlap (AC-2).
+- Silent, unrelated or periodic audio → insufficient or ambiguous evidence with alternatives, never a fabricated offset (AC-3).
+- A camera whose audio is muted in the final mix still provides sync evidence (AC-1).
+- The one-frame bound is claimed only for the qualified synthetic fixtures of AT-04 (AC-4).
 
 ## Dependencies
 - [AVE-REQ-023 — Synchronization candidate matching](AVE-REQ-023-synchronization-candidate-matching.md)
@@ -52,3 +55,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

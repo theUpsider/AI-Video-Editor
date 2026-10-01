@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-005
 title: Audio routing and mixing
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-03
 ---
@@ -28,3 +28,4 @@ Baseline feature [AVE-FEAT-005 — Audio routing and mixing](../../ai-video-edit
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-REQ-031 entered in-progress (lead)

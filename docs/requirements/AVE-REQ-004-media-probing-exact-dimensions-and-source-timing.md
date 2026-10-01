@@ -2,7 +2,7 @@
 id: AVE-REQ-004
 title: Media probing, exact dimensions, and source timing
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-001
 source: human
@@ -34,7 +34,13 @@ Ingestion shall probe actual video and audio stream properties rather than infer
 - [ ] AC-4 Handle multiple audio streams, no audio, portrait rotation metadata, and missing optional tags without inventing values.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Corrupt, truncated or missing file → clean probe error naming the file, no partial record (AC-4).
+- Rotation metadata (90/270) → display dimensions swap; stored coded dimensions stay as probed (AC-1, AC-4).
+- Non-square SAR (anamorphic) → SAR/DAR kept exactly as rationals (AC-1).
+- Container rate tags that disagree with timestamps, or VFR → timing comes from presentation timestamps (AC-2).
+- Audio-only file, still image, multiple audio streams, no audio stream (AC-4).
+- Missing optional tags (color, rotation, language) stay unknown, never defaulted (AC-4).
+- Filenames are untrusted: a label such as "2K" or "60fps" in a name never sets a property (AC-3).
 
 ## Dependencies
 - [AVE-REQ-002 — Collection-based batch ingestion](AVE-REQ-002-collection-based-batch-ingestion.md)
@@ -52,3 +58,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

@@ -2,7 +2,7 @@
 id: AVE-REQ-021
 title: Mixed split-screen and full-width segments
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-003
 source: human
@@ -32,7 +32,10 @@ A sequence shall switch between simultaneous split-screen recordings and single 
 - [ ] AC-4 Users and AI can change the layout per segment rather than only globally.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Cuts on exact frame boundaries at 60/1 and at 60000/1001 (AC-1, AC-3).
+- A range export that starts or ends inside a segment keeps both sides of each cut frame-exact (AC-3).
+- Full-width segment audio switches at the cut without a gap or overlap (AC-2).
+- Changing one segment's layout leaves the others unchanged (AC-4).
 
 ## Dependencies
 - [AVE-REQ-020 — Two-perspective split-screen layout](AVE-REQ-020-two-perspective-split-screen-layout.md)
@@ -51,3 +54,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

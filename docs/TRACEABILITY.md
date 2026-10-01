@@ -188,5 +188,13 @@ move in an ADR (see the revisit trigger in
 
 | Requirement | Status | Implementation | Tests | Evidence | ADRs |
 |---|---|---|---|---|---|
-
-_No entries yet._
+| [AVE-REQ-004](requirements/AVE-REQ-004-media-probing-exact-dimensions-and-source-timing.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-012](requirements/AVE-REQ-012-canonical-rational-timing-and-temporal-invariants.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-018](requirements/AVE-REQ-018-configurable-canvas-dimensions-and-output-rate.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-019](requirements/AVE-REQ-019-aspect-preserving-composition-and-transforms.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-020](requirements/AVE-REQ-020-two-perspective-split-screen-layout.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-021](requirements/AVE-REQ-021-mixed-split-screen-and-full-width-segments.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
+| [AVE-REQ-024](requirements/AVE-REQ-024-audio-based-offset-estimation.md) | in-progress | — | — | — | [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) |
+| [AVE-REQ-031](requirements/AVE-REQ-031-explicit-master-audio-and-routing.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
+| [AVE-REQ-072](requirements/AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
+| [AVE-REQ-075](requirements/AVE-REQ-075-cpu-only-reference-rendering.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |

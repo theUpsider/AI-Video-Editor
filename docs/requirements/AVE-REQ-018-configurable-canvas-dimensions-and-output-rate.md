@@ -2,7 +2,7 @@
 id: AVE-REQ-018
 title: Configurable canvas, dimensions, and output rate
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-003
 source: human
@@ -33,7 +33,10 @@ Projects and export presets shall define output aspect ratio, exact pixel dimens
 - [ ] AC-4 Validate encoder constraints such as even dimensions and explain any requested adjustment rather than silently stretching media.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Odd or zero dimensions, or sizes beyond the encoder limit → rejected with the nearest valid suggestion, never stretched (AC-4).
+- No source imported → provisional 30/1 shown (AC-3); a later import never silently changes a resolved rate (AC-3).
+- Mixed-rate sources → Auto resolves from the reference or dominant source; 60000/1001 stays distinct from 60/1 (AC-2).
+- Non-16:9 presets (1:1, 9:16) render sources undistorted (AC-1).
 
 ## Dependencies
 - [AVE-REQ-001 — Persistent projects and project settings](AVE-REQ-001-persistent-projects-and-project-settings.md)
@@ -53,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

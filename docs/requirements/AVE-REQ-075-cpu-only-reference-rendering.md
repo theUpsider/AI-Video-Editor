@@ -2,7 +2,7 @@
 id: AVE-REQ-075
 title: CPU-only reference rendering
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-017
 source: human
@@ -32,7 +32,10 @@ All version-one editing and mandatory export operations shall have a functional 
 - [ ] AC-4 Tests use real media and decoding of outputs; a mocked render job cannot satisfy this requirement.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- No GPU and no hardware encoder present → the CPU path runs without probing for one (AC-1).
+- No model weights or provider credentials present → rendering an existing timeline still succeeds (AC-3).
+- Stills, silent sources and empty timeline stretches render on the CPU path (AC-2).
+- Tests decode real output; a mocked job never counts (AC-4).
 
 ## Dependencies
 - [AVE-REQ-072 — Real export pipeline and default delivery profile](AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md)
@@ -51,3 +54,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

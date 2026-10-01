@@ -72,10 +72,10 @@ Dependency direction: `api`, `mcp`, `worker` → `services` → `domain`, `media
 `ai` → `timebase`. The domain never imports the API, worker or UI. Components interact through typed Python
 interfaces and the command service.
 
-### `ave.timebase` — in progress (M0)
+### `ave.timebase` — built (M0)
 Exact rationals, half-open intervals, frame/sample grid functions (ADR-004).
 
-### `ave.media` — in progress (M0)
+### `ave.media` — built (M0)
 FFprobe parsing into typed `ProbeInfo` (exact dimensions, rotation, rational rates, VFR detection, color
 tags), safe subprocess execution (argv lists, timeouts), decoded-frame/audio extraction.
 
@@ -84,15 +84,15 @@ Composition model (sequences, tracks, clips, regions/fit, sync groups, overlays,
 tracks, derived shorts), layout geometry, operation schemas and validation, the command service with revisions,
 idempotency, locks, scope and undo/redo (ADR-004, ADR-006).
 
-### `ave.sync` — in progress (M0, audio offset); planned (drift, visual events, manual anchors)
+### `ave.sync` — built (M0, audio offset); planned (drift, visual events, manual anchors)
 Audio-based offset estimation with confidence and insufficient-evidence results; multi-anchor affine drift;
 visual flash events; manual anchors.
 
-### `ave.render` — in progress (M0, split/full/split CPU export); planned (overlays, transitions, color, captions)
+### `ave.render` — built (M0, split/full/split CPU export); planned (overlays, transitions, color, captions)
 Segmented render compiler, FFmpeg execution, audio routing/mixing, decoded-output validation, atomic publish
 (ADR-005).
 
-### `ave.fixtures` — in progress (M0)
+### `ave.fixtures` — built (M0)
 Deterministic synthetic media with ground-truth manifests (markers, flashes, impulses, pilot tones) for tests
 and demos; clearly labeled synthetic.
 

@@ -1,7 +1,7 @@
 ---
 id: AVE-EPIC-03
 title: Synchronized perspectives and sound
-status: ready
+status: in-progress
 priority: must
 goals: [GOAL-003]
 ---
@@ -24,3 +24,4 @@ The features below and their 11 requirements (11 version one, 0 future), with pr
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-FEAT-004 and AVE-FEAT-005 entered in-progress (lead)

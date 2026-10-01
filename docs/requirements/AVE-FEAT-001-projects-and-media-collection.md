@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-001
 title: Projects and media collection
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-01
 ---
@@ -35,3 +35,4 @@ Baseline feature [AVE-FEAT-001 — Projects and media collection](../../ai-video
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-REQ-004 entered in-progress (lead)

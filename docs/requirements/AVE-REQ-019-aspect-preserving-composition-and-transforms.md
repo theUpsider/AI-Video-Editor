@@ -2,7 +2,7 @@
 id: AVE-REQ-019
 title: Aspect-preserving composition and transforms
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-003
 source: human
@@ -32,7 +32,11 @@ Clip instances shall support position, scale, crop, rotation, opacity, z-order, 
 - [ ] AC-4 Per-clip focal position or crop can be set manually or as a static AI suggestion; this does not require object tracking.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Source aspect equal to the region aspect → contain and cover give identical, uncropped output (AC-1).
+- Extreme aspect ratios (very wide or tall) and rounding to even pixels never change aspect beyond one pixel (AC-2).
+- Focus point at the image edge clamps the crop inside the source (AC-4).
+- Rotation, scale and opacity combined with fit; preview and export share normalized coordinates (AC-3).
+- Stretch only when explicitly requested (AC-2).
 
 ## Dependencies
 - [AVE-REQ-011 — Non-destructive multitrack timeline](AVE-REQ-011-non-destructive-multitrack-timeline.md)
@@ -51,3 +55,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

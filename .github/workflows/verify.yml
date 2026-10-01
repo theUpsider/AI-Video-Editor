@@ -1,5 +1,6 @@
 # Runs the single verification entry point, ./scripts/verify.sh, exactly as Claude and the Stop
-# hook run it locally.
+# hook run it locally. CI runs the release tier: fast checks, real-media integration tests (FFmpeg
+# renders with decoded-output oracles) and the verification tooling suites on every installed awk.
 name: Verify
 
 on:
@@ -12,15 +13,25 @@ permissions:
 
 jobs:
   verify:
-    name: ./scripts/verify.sh
-    runs-on: ubuntu-latest
+    name: ./scripts/verify.sh --tier release
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
 
-      # Toolchain setup: the technical-foundation skill adds the stack's setup steps here
-      # (official setup actions, dependency caching, locked install). verify.sh only checks.
+      # Toolchain: FFmpeg 6.1 and the awk implementations the checker suite covers come from the
+      # Ubuntu 24.04 archive; uv (pinned to the version in docs/ENVIRONMENT_CAPABILITIES.md)
+      # installs Python 3.11 and the locked backend environment. verify.sh only checks.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg mawk gawk original-awk busybox
 
-      - name: Run ./scripts/verify.sh
-        run: ./scripts/verify.sh
+      - name: Install uv and the locked backend environment
+        run: |
+          pipx install uv==0.8.17
+          uv sync --frozen --directory backend
+
+      - name: Run ./scripts/verify.sh --tier release
+        run: ./scripts/verify.sh --tier release

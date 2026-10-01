@@ -1,7 +1,7 @@
 ---
 id: AVE-EPIC-07
 title: Short-form content and delivery
-status: ready
+status: in-progress
 priority: must
 goals: [GOAL-007]
 ---
@@ -25,3 +25,4 @@ The features below and their 14 requirements (14 version one, 0 future), with pr
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-FEAT-017 entered in-progress (lead)

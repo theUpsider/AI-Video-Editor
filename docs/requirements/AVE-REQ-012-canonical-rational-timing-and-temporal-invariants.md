@@ -2,7 +2,7 @@
 id: AVE-REQ-012
 title: Canonical rational timing and temporal invariants
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-002
 source: human
@@ -34,7 +34,12 @@ All editing, synchronization, subtitles, and rendering shall share a canonical t
 - [ ] AC-4 Variable-frame-rate inputs are mapped by presentation timestamps; output frame-rate conversion does not change intended playback speed.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- 60/1 versus 60000/1001 compared and serialized exactly (AC-3).
+- 10^6-frame timelines and tens of thousands of repeated edits keep exact positions (AC-3).
+- NaN, infinity, floats without declared resolution, zero or negative denominators, values beyond 64-bit range (AC-2).
+- Empty and negative intervals; source bounds outside the probed stream (AC-2).
+- VFR sources with irregular gaps; container start time other than zero (AC-4).
+- Output rate differing from the source rate and editorial speed changes keep playback speed (AC-4).
 
 ## Dependencies
 - [AVE-REQ-004 — Media probing, exact dimensions, and source timing](AVE-REQ-004-media-probing-exact-dimensions-and-source-timing.md)
@@ -52,3 +57,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

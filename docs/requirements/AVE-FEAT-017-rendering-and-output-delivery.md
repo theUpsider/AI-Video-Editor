@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-017
 title: Rendering and output delivery
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-07
 ---
@@ -35,3 +35,4 @@ Baseline feature [AVE-FEAT-017 — Rendering and output delivery](../../ai-video
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-REQ-072 and AVE-REQ-075 entered in-progress (lead)

@@ -2,7 +2,7 @@
 id: AVE-REQ-072
 title: Real export pipeline and default delivery profile
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-017
 source: human
@@ -33,7 +33,11 @@ The product shall render real playable video files from the composition graph, w
 - [ ] AC-4 Outputs are written atomically and become downloadable only after validation succeeds.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Validation failure → no published file; an existing output at the target path is never overwritten by a failed render (AC-4).
+- Interrupted render leaves no partial file at the published path (AC-4).
+- Odd or unsupported output parameters are rejected before encoding (AC-2).
+- Range exports and full exports share one compiler (AC-3).
+- A project JSON download is never reported as a rendered video (AC-3).
 
 ## Dependencies
 - [AVE-REQ-012 — Canonical rational timing and temporal invariants](AVE-REQ-012-canonical-rational-timing-and-temporal-invariants.md)
@@ -52,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

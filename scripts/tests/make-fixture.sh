@@ -18,12 +18,14 @@ cp "$REPO/scripts/lib/verify-state.sh" scripts/lib/
 # fixture holds passing stand-ins (these suites test the gate mechanics).
 printf '#!/usr/bin/env python3\nprint("OK: baseline check stand-in for test fixtures")\n' > scripts/check_baseline.py
 printf '#!/usr/bin/env python3\nprint("import stand-in for test fixtures")\n' > scripts/requirements/import_baseline.py
-# Component step files are required files; the fixture holds stand-ins
+# Component step files and backend project files are required files; the fixture holds stand-ins
 # (these suites test the verify.sh core and the hook mechanics, not the product components).
-mkdir -p scripts/verify.d
-for step in 10-requirements 90-tooling; do
+mkdir -p scripts/verify.d backend
+for step in 10-requirements 20-backend 90-tooling; do
   printf '# stand-in component step file for test fixtures (registers no steps)\n' > "scripts/verify.d/$step.sh"
 done
+printf '[project]\nname = "fixture-stand-in"\n' > backend/pyproject.toml
+printf '# stand-in lock file for test fixtures\n' > backend/uv.lock
 cp "$REPO/.claude/settings.json" .claude/
 cp "$REPO/.gitignore" "$REPO/.gitattributes" .
 cp "$REPO/.github/workflows/verify.yml" .github/workflows/

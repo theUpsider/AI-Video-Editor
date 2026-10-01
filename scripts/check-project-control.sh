@@ -58,7 +58,10 @@ docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/hooks/stop-verify.sh
 scripts/verify.sh
 scripts/verify.d/10-requirements.sh
+scripts/verify.d/20-backend.sh
 scripts/verify.d/90-tooling.sh
+backend/pyproject.toml
+backend/uv.lock
 scripts/check-project-control.sh
 scripts/check_baseline.py
 scripts/requirements/import_baseline.py

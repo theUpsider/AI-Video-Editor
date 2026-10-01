@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-002
 title: Manual timeline and history
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-02
 ---
@@ -32,3 +32,4 @@ Baseline feature [AVE-FEAT-002 — Manual timeline and history](../../ai-video-e
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-REQ-012 entered in-progress (lead)

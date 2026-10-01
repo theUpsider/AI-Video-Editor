@@ -34,6 +34,8 @@ stream copy at arbitrary cuts.
 - Transitions render as their own segments containing both clips.
 
 ## Related requirements
+- [AVE-REQ-021 — Mixed split-screen and full-width segments](../requirements/AVE-REQ-021-mixed-split-screen-and-full-width-segments.md)
+- [AVE-REQ-031 — Explicit master audio and routing](../requirements/AVE-REQ-031-explicit-master-audio-and-routing.md)
 - [AVE-REQ-072 — Real export pipeline and default delivery profile](../requirements/AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md)
 - [AVE-REQ-075 — CPU-only reference rendering](../requirements/AVE-REQ-075-cpu-only-reference-rendering.md)
 - [AVE-REQ-078 — Export preflight and decoded-output validation](../requirements/AVE-REQ-078-export-preflight-and-decoded-output-validation.md)

@@ -3,6 +3,10 @@
 ## Status
 Accepted — 2026-10-01
 
+Correction 2026-10-01: item 2 read "normalized by the stream start"; normalizing each stream by its own start
+would shift audio against video within one file, so the zero point is the container start time recorded at probe
+time. The decision itself is unchanged.
+
 ## Context
 Synchronization, cuts, overlays, audio, captions, sections and shorts must share explicit time mappings;
 60 and 60000/1001 stay distinct; intervals are half-open; variable-rate sources use presentation timestamps
@@ -13,8 +17,9 @@ edit the same composition through validated, atomic, undoable operations (AVE-RE
 1. **Time values** are exact rationals (`fractions.Fraction`), serialized as `{"num", "den"}` with a positive,
    reduced denominator. Floats enter only through explicit conversion with a declared resolution (estimated
    synchronization parameters). Intervals are half-open `[start, end)` and reject empty or negative spans.
-2. **Time domains** are explicit: source time (presentation timestamps, normalized by the stream start),
-   synchronization reference time, project time, section/short time and encoded output time. Functions name
+2. **Time domains** are explicit: source time (presentation timestamps, normalized by the container start
+   time, so the streams of one file keep their relative offset), synchronization reference time, project time,
+   section/short time and encoded output time. Functions name
    their domain in parameters and types.
 3. **Output grid:** output frame `n` presents time `n / fps` and covers `[n/fps, (n+1)/fps)`; content with
    interval `[s, e)` is present on frames `ceil(s*fps) … ceil(e*fps) - 1`. Audio sample `k` presents `k / rate`.
@@ -47,7 +52,13 @@ edit the same composition through validated, atomic, undoable operations (AVE-RE
 - Tests compute expected output frames and samples independently of the renderer.
 
 ## Related requirements
+- [AVE-REQ-004 — Media probing, exact dimensions, and source timing](../requirements/AVE-REQ-004-media-probing-exact-dimensions-and-source-timing.md)
 - [AVE-REQ-012 — Canonical rational timing and temporal invariants](../requirements/AVE-REQ-012-canonical-rational-timing-and-temporal-invariants.md)
 - [AVE-REQ-015 — Undo, redo, autosave, and revisions](../requirements/AVE-REQ-015-undo-redo-autosave-and-revisions.md)
+- [AVE-REQ-018 — Configurable canvas, dimensions, and output rate](../requirements/AVE-REQ-018-configurable-canvas-dimensions-and-output-rate.md)
+- [AVE-REQ-019 — Aspect-preserving composition and transforms](../requirements/AVE-REQ-019-aspect-preserving-composition-and-transforms.md)
+- [AVE-REQ-020 — Two-perspective split-screen layout](../requirements/AVE-REQ-020-two-perspective-split-screen-layout.md)
+- [AVE-REQ-021 — Mixed split-screen and full-width segments](../requirements/AVE-REQ-021-mixed-split-screen-and-full-width-segments.md)
+- [AVE-REQ-024 — Audio-based offset estimation](../requirements/AVE-REQ-024-audio-based-offset-estimation.md)
 - [AVE-REQ-026 — Persistent synchronization transforms](../requirements/AVE-REQ-026-persistent-synchronization-transforms.md)
 - [AVE-REQ-048 — One typed editing command service](../requirements/AVE-REQ-048-one-typed-editing-command-service.md)

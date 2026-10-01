@@ -1,7 +1,7 @@
 ---
 id: AVE-EPIC-01
 title: Project and asset management
-status: ready
+status: in-progress
 priority: must
 goals: [GOAL-001]
 ---
@@ -23,3 +23,4 @@ The features below and their 10 requirements (10 version one, 0 future), with pr
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-FEAT-001 entered in-progress (lead)

@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-004
 title: Multicamera synchronization
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-03
 ---
@@ -33,3 +33,4 @@ Baseline feature [AVE-FEAT-004 — Multicamera synchronization](../../ai-video-e
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-REQ-024 entered in-progress (lead)

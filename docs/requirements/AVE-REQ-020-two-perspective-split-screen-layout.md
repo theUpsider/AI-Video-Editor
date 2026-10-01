@@ -2,7 +2,7 @@
 id: AVE-REQ-020
 title: Two-perspective split-screen layout
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-003
 source: human
@@ -34,7 +34,11 @@ The editor shall provide a reusable left/right split-screen layout for synchroni
 - [ ] AC-4 The layout binds clip instances and synchronization-group membership without changing the selected final audio source.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Square sources in contain → 960x960 at y=60 on 1920x1080 (AC-1); non-square sources → letterboxed or pillarboxed (AC-1).
+- Cover with a 960x1080 region crops symmetrically by default and follows the focus point (AC-2).
+- Divider at non-centred positions and a non-zero gap produce even-pixel regions with the configured background (AC-3).
+- Swapping sides keeps the selected final audio source (AC-4).
+- A silent perspective in a split keeps the other source's audio (AC-4).
 
 ## Dependencies
 - [AVE-REQ-019 — Aspect-preserving composition and transforms](AVE-REQ-019-aspect-preserving-composition-and-transforms.md)
@@ -52,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

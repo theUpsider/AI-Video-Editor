@@ -2,7 +2,7 @@
 id: AVE-REQ-031
 title: Explicit master audio and routing
 type: functional
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-005
 source: human
@@ -34,7 +34,10 @@ A segment or synchronization group shall be able to use one selected source audi
 - [ ] AC-4 An unavailable reference audio stream triggers a visible fallback decision, not an unnoticed substitute.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- The selected reference stream is missing or silent → visible fallback decision, no silent substitute (AC-4).
+- A silent secondary video produces no synthetic audio stream (AC-2).
+- Segment boundaries switch routing exactly at the cut; fades follow explicit rules (AC-3).
+- Muted sources keep their audio available for analysis (AC-1).
 
 ## Dependencies
 - [AVE-REQ-011 — Non-destructive multitrack timeline](AVE-REQ-011-non-destructive-multitrack-timeline.md)
@@ -53,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)

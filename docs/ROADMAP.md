@@ -186,6 +186,11 @@ the dependency graph requires them. A milestone is never a reduction of the vers
 
 ### Deferred — future scope (no version-one milestone)
 - **Status:** deferred by the user; never a version-one prerequisite (AT-31).
+- **Version-one checks:** their acceptance criteria constrain version one (AVE-REQ-067 AC-1–AC-3: extensible analysis
+  schemas, no large-model prerequisite, honest labeling; AVE-REQ-101 AC-1–AC-3: static crop and manual keyframes
+  without tracking). Deferred requirements never reach `done`, so M7 checks these criteria through
+  [AVE-REQ-100](requirements/AVE-REQ-100-milestone-level-product-validation.md) AC-4 and scenario AT-31, and the
+  final `milestone-review` records the result.
 - **Requirements:** [AVE-REQ-067](requirements/AVE-REQ-067-advanced-continuous-video-understanding.md), [AVE-REQ-101](requirements/AVE-REQ-101-object-and-motion-tracking.md)
 
 ## Re-planning log

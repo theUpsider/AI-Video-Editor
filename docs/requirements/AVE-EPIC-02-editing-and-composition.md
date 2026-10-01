@@ -1,7 +1,7 @@
 ---
 id: AVE-EPIC-02
 title: Editing and composition
-status: ready
+status: in-progress
 priority: must
 goals: [GOAL-002]
 ---
@@ -24,3 +24,4 @@ The features below and their 12 requirements (12 version one, 0 future), with pr
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-01 — in-progress — AVE-FEAT-002 and AVE-FEAT-003 entered in-progress (lead)

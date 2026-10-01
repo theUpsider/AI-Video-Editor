@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-01 — M0 in progress: baseline imported, environment audited, media core being built._
+_Last updated: 2026-10-01 — M0: spec integrated, media core committed; evidence gates and M0 process reviews next._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -13,32 +13,32 @@ Branch `ccr-af7078da-q8r8mf`; baseline package committed at `6160278`.
 
 ## Current objective
 
-Finish M0: integrate the first real CPU split/full/split render with known-offset audio sync (AT-02, AT-04 core),
-review it independently, wire verify.sh tiers and CI, commit. Then M1 (persistence, command service, assets,
-jobs/worker, API) in parallel with M2 synchronization (drift, visual/manual anchors, coverage).
+Finish M0: verification evidence tied to tree fingerprints and requirement tags (AVE-REQ-097), persisted task
+briefs (AVE-REQ-096), independent reviews of AVE-REQ-093/094/096/097/098, M0 milestone-review. Then M1 backend in
+parallel with M2 synchronization.
 
 ## In progress
 
-- Media core (`backend/`, package `ave`): timebase, probe, composition model, layout, segmented renderer, decoded
-  validation, audio offset estimation, synthetic fixtures — implementer running; contract in the lead's scratchpad,
-  requirement focus AVE-REQ-004/012/018/019/020/021/024/031/072/075.
-- verify.sh tiers (`--tier fast|media|release`, component steps in `scripts/verify.d/`) written; first run pending
-  the media core.
+- Media core (`backend/`, package `ave`) committed; AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress`
+  (partial ACs; remaining ACs need persistence, command service, UI, transitions and fades in M1/M2).
+- Evidence gates (AVE-REQ-097): pytest `req`/`scenario` markers, evidence manifest, `scripts/evidence.py`.
 
 ## Recently completed
 
-- 2026-10-01 — Requirements baseline imported: 131 working files with verbatim ACs, IMPORT_MAPPING.md,
-  `scripts/check_baseline.py`, checker support for AVE IDs and `deferred`, tooling suites in `scripts/tests/`.
+- 2026-10-01 — First real CPU split/full/split render (1920x1080 60/1, 22 s) with audio-estimated sync a_B = 2 s:
+  17 decoded-output checks pass; 84 unit + 36 media tests; CI runs `verify.sh --tier release` with FFmpeg and uv.
+- 2026-10-01 — Spec integration committed (`486b3a0`): 131 working requirement files, IMPORT_MAPPING.md,
+  `check_baseline.py`, verify.sh tiers, PRODUCT/ROADMAP/ARCHITECTURE, ADR-002 to ADR-008.
 - 2026-10-01 — Environment audit: [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) (no GPU, no product
   credentials, Hugging Face blocked, PocketSphinx local ASR works, worktree isolation verified).
-- 2026-10-01 — Product definition from the baseline: PRODUCT.md goals/journeys, ROADMAP M0–M7, ADR-002 to ADR-008.
 - 2026-10-01 — Baseline package committed unchanged (`6160278`).
 - 2026-10-01 — Repository bootstrapped (ADR-001).
 
 ## Next recommended work
 
-1. Integrate and independently review the media core; commit M0 with verify.sh tiers and CI toolchain.
-2. M1 backend (contract drafted: persistence, command service, uploads, jobs/worker, FastAPI, CLI) ‖ M2 sync.
+1. AVE-REQ-097 evidence gates, then verify-requirement for AVE-REQ-093/094/096/097/098; `milestone-review` M0.
+2. M1 backend (persistence, command service, uploads, jobs/worker, FastAPI, CLI) ‖ M2 sync (drift, visual and
+   manual anchors, coverage) in isolated worktrees from the committed HEAD.
 3. M1 frontend (React/TS: collection, timeline, preview, export) ‖ M2 timeline operations.
 
 ## Blockers
@@ -60,4 +60,5 @@ None.
 
 ## Verification status
 
-Control files and baseline checks PASS on 2026-10-01; product tiers run after the media core lands.
+`./scripts/verify.sh --tier release` PASS on 2026-10-01 (9 of 9 steps: control files, baseline, ruff, mypy strict,
+84 unit tests, 36 media tests, tooling suites on every installed awk).
