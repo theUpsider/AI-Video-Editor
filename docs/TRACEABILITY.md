@@ -1,0 +1,160 @@
+# Traceability
+
+This file defines how the repository links every product goal to verified, evidenced
+implementation, and holds the two traceability tables. Everything is repository-native:
+Markdown files, stable IDs, relative links and `grep`. The requirement format lives in
+[docs/requirements/README.md](requirements/README.md).
+
+## Model
+
+```text
+GOAL-NNN                docs/PRODUCT.md § Product goals
+└─ EPIC-NNN             docs/requirements/EPIC-NNN-<slug>.md   goals: [GOAL-NNN]
+   └─ FEAT-NNN          docs/requirements/FEAT-NNN-<slug>.md   parent: EPIC-NNN
+      └─ REQ-NNN        docs/requirements/REQ-NNN-<slug>.md    parent: FEAT-NNN (or EPIC-NNN)
+         ├─ AC-n             § Acceptance criteria
+         ├─ Implementation   § Implementation evidence; optional REQ-NNN anchors at entry points
+         ├─ Tests            tests tagged "REQ-NNN AC-n"; planned in § Verification strategy
+         ├─ Evidence         § Test evidence: verify.sh result, verify-requirement verdict, per-AC results
+         └─ ADR-NNN          ADR § Related requirements
+Commits: "REQ-NNN: <summary>"
+```
+
+Each link has one canonical home. Other places mirror it, and the canonical home wins when
+they disagree:
+- Goal → Epic: EPIC `goals` frontmatter. View: [Goal coverage](#goal-coverage).
+- Epic → Feature → Requirement: the child's `parent` frontmatter. Views: EPIC § Features,
+  FEAT § Requirements.
+- Requirement → Implementation, Tests, Evidence: the REQ file's evidence sections and the test
+  tags. View: [Requirement matrix](#requirement-matrix).
+- Requirement ↔ ADR: the ADR's § Related requirements. View: the matrix ADRs column.
+- Requirement → history: commit messages.
+
+## What each implemented requirement exposes
+
+1. **Requirement ID**: filename and frontmatter `id`.
+2. **Implementation files and modules**: REQ § Implementation evidence; matrix Implementation
+   column; optional code anchors.
+3. **Tests**: test names tagged `REQ-NNN AC-n`; REQ § Test evidence; matrix Tests column.
+4. **Acceptance criteria**: REQ § Acceptance criteria, ticked after a `verify-requirement` PASS.
+5. **Verification evidence**: REQ § Test evidence; matrix Evidence column.
+6. **Current status**: frontmatter `status`, mirrored in the matrix Status column.
+7. **Related ADRs**: ADR § Related requirements; matrix ADRs column.
+
+## Conventions
+
+1. **Test tags.** Every test that verifies an AC carries the full tag `REQ-NNN AC-n` in its name
+   or description. When the framework forbids free text there, put the tag in a comment
+   directly above the test. A test covering several ACs carries one full tag per AC.
+2. **Inspection.** When automating an AC is impractical, § Verification strategy states why and
+   § Test evidence records the method, date and result (`AC-n → inspection: …`).
+3. **Code anchors.** Optional: one `REQ-NNN` comment at a requirement's primary entry point
+   (handler, command, public function). Never tag individual lines or helpers. Retag or remove
+   anchors when a requirement is superseded.
+4. **Commits.** `REQ-NNN: <imperative summary>` (several: `REQ-NNN, REQ-NNN: …`); other work
+   uses a type prefix ([CLAUDE.md](../CLAUDE.md) § Git). Commit a requirement together with its
+   tests, evidence and traceability updates.
+5. **ADRs.** An ADR lists the requirements it governs in § Related requirements; the matrix
+   mirrors them.
+
+```text
+test "REQ-012 AC-2 rejects an item above the size limit"
+test "REQ-012 AC-3 accepts an item exactly at the size limit"
+# REQ-012 AC-1 / REQ-012 AC-4      (comment form, directly above the test)
+test "lists a new item with state Ready"
+```
+
+Audit commands (run from the repository root; `-w` keeps `AC-1` from matching `AC-10`;
+`':!*.md'` limits a search to code and tests):
+
+```sh
+# Every reference to a requirement (docs, code, tests)
+git grep -n -w --untracked "REQ-012"
+# Code anchors and tests for a requirement, or for one AC
+git grep -n -w --untracked "REQ-012" -- ':!*.md'
+git grep -n -w --untracked "REQ-012 AC-2" -- ':!*.md'
+# Commits for a requirement
+git log --oneline --grep='REQ-012[:,]'
+# Requirements in a status
+grep -l '^status: in-progress' docs/requirements/REQ-*.md
+# ACs without a tagged test (expected only for ACs verified by inspection)
+for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/REQ-012-*.md | grep -oE 'AC-[0-9]+'); do
+  git grep -q -w --untracked "REQ-012 $ac" -- ':!*.md' || echo "no tagged test: REQ-012 $ac"
+done
+# Tags in code or tests that point to no requirement file
+git grep -h -o -E --untracked 'REQ-[0-9]{3,}' -- ':!*.md' | sort -u | while read -r id; do
+  ls docs/requirements/"$id"-*.md >/dev/null 2>&1 || echo "orphan tag: $id"
+done
+# Unfilled placeholders
+grep -rn '^_TBD' docs --exclude=README.md
+```
+
+## Update rules
+
+The lead owns this file. Subagents report updates under "Shared-document updates for the lead"
+in their reports. Update the tables in the same commit as the requirement change they reflect.
+
+1. EPIC created, or its `goals` changed: update the Goal coverage rows.
+2. REQ enters `in-progress`: add a matrix row with status `in-progress`, `—` for
+   Implementation, Tests and Evidence, and the ADRs known so far.
+3. REQ enters `verification`: update Status; fill Implementation and Tests from the REQ
+   file's Implementation evidence.
+4. REQ enters `done`: update Status; fill Evidence with the verdict date and a link to the REQ
+   file's Test evidence; confirm Implementation and Tests are complete.
+5. Any other transition of a REQ with a row (`blocked`, unblocked, reopened, `superseded`):
+   update Status. Keep rows of superseded requirements.
+6. ADR accepted or superseded: update the ADRs column of the affected rows.
+7. The first row of a table goes on the line directly below its separator row; delete the blank
+   line and the `_No entries yet._` line. Keep rows sorted by ID.
+
+Cell formats:
+- **Goal**: the plain ID; **Epics**: links to the epic files.
+- **Requirement**: link to the file, `[REQ-NNN](requirements/REQ-NNN-<slug>.md)`.
+- **Status**: the frontmatter value, lowercase.
+- **Implementation**: up to three primary paths in code spans; the full list stays in the REQ file.
+- **Tests**: test files or suites in code spans with the ACs they cover; `inspection` for ACs
+  verified by inspection.
+- **Evidence**: `PASS YYYY-MM-DD` plus a link to the REQ file's `#test-evidence` section.
+- **ADRs**: ADR links, or `—` when none.
+- `—` marks a cell with nothing recorded yet.
+
+```markdown
+| GOAL-001 | [EPIC-001](requirements/EPIC-001-example-slug.md), [EPIC-003](requirements/EPIC-003-example-slug.md) |
+| [REQ-012](requirements/REQ-012-example-slug.md) | done | `<path/to/module>`, `<path/to/other-module>` | `<path/to/test-file>` (AC-1–AC-3), inspection (AC-4) | PASS 2026-10-05 — [Test evidence](requirements/REQ-012-example-slug.md#test-evidence) | [ADR-004](decisions/ADR-004-example-slug.md) |
+```
+
+`./scripts/check-project-control.sh` enforces, for the matrix outside code fences: the header row
+exists; rows follow it with no blank or text line between them; each row names one REQ ID, at
+most once; each row's requirement file exists; each row's status equals the file's frontmatter
+status; every `done` requirement has a row; every relative link resolves. `milestone-review`
+audits the rest:
+1. Every GOAL in [PRODUCT.md](PRODUCT.md) § Product goals not marked `retired` has at least one
+   epic that is not superseded.
+2. Every `done` row has Implementation, Tests and Evidence filled.
+3. The untagged-AC loop above reports only ACs whose Test evidence records an inspection.
+4. The orphan-tag loop reports nothing.
+5. The ADRs column matches each ADR's § Related requirements.
+
+## Scale
+
+Markdown tables and grep suffice for up to a few hundred requirements and one lead session.
+Consider a heavier mechanism when requirements exceed a few hundred, several humans edit
+concurrently, the matrix becomes a frequent merge-conflict hotspot, or compliance demands
+formal trace reports. First step: generate the matrix from frontmatter and test tags with a
+script run by `./scripts/verify.sh`; next step: a dedicated requirements tool. Record either
+move in an ADR (see the revisit trigger in
+[ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)).
+
+## Goal coverage
+
+| Goal | Epics |
+|---|---|
+
+_No entries yet._
+
+## Requirement matrix
+
+| Requirement | Status | Implementation | Tests | Evidence | ADRs |
+|---|---|---|---|---|---|
+
+_No entries yet._

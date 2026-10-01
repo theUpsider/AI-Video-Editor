@@ -1,0 +1,4 @@
+# Normalize text files to LF in the repository; shell scripts keep LF in every checkout so they
+# run on Linux, macOS and Windows (Git Bash, WSL).
+* text=auto
+*.sh text eol=lf

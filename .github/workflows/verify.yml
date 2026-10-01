@@ -1,0 +1,26 @@
+# Runs the single verification entry point, ./scripts/verify.sh, exactly as Claude and the Stop
+# hook run it locally.
+name: Verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ./scripts/verify.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # Toolchain setup: the technical-foundation skill adds the stack's setup steps here
+      # (official setup actions, dependency caching, locked install). verify.sh only checks.
+
+      - name: Run ./scripts/verify.sh
+        run: ./scripts/verify.sh

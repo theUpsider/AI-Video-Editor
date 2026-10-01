@@ -1,0 +1,16 @@
+# Claude Code: personal settings, personal memory, worktrees of parallel subagents
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/worktrees/
+
+# Local environment files and secrets
+.env
+.env.local
+.env.*.local
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Stack-specific entries (dependencies, build output, caches, coverage) are added by the
+# technical-foundation skill once the stack is selected.
