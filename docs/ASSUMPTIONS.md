@@ -29,7 +29,7 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Reason:** why it is reasonable and why the human was not asked
 - **Impact:** what changes if it proves false
 - **Status:** open | confirmed | invalidated | superseded
-- **Links:** ADR-NNN, REQ-NNN
+- **Links:** ADR-NNN, AVE-REQ-NNN
 ```
 
 ## Status meanings
@@ -48,8 +48,8 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Reason:** The bootstrap session created the hooks mid-session and could not exercise them.
 - **Impact:** If false, the verification gate and recovery context fall back to
   [CLAUDE.md](../CLAUDE.md) instructions and CI.
-- **Status:** open — confirm when a session shows the "Project state" block injected by
-  [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh); `resume-project` does this.
+- **Status:** confirmed — 2026-10-01 — the resumed session showed the "Project state" block injected by
+  [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh) (source: resume).
 - **Links:** [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)
 
 ### ASM-002 — Baseline tooling
@@ -72,3 +72,43 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Status:** confirmed — 2026-10-01 — first CI run green on commit f605c6c
   (https://github.com/theUpsider/AI-Video-Editor/actions/runs/36851238702).
 - **Links:** [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)
+
+### ASM-004 — Baseline interpretation register adopted
+- **Date:** 2026-10-01
+- **Assumption:** The baseline's interpretation register (ASM-01 to ASM-20 in
+  [SCOPE_AND_ASSUMPTIONS.md](../ai-video-editor-requirements/spec/SCOPE_AND_ASSUMPTIONS.md)) holds for this
+  implementation: self-hosted single-owner browser editor with a media worker; probed (never assumed)
+  dimensions/rates; unconfirmed "DJI Go" device terminology; contain/padding as the default square layout; Auto
+  output rate from the reference source with a 1080p 16:9 canvas; final audio separate from sync evidence; common
+  coverage for split segments; evidence-dependent sync; ASR scope without dubbing/diarization; bounded indexing as
+  the version-one foundation; distinct caption/metadata products; 1:1 15–20 s shorts; agent runtimes distinct from
+  models; no inherited credentials; CPU mandatory and GPU conditional; no social publishing; consented, budgeted
+  external compute; environment-discovered versions; defaults changeable only by ADR.
+- **Reason:** The human supplied the register with the requirements; it resolves every ambiguity the brief leaves.
+- **Impact:** If the human revises any entry, apply it through `product-definition` amendment mode.
+- **Status:** open
+- **Links:** [ADR-002](decisions/ADR-002-technology-stack.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md)
+
+### ASM-005 — Synthetic fixtures stand in for real camera footage
+- **Date:** 2026-10-01
+- **Assumption:** Deterministic, clearly labeled synthetic media (markers, flashes, impulses, pilot tones,
+  synthesized speech) is sufficient evidence for timing, geometry, routing and caption criteria; it never
+  represents the user's real footage.
+- **Reason:** No user footage, camera model or color profile was supplied; the baseline requires generated
+  fixtures with independent ground truth.
+- **Impact:** Real-footage behavior (camera color profiles, real-world sync evidence quality) stays a reported gap
+  until footage is supplied.
+- **Status:** open
+- **Links:** [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md)
+
+### ASM-006 — The development container is no deployment target
+- **Date:** 2026-10-01
+- **Assumption:** The measured Claude Code container ([ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md))
+  is a build/test environment with no GPU, no Docker daemon, no product credentials and no Hugging Face access.
+  Live provider, agent-runtime, vision, translation, multilingual ASR, container and GPU criteria are implemented
+  and contract-tested here and reported as externally unverified with exact prerequisites.
+- **Reason:** Measured network policy and device checks.
+- **Impact:** If the environment gains access, rerun the corresponding live tests and update the matrix.
+- **Status:** confirmed — 2026-10-01 — measured
+- **Links:** [ADR-007](decisions/ADR-007-ai-integration-boundaries.md), [ADR-008](decisions/ADR-008-local-speech-recognition.md)
+

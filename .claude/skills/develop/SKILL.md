@@ -1,8 +1,8 @@
 ---
 name: develop
 description: Runs the autonomous implementation loop. Selects the highest-priority unblocked requirement, implements it directly or through subagents, verifies it with ./scripts/verify.sh and verify-requirement, records evidence, traceability and progress, commits, and repeats through milestone reviews until the product is complete.
-when_to_use: Default skill once the product is defined and the technical foundation exists, whenever incomplete requirements remain. An optional argument limits the run to one requirement (REQ-NNN) or one milestone (M<n>).
-argument-hint: "[REQ-NNN | M<n>]"
+when_to_use: Default skill once the product is defined and the technical foundation exists, whenever incomplete requirements remain. An optional argument limits the run to one requirement (AVE-REQ-NNN) or one milestone (M<n>).
+argument-hint: "[AVE-REQ-NNN | M<n>]"
 ---
 
 # develop — implementation loop
@@ -11,7 +11,7 @@ You are the lead (main session): product lead, architect, tech lead, orchestrato
 
 Scope argument: `$ARGUMENTS`
 - empty: the current milestone, then each following milestone until the product is complete;
-- `REQ-NNN`: that requirement, its unfinished dependencies first; stop when it is `done`;
+- `AVE-REQ-NNN`: that requirement, its unfinished dependencies first; stop when it is `done`;
 - `M<n>`: that milestone; stop after its `milestone-review`.
 
 Shared rules live in `CLAUDE.md`, `docs/requirements/README.md` (format, lifecycle, Definitions of Ready and Done, changing requirements), `docs/decisions/README.md` (ADR format, acceptance, superseding) and `docs/TRACEABILITY.md` (update rules). Load sections of them as needed.
@@ -70,37 +70,37 @@ Check once per run and after every resume:
 ## 2. Select — "determine highest-priority unblocked requirement"
 
 ```sh
-grep -H -E '^(status|priority):' docs/requirements/REQ-*.md
+grep -H -E '^(status|priority):' docs/requirements/AVE-REQ-*.md
 ```
 
 1. Finish started work first: a requirement in `in-progress` resumes at section 3 step 2, or at section 7 step 2 when PROGRESS.md § In progress lists open findings under it; one in `verification` resumes at section 6 step 3.
 2. Candidates: requirements in the current milestone's "Requirements (dependency order)" list with status `ready` whose every `## Dependencies` requirement is `done`.
 3. Order: priority `must` > `should` > `could`; ties follow roadmap order.
-4. No candidate while `proposed` requirements remain in the milestone: refine the next ones in roadmap order to Ready. Apply the Definition of Ready, complete missing sections, resolve missing information as `docs/ASSUMPTIONS.md` entries, record the `ready` transition, and commit the batch (`REQ-NNN, REQ-NNN: refine to ready`).
+4. No candidate while `proposed` requirements remain in the milestone: refine the next ones in roadmap order to Ready. Apply the Definition of Ready, complete missing sections, resolve missing information as `docs/ASSUMPTIONS.md` entries, record the `ready` transition, and commit the batch (`AVE-REQ-NNN, AVE-REQ-NNN: refine to ready`).
 5. Only `blocked` requirements remain in the milestone and the scope argument is empty: take requirements from the following `planned` milestones, in roadmap order, whose every `## Dependencies` requirement is `done`; a milestone's `Depends on` line does not bar them. First refine the `proposed` ones to Ready as in step 4, then select among them by steps 2–3. The current milestone stays `in-progress`, and those milestones stay `planned`. With scope `M<n>`, or when nothing is selectable or refinable anywhere, go to section 14.
 6. Every non-superseded requirement in the milestone is `done`: go to section 11.
 
 ## 3. Start and understand — "understand requirement…", "inspect related architecture"
 
 1. Record the transition `ready → in-progress`.
-2. Read the requirement file completely, its parent FEAT/EPIC, the requirements under its Dependencies, and the ADRs it cites or that cite it (`grep -rl "REQ-NNN" docs/decisions/`).
-3. Read the `docs/ARCHITECTURE.md` sections that govern the affected components; locate the code involved (`git grep -n -w --untracked "REQ-NNN"`, entry points, existing tests).
+2. Read the requirement file completely, its parent FEAT/EPIC, the requirements under its Dependencies, and the ADRs it cites or that cite it (`grep -rl "AVE-REQ-NNN" docs/decisions/`).
+3. Read the `docs/ARCHITECTURE.md` sections that govern the affected components; locate the code involved (`git grep -n -w --untracked "AVE-REQ-NNN"`, entry points, existing tests).
 4. **Research needed** (unfamiliar library, API, format or standard; fast-changing technology): delegate to the `researcher` with the question, the decision it feeds and the constraints. Record a result that drives a decision as an assumption or ADR.
 5. **Significant architecture decision needed** (architecture, data model, integration boundary, infrastructure, major dependency, long-term maintainability): consult the `architect` with the decision, the IDs it serves and the constraints. Review its Proposed ADR and the updates it proposes. Accept it per `docs/decisions/README.md` § Who writes (plus § Superseding when it replaces an ADR) and cite it in the requirement's `## Dependencies`, or return it with reasons. Escalate only under the criteria in section 14.
 
 ## 4. Implement — delegate or implement directly
 
 **Delegate to the `implementer`** when the work is bounded (one Ready requirement or a tight set under one parent, unambiguous ACs) and isolatable (clear ownership of a set of files), or when the work is substantial enough to crowd your own context, or your context is already heavy.
-**Implement directly** by invoking the `implement-requirement` skill with `REQ-NNN` when the change is small, cross-cutting, touches files other work also touches, or needs design iteration.
+**Implement directly** by invoking the `implement-requirement` skill with `AVE-REQ-NNN` when the change is small, cross-cutting, touches files other work also touches, or needs design iteration.
 
 Brief every subagent with the requirement ID, file paths and constraints only. Subagents read the files themselves; never paste requirement text, documents or conversation history.
 
 ```text
-Implement REQ-NNN.
+Implement AVE-REQ-NNN.
 Files in scope: <paths or globs>. Leave untouched: <paths owned by parallel work, or "none">.
 Constraints: <ADR-NNN, interfaces to honor, decisions already made, or "none">.
 Worktree: <no | yes — base commit <hash>; confirm `git merge-base --is-ancestor <hash> HEAD` first, else return BLOCKED>.
-Commit: <no | yes, after ./scripts/verify.sh passes, message "REQ-NNN: <imperative summary>">.
+Commit: <no | yes, after ./scripts/verify.sh passes, message "AVE-REQ-NNN: <imperative summary>">.
 Return the implement-requirement report.
 ```
 
@@ -112,14 +112,14 @@ When the report returns:
 ### Parallel work
 
 Use it when two or more selected requirements are independent of each other and touch disjoint files.
-1. Record the `in-progress` transition of each and commit it (`REQ-NNN, REQ-NNN: start implementation`). Worktrees branch from the current `HEAD` (`worktree.baseRef: "head"` in `.claude/settings.json`) and carry no uncommitted changes; note `git rev-parse HEAD` as the base commit.
+1. Record the `in-progress` transition of each and commit it (`AVE-REQ-NNN, AVE-REQ-NNN: start implementation`). Worktrees branch from the current `HEAD` (`worktree.baseRef: "head"` in `.claude/settings.json`) and carry no uncommitted changes; note `git rev-parse HEAD` as the base commit.
 2. Spawn one implementer per requirement in a single message: Agent tool with `subagent_type: implementer` and `isolation: "worktree"`, brief with `Worktree: yes` and `Commit: yes`; each brief's "Leave untouched" names the files of the others.
 3. While they run, touch none of their files.
 4. Integrate one branch at a time, in priority order, keeping each merge uncommitted until its review passes:
    1. `git merge --no-ff --no-commit <branch>`; resolve conflicts yourself, preserving the behavior of both sides;
    2. run `./scripts/verify.sh`;
    3. record the `verification` transition and run `verify-requirement` (section 6) on the uncommitted merge;
-   4. on PASS complete it (section 8), then commit the merge with its evidence, traceability and progress updates (section 9, message `REQ-NNN: integrate <branch>`) before merging the next branch;
+   4. on PASS complete it (section 8), then commit the merge with its evidence, traceability and progress updates (section 9, message `AVE-REQ-NNN: integrate <branch>`) before merging the next branch;
    5. on FAIL repair it in the main working tree (section 7); a re-delegated implementer gets `Worktree: no` and `Commit: no`, since a new worktree starts from the pre-merge `HEAD` and any commit concludes the merge;
    6. when it ends `blocked`: note its findings, run `git merge --abort` (this also discards the merge's uncommitted document updates), record the `blocked` transition with the findings and the branch name, commit those document updates, and keep the branch.
 5. After integrating a branch, remove its worktree and branch: `git worktree remove <path>` and `git branch -d <branch>`. For a blocked branch, remove only the worktree.
@@ -128,14 +128,14 @@ When an implementer reports that the base check failed (its worktree did not sta
 
 ## 5. Tests — "add/update tests"
 
-1. The implementer or `implement-requirement` writes tests for every AC, tagged `REQ-NNN AC-n`.
+1. The implementer or `implement-requirement` writes tests for every AC, tagged `AVE-REQ-NNN AC-n`.
 2. For complex or risky requirements (parsing, state machines, concurrency, security, data integrity, media and file-format edge cases), delegate to the `tester` before verification. Brief: requirement ID, implementation paths, risk areas. Spawn it in the main working tree (no `isolation`): the implementation stays uncommitted until section 9, and a worktree holds only committed code. Handle its `DEFECTS FOUND` items through section 7 and keep the failing tests it adds.
 
 ## 6. Verify — "run relevant verification", "independently review requirement"
 
 1. Run `./scripts/verify.sh`; it must pass. Repair failures through section 7.
 2. Record the transition `in-progress → verification` (TRACEABILITY.md Implementation and Tests from the requirement's Implementation evidence).
-3. Invoke the `verify-requirement` skill with argument `REQ-NNN` (Skill tool, or `/verify-requirement REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
+3. Invoke the `verify-requirement` skill with argument `AVE-REQ-NNN` (Skill tool, or `/verify-requirement AVE-REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
 4. Read the verdict. It counts as PASS only when the first line is `VERDICT: PASS`, every AC row is PASS with evidence, and § Blocking says "None."; treat everything else as FAIL.
 5. PASS → section 8. FAIL → section 7.
 
@@ -174,13 +174,13 @@ When an implementer reports that the base check failed (its worktree did not sta
 ## 9. Commit — "create coherent commit when appropriate"
 
 1. Inspect `git status` and `git diff`: every change belongs to this unit; no secret, debug output or stray file.
-2. Commit the requirement's code, tests, evidence, traceability and progress together: `REQ-NNN: <imperative summary>`.
+2. Commit the requirement's code, tests, evidence, traceability and progress together: `AVE-REQ-NNN: <imperative summary>`.
 3. Commit other coherent units on their own: refinement batches, accepted ADRs, re-planning (`docs: …`), refactors (`refactor: …`). Never bundle unrelated changes.
 
 ## 10. Discovered work
 
 Never expand the current requirement silently. For each discovery:
-- **Missing behavior or a new need:** create a `proposed` requirement with the next free ID (command in `docs/requirements/README.md`), an existing parent, and the Status-log line `proposed — discovered during REQ-NNN (lead)`; list it in the parent; place it in a `docs/ROADMAP.md` milestone with a Re-planning log row.
+- **Missing behavior or a new need:** create a `proposed` requirement with the next free ID (command in `docs/requirements/README.md`), an existing parent, and the Status-log line `proposed — discovered during AVE-REQ-NNN (lead)`; list it in the parent; place it in a `docs/ROADMAP.md` milestone with a Re-planning log row.
 - **Missing information with a reasonable default:** add a `docs/ASSUMPTIONS.md` entry.
 - **Product-intent question meeting an escalation criterion:** add it to `docs/PRODUCT.md` § Open product questions and escalate (section 14).
 - **Technical debt:** add it to `docs/ARCHITECTURE.md` § Risks and technical debt.

@@ -46,8 +46,8 @@ Any unmet item makes the verdict FAIL.
 2. List the status of every listed feature and requirement, and catch requirements of those features missing from the entry:
 
    ```sh
-   for id in FEAT-NNN REQ-NNN REQ-NNN; do grep -H -m1 '^status:' docs/requirements/"$id"-*.md; done
-   grep -l -E '^parent: (FEAT-NNN|FEAT-NNN)$' docs/requirements/REQ-*.md
+   for id in AVE-FEAT-NNN AVE-REQ-NNN AVE-REQ-NNN; do grep -H -m1 '^status:' docs/requirements/"$id"-*.md; done
+   grep -l -E '^parent: (AVE-FEAT-NNN|AVE-FEAT-NNN)$' docs/requirements/AVE-REQ-*.md
    ```
 
 3. Determine the base commit, the end of the previous milestone (final mode: the root commit):
@@ -70,7 +70,7 @@ Any unmet item makes the verdict FAIL.
 
 1. Each listed requirement is `done`, or `superseded` with its `superseded_by` replacement listed or `done`. Each unfinished requirement is blocking.
 2. Each feature and epic in scope has the status that `docs/requirements/README.md` § Status lifecycle rule 6 derives from its children.
-3. Behavior without a requirement: from `git diff --stat <base>..HEAD` (the hash step 1.3 printed), list user-facing entry points added in the milestone (commands, routes, screens, public interfaces). Each traces to a requirement through `docs/TRACEABILITY.md` or a `REQ-NNN` anchor. Untraced substantial behavior gets a `proposed` requirement: one that specifies it, or one that removes it when `docs/PRODUCT.md` § Explicit non-goals excludes it.
+3. Behavior without a requirement: from `git diff --stat <base>..HEAD` (the hash step 1.3 printed), list user-facing entry points added in the milestone (commands, routes, screens, public interfaces). Each traces to a requirement through `docs/TRACEABILITY.md` or a `AVE-REQ-NNN` anchor. Untraced substantial behavior gets a `proposed` requirement: one that specifies it, or one that removes it when `docs/PRODUCT.md` § Explicit non-goals excludes it.
 
 ### 4. Verify the supposedly completed acceptance criteria
 
@@ -79,7 +79,7 @@ For each `done` requirement in scope:
 2. Every AC has a tagged test or a recorded inspection:
 
    ```sh
-   for id in REQ-NNN REQ-NNN; do
+   for id in AVE-REQ-NNN AVE-REQ-NNN; do
      for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/"$id"-*.md | grep -oE 'AC-[0-9]+'); do
        git grep -q -w --untracked "$id $ac" -- ':!*.md' || echo "no tagged test: $id $ac"
      done
@@ -88,9 +88,9 @@ For each `done` requirement in scope:
 
    Each reported AC needs an `inspection` line in `## Test evidence`; otherwise it is unevidenced (blocking).
 3. The tagged tests ran and passed in step 2: the runner output shows them executed, none skipped.
-4. Re-run `verify-requirement REQ-NNN` (a fresh reviewer fork) for each requirement that is high-risk (security, data integrity, parsing, state machines, concurrency, media or file-format handling), that has an AC verified by inspection (no test re-runs it, so only the fork re-performs that inspection on the current tree), or that is doubtful: its implementation files changed after its completion commit (`git log --oneline "$(git log -1 --format=%H --grep='REQ-NNN[:,]')"..HEAD -- <paths from § Implementation evidence>`), its tests changed later, or a journey failure in step 5 points at it. In a re-verification, the reviewer's notes on `done` status and ticked ACs are expected; ignore them. Add each re-verified ID to the checkpoint's `re-verified:` field.
+4. Re-run `verify-requirement AVE-REQ-NNN` (a fresh reviewer fork) for each requirement that is high-risk (security, data integrity, parsing, state machines, concurrency, media or file-format handling), that has an AC verified by inspection (no test re-runs it, so only the fork re-performs that inspection on the current tree), or that is doubtful: its implementation files changed after its completion commit (`git log --oneline "$(git log -1 --format=%H --grep='AVE-REQ-NNN[:,]')"..HEAD -- <paths from § Implementation evidence>`), its tests changed later, or a journey failure in step 5 points at it. In a re-verification, the reviewer's notes on `done` status and ticked ACs are expected; ignore them. Add each re-verified ID to the checkpoint's `re-verified:` field.
 5. A FAIL verdict reopens the requirement (`done → in-progress`, logged reason, affected ACs unticked, TRACEABILITY.md and PROGRESS.md updated) and is blocking.
-6. For each non-superseded feature whose non-superseded requirements are all `done`: set it `verification`, check every `## Feature acceptance` item end to end (step 5 often covers it), tick the items that hold, and set the feature `done` when all hold. For each non-superseded epic whose non-superseded children are all `done` (its features and its cross-cutting requirements: `grep -l '^parent: EPIC-NNN$' docs/requirements/REQ-*.md`): set it `verification`, check every `## Success criteria` item, and set the epic `done` when all hold. An unmet item is blocking: create a requirement for the gap.
+6. For each non-superseded feature whose non-superseded requirements are all `done`: set it `verification`, check every `## Feature acceptance` item end to end (step 5 often covers it), tick the items that hold, and set the feature `done` when all hold. For each non-superseded epic whose non-superseded children are all `done` (its features and its cross-cutting requirements: `grep -l '^parent: AVE-EPIC-NN$' docs/requirements/AVE-REQ-*.md`): set it `verification`, check every `## Success criteria` item, and set the epic `done` when all hold. An unmet item is blocking: create a requirement for the gap.
 
 ### 5. Test key user journeys end to end
 
@@ -129,10 +129,10 @@ Final mode: check every item of § Definition of product completion; each unmet 
 
 ```sh
 git grep -n -I -w --untracked -E 'TODO|FIXME|HACK|XXX' -- ':!*.md'                              # all markers
-git grep -n -I -w --untracked -E 'TODO|FIXME|HACK|XXX' -- ':!*.md' | grep -v -E 'REQ-[0-9]{3,}'  # unlinked
+git grep -n -I -w --untracked -E 'TODO|FIXME|HACK|XXX' -- ':!*.md' | grep -v -E 'AVE-REQ-[0-9]{3,}'  # unlinked
 ```
 
-After this step every marker is resolved or linked to a live requirement in the form `TODO(REQ-NNN): <what>`:
+After this step every marker is resolved or linked to a live requirement in the form `TODO(AVE-REQ-NNN): <what>`:
 - unlinked: create a `proposed` requirement (or a technical-debt entry for non-behavioral cleanup) and add its ID; delete an obsolete marker;
 - linked to a `done` or `superseded` requirement: stale; delete it, or create a requirement when the work is still missing;
 - describes a defect in a `done` requirement's AC: reopen that requirement (blocking).
@@ -168,10 +168,10 @@ Check `docs/PRODUCT.md` § Open product questions: each is resolved or escalated
 3. Roadmap consistency: every feature and requirement named in the milestone entry exists as a file, and every non-superseded requirement appears in some milestone:
 
    ```sh
-   for f in docs/requirements/REQ-*.md; do grep -q '^status: superseded' "$f" && continue; id=$(basename "$f" | cut -d- -f1-2); grep -q -w "$id" docs/ROADMAP.md || echo "not on roadmap: $id"; done
+   for f in docs/requirements/AVE-REQ-*.md; do grep -q '^status: superseded' "$f" && continue; id=$(basename "$f" | cut -d- -f1-2); grep -q -w "$id" docs/ROADMAP.md || echo "not on roadmap: $id"; done
    ```
 
-4. Spot-check two or three `done` requirements not re-verified in step 4, choosing the riskiest: AC → tagged test → test passes (for an AC verified by inspection: the inspection re-performed by the procedure in § Implementation evidence, passing) → implementation files exist and hold the behavior → commit (`git log --oneline --grep='REQ-NNN[:,]'`).
+4. Spot-check two or three `done` requirements not re-verified in step 4, choosing the riskiest: AC → tagged test → test passes (for an AC verified by inspection: the inspection re-performed by the procedure in § Implementation evidence, passing) → implementation files exist and hold the behavior → commit (`git log --oneline --grep='AVE-REQ-NNN[:,]'`).
 5. Fix documentation gaps in place. An AC without evidence is blocking: reopen its requirement.
 
 ### 12. Inspect dead or obsolete code and instructions
@@ -216,7 +216,7 @@ PASS when every exit criterion holds; FAIL otherwise. Blocking findings: an unfi
 1. Milestone entry Review line, replaced on each re-review (Git keeps earlier verdicts):
 
    ```text
-   - **Review:** 2026-11-20 — PASS — follow-ups: REQ-041, REQ-042, ASM-009
+   - **Review:** 2026-11-20 — PASS — follow-ups: AVE-REQ-041, AVE-REQ-042, ASM-009
    ```
 
    Final mode records its verdict in PROGRESS.md § Recently completed and § Verification status.
@@ -229,7 +229,7 @@ PASS when every exit criterion holds; FAIL otherwise. Blocking findings: an unfi
 
 1. Run `./scripts/verify.sh`. It passes, or fails only with failures recorded as blocking findings in step 2 (name them in the commit body); the project-control step always passes. Inspect `git status` and `git diff`.
 2. Copy the checkpoint line's results into the commit message, delete the line from PROGRESS.md § In progress (an emptied section reads `None.`), and commit the review with that deletion: `docs: complete milestone M<n> review` (final mode: `docs: complete final product review`). Body: verdict, follow-up IDs, rejected recommendations with reasons.
-3. PASS outside final mode: refine the next milestone's requirements to Ready (Definition of Ready; `ready` transition with Status-log line; feature and epic statuses). A requirement that needs the human's answer stays `proposed` and joins the batched escalation. Commit: `REQ-NNN, REQ-NNN: refine to ready`.
+3. PASS outside final mode: refine the next milestone's requirements to Ready (Definition of Ready; `ready` transition with Status-log line; feature and epic statuses). A requirement that needs the human's answer stays `proposed` and joins the batched escalation. Commit: `AVE-REQ-NNN, AVE-REQ-NNN: refine to ready`.
 4. Report in this format, then return to `develop` § 11, which continues with the next milestone or the follow-ups:
 
 ```text
@@ -242,5 +242,5 @@ Architecture: HEALTHY | ATTENTION | ACTION-REQUIRED — <n> blocking, <n> import
 Assumptions: confirmed <IDs>; invalidated <IDs>; open <IDs | none>
 Follow-ups: <REQ/ASM/ADR IDs | none>
 Escalations: <question — recommended default | none>
-Next: <M<n+1> — name — <k> requirements ready | continue M<n> with REQ-NNN, … | product complete>
+Next: <M<n+1> — name — <k> requirements ready | continue M<n> with AVE-REQ-NNN, … | product complete>
 ```

@@ -14,3 +14,23 @@ Thumbs.db
 
 # Stack-specific entries (dependencies, build output, caches, coverage) are added by the
 # technical-foundation skill once the stack is selected.
+
+# Application runtime data, generated fixtures and test artifacts (never committed)
+/var/
+/data/
+
+# Python tooling
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node tooling
+node_modules/
+dist/
+playwright-report/
+test-results/

@@ -13,7 +13,7 @@ Run these in one Bash call (skip lines the injected "Project state" block alread
 
 ```sh
 grep -m1 '^\*\*Status:\*\*' docs/PRODUCT.md docs/ARCHITECTURE.md; ls docs/product-inputs 2>/dev/null
-grep -H '^status:' docs/requirements/REQ-*.md 2>/dev/null | grep -v -e ': done$' -e ': superseded$'
+grep -H '^status:' docs/requirements/AVE-REQ-*.md 2>/dev/null | grep -v -e ': done$' -e ': superseded$'
 grep -n -e '^## Phase' -e '^### M' docs/ROADMAP.md
 git status --short; git worktree list; git log --oneline -8
 cat "$(git rev-parse --git-path claude-verify)/last-result" 2>/dev/null
@@ -33,7 +33,7 @@ cat "$(git rev-parse --git-path claude-verify)/last-result" 2>/dev/null
    ```text
    Milestone: <M<n> — name (status)> | <Phase n — name>
    Objective: <current objective>
-   Active: <REQ-NNN (status) — next step> | none
+   Active: <AVE-REQ-NNN (status) — next step> | none
    Tree: <clean | N uncommitted paths — belong to …>; HEAD <hash> <subject>
    Verification: <PASS|FAIL YYYY-MM-DD> — <matches tree | stale>; known failures: <… | none>
    Blockers: <… | none>

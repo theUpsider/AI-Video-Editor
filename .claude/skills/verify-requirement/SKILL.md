@@ -9,7 +9,7 @@ background: false
 
 # Verify $ARGUMENTS
 
-Verify requirement $ARGUMENTS independently and return the verdict report defined under Output. Below, `REQ-NNN` stands for this ID.
+Verify requirement $ARGUMENTS independently and return the verdict report defined under Output. Below, `AVE-REQ-NNN` stands for this ID.
 
 PASS requires evidence you verified yourself for every applicable acceptance criterion and zero blocking findings. Never approve because the implementation "looks reasonable".
 
@@ -21,7 +21,7 @@ Ground rules:
 
 ## 1. Read the requirement independently
 
-1. Resolve the file: `ls docs/requirements/REQ-NNN-*.md`. When the argument is empty or names no requirement file, return `VERDICT: FAIL` with the blocking finding "no requirement to verify".
+1. Resolve the file: `ls docs/requirements/AVE-REQ-NNN-*.md`. When the argument is empty or names no requirement file, return `VERDICT: FAIL` with the blocking finding "no requirement to verify".
 2. Read the whole file (frontmatter, Intent, Description, every AC, Edge cases, Dependencies, Verification strategy) and its parent FEAT/EPIC.
 3. Before opening any code or test, write a working note: for each AC, the expected observable behavior, its inputs and conditions, and the evidence that would prove it; then the edge cases you will probe (those in § Edge cases plus your own). Judge everything after this against the note and the requirement text.
 
@@ -36,7 +36,7 @@ Every AC in the file applies. An AC you judge inapplicable is a finding for the 
 
 ## 3. Inspect the implementation
 
-1. Locate the change: § Implementation evidence (a claim to check), `git grep -n -w --untracked "REQ-NNN"`, `git log --oneline --grep='REQ-NNN[:,]'`, `git status`, `git diff HEAD`, `git show <commit>`.
+1. Locate the change: § Implementation evidence (a claim to check), `git grep -n -w --untracked "AVE-REQ-NNN"`, `git log --oneline --grep='AVE-REQ-NNN[:,]'`, `git status`, `git diff HEAD`, `git show <commit>`.
 2. Read the changed code and its callers. For each AC, trace the code path that produces the behavior.
 3. Check error handling and input validation at trust boundaries; data integrity (atomicity, cleanup, loss or corruption paths); concurrency where state is shared; Accepted ADRs and the module boundaries in `docs/ARCHITECTURE.md`; backward compatibility; secrets; substantial behavior outside the requirement's scope; leftover debug code; TODO or FIXME markers without a follow-up ID.
 
@@ -45,9 +45,9 @@ Every AC in the file applies. An AC you judge inapplicable is a finding for the 
 1. Map tests to ACs through their tags (substitute the ID):
 
 ```sh
-git grep -n -w --untracked "REQ-NNN AC-1" -- ':!*.md'
-for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/REQ-NNN-*.md | grep -oE 'AC-[0-9]+'); do
-  git grep -q -w --untracked "REQ-NNN $ac" -- ':!*.md' || echo "no tagged test: REQ-NNN $ac"
+git grep -n -w --untracked "AVE-REQ-NNN AC-1" -- ':!*.md'
+for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/AVE-REQ-NNN-*.md | grep -oE 'AC-[0-9]+'); do
+  git grep -q -w --untracked "AVE-REQ-NNN $ac" -- ':!*.md' || echo "no tagged test: AVE-REQ-NNN $ac"
 done
 ```
 
@@ -79,7 +79,7 @@ Every test claimed for an AC must pass all of these:
 - [ ] **No tautology:** the expected value is independent of the code under test; it is neither copied from that code's output nor computed by the same code path, and no value is compared with itself.
 - [ ] **Executed:** neither skipped, focused (`only`, `fit`, `fdescribe`), filtered, marked expected-to-fail nor conditionally skipped; the runner collects it.
 - [ ] **Snapshots and golden files:** their content was checked against the AC; a snapshot created or updated in this change without that check fails.
-- [ ] **Tagged:** carries `REQ-NNN AC-n`; an untagged test gives the AC no traceable evidence.
+- [ ] **Tagged:** carries `AVE-REQ-NNN AC-n`; an untagged test gives the AC no traceable evidence.
 - [ ] **Sound control flow and determinism:** no swallowed errors, early returns or conditional assertions; no dependence on timing, execution order or shared state.
 
 An AC whose only tests fail this checklist is unevidenced, which is blocking.
@@ -116,7 +116,7 @@ Your final message is the report alone, in exactly this format; nothing precedes
 
 ```text
 VERDICT: PASS | FAIL
-Requirement: REQ-NNN — <title>
+Requirement: AVE-REQ-NNN — <title>
 ## Acceptance criteria
 | AC | Verdict | Evidence |
 ## Verification runs

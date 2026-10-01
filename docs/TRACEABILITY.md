@@ -3,21 +3,29 @@
 This file defines how the repository links every product goal to verified, evidenced
 implementation, and holds the two traceability tables. Everything is repository-native:
 Markdown files, stable IDs, relative links and `grep`. The requirement format lives in
-[docs/requirements/README.md](requirements/README.md).
+[docs/requirements/README.md](requirements/README.md). The working requirements keep the stable
+AVE IDs of the immutable baseline
+[ai-video-editor-requirements/](../ai-video-editor-requirements/README.md);
+[IMPORT_MAPPING.md](requirements/IMPORT_MAPPING.md) maps each baseline ID to its working file, and
+the baseline's own [TRACEABILITY.md](../ai-video-editor-requirements/spec/TRACEABILITY.md) maps the
+user-brief clauses to requirements and scenarios.
 
 ## Model
 
 ```text
-GOAL-NNN                docs/PRODUCT.md § Product goals
-└─ EPIC-NNN             docs/requirements/EPIC-NNN-<slug>.md   goals: [GOAL-NNN]
-   └─ FEAT-NNN          docs/requirements/FEAT-NNN-<slug>.md   parent: EPIC-NNN
-      └─ REQ-NNN        docs/requirements/REQ-NNN-<slug>.md    parent: FEAT-NNN (or EPIC-NNN)
-         ├─ AC-n             § Acceptance criteria
-         ├─ Implementation   § Implementation evidence; optional REQ-NNN anchors at entry points
-         ├─ Tests            tests tagged "REQ-NNN AC-n"; planned in § Verification strategy
-         ├─ Evidence         § Test evidence: verify.sh result, verify-requirement verdict, per-AC results
-         └─ ADR-NNN          ADR § Related requirements
-Commits: "REQ-NNN: <summary>"
+GOAL-NNN                    docs/PRODUCT.md § Product goals
+└─ AVE-EPIC-NN              docs/requirements/AVE-EPIC-NN-<slug>.md    goals: [GOAL-NNN]
+   └─ AVE-FEAT-NNN          docs/requirements/AVE-FEAT-NNN-<slug>.md   parent: AVE-EPIC-NN
+      └─ AVE-REQ-NNN        docs/requirements/AVE-REQ-NNN-<slug>.md    parent: AVE-FEAT-NNN (or AVE-EPIC-NN)
+         ├─ origins            brief clauses U01–U27, D01–D05 (frontmatter origins)
+         ├─ baseline           ai-video-editor-requirements/spec/requirements/AVE-REQ-NNN.md (immutable)
+         ├─ AC-n               § Acceptance criteria
+         ├─ Implementation     § Implementation evidence; optional AVE-REQ-NNN anchors at entry points
+         ├─ Tests              tests tagged "AVE-REQ-NNN AC-n"; planned in § Verification strategy
+         ├─ Scenarios          AT-NN (frontmatter scenarios); scenario tests tagged "AT-NN"
+         ├─ Evidence           § Test evidence: verify.sh result, verify-requirement verdict, per-AC results
+         └─ ADR-NNN            ADR § Related requirements
+Commits: "AVE-REQ-NNN: <summary>"
 ```
 
 Each link has one canonical home. Other places mirror it, and the canonical home wins when
@@ -27,6 +35,9 @@ they disagree:
   FEAT § Requirements.
 - Requirement → Implementation, Tests, Evidence: the REQ file's evidence sections and the test
   tags. View: [Requirement matrix](#requirement-matrix).
+- Requirement → brief clauses, acceptance scenarios, baseline file: the REQ frontmatter
+  `origins`, `scenarios` and `baseline`, checked against the baseline by
+  [check_baseline.py](../scripts/check_baseline.py). View: [IMPORT_MAPPING.md](requirements/IMPORT_MAPPING.md).
 - Requirement ↔ ADR: the ADR's § Related requirements. View: the matrix ADRs column.
 - Requirement → history: commit messages.
 
@@ -35,7 +46,8 @@ they disagree:
 1. **Requirement ID**: filename and frontmatter `id`.
 2. **Implementation files and modules**: REQ § Implementation evidence; matrix Implementation
    column; optional code anchors.
-3. **Tests**: test names tagged `REQ-NNN AC-n`; REQ § Test evidence; matrix Tests column.
+3. **Tests**: test names tagged `AVE-REQ-NNN AC-n` (scenario tests also `AT-NN`); REQ § Test
+   evidence; matrix Tests column.
 4. **Acceptance criteria**: REQ § Acceptance criteria, ticked after a `verify-requirement` PASS.
 5. **Verification evidence**: REQ § Test evidence; matrix Evidence column.
 6. **Current status**: frontmatter `status`, mirrored in the matrix Status column.
@@ -43,25 +55,29 @@ they disagree:
 
 ## Conventions
 
-1. **Test tags.** Every test that verifies an AC carries the full tag `REQ-NNN AC-n` in its name
-   or description. When the framework forbids free text there, put the tag in a comment
-   directly above the test. A test covering several ACs carries one full tag per AC.
+1. **Test tags.** Every test that verifies an AC carries the full tag `AVE-REQ-NNN AC-n` in its
+   name or description. When the framework forbids free text there, put the tag in a comment
+   directly above the test. A test covering several ACs carries one full tag per AC. A test that
+   runs an acceptance scenario of
+   [ACCEPTANCE_TESTS.md](../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) also carries
+   its scenario tag `AT-NN`; the scenario tag alone never proves a criterion.
 2. **Inspection.** When automating an AC is impractical, § Verification strategy states why and
    § Test evidence records the method, date and result (`AC-n → inspection: …`).
-3. **Code anchors.** Optional: one `REQ-NNN` comment at a requirement's primary entry point
+3. **Code anchors.** Optional: one `AVE-REQ-NNN` comment at a requirement's primary entry point
    (handler, command, public function). Never tag individual lines or helpers. Retag or remove
    anchors when a requirement is superseded.
-4. **Commits.** `REQ-NNN: <imperative summary>` (several: `REQ-NNN, REQ-NNN: …`); other work
+4. **Commits.** `AVE-REQ-NNN: <imperative summary>` (several: `AVE-REQ-NNN, AVE-REQ-NNN: …`); other work
    uses a type prefix ([CLAUDE.md](../CLAUDE.md) § Git). Commit a requirement together with its
    tests, evidence and traceability updates.
 5. **ADRs.** An ADR lists the requirements it governs in § Related requirements; the matrix
    mirrors them.
 
 ```text
-test "REQ-012 AC-2 rejects an item above the size limit"
-test "REQ-012 AC-3 accepts an item exactly at the size limit"
-# REQ-012 AC-1 / REQ-012 AC-4      (comment form, directly above the test)
+test "AVE-REQ-012 AC-2 rejects an item above the size limit"
+test "AVE-REQ-012 AC-3 accepts an item exactly at the size limit"
+# AVE-REQ-012 AC-1 / AVE-REQ-012 AC-4      (comment form, directly above the test)
 test "lists a new item with state Ready"
+test "AT-04 AVE-REQ-024 AC-1 renders the known offset within one output frame"
 ```
 
 Audit commands (run from the repository root; `-w` keeps `AC-1` from matching `AC-10`;
@@ -69,22 +85,27 @@ Audit commands (run from the repository root; `-w` keeps `AC-1` from matching `A
 
 ```sh
 # Every reference to a requirement (docs, code, tests)
-git grep -n -w --untracked "REQ-012"
+git grep -n -w --untracked "AVE-REQ-012"
 # Code anchors and tests for a requirement, or for one AC
-git grep -n -w --untracked "REQ-012" -- ':!*.md'
-git grep -n -w --untracked "REQ-012 AC-2" -- ':!*.md'
+git grep -n -w --untracked "AVE-REQ-012" -- ':!*.md'
+git grep -n -w --untracked "AVE-REQ-012 AC-2" -- ':!*.md'
+# Tests that run an acceptance scenario
+git grep -n -w --untracked "AT-04" -- ':!*.md' ':!ai-video-editor-requirements'
 # Commits for a requirement
-git log --oneline --grep='REQ-012[:,]'
-# Requirements in a status
-grep -l '^status: in-progress' docs/requirements/REQ-*.md
+git log --oneline --grep='AVE-REQ-012[:,]'
+# Requirements in a status; version-one requirements of a gate
+grep -l '^status: in-progress' docs/requirements/AVE-REQ-*.md
+grep -l '^primary_gate: M1$' docs/requirements/AVE-REQ-*.md
 # ACs without a tagged test (expected only for ACs verified by inspection)
-for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/REQ-012-*.md | grep -oE 'AC-[0-9]+'); do
-  git grep -q -w --untracked "REQ-012 $ac" -- ':!*.md' || echo "no tagged test: REQ-012 $ac"
+for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/AVE-REQ-012-*.md | grep -oE 'AC-[0-9]+'); do
+  git grep -q -w --untracked "AVE-REQ-012 $ac" -- ':!*.md' || echo "no tagged test: AVE-REQ-012 $ac"
 done
 # Tags in code or tests that point to no requirement file
-git grep -h -o -E --untracked 'REQ-[0-9]{3,}' -- ':!*.md' | sort -u | while read -r id; do
+git grep -h -o -E --untracked 'AVE-REQ-[0-9]{3,}' -- ':!*.md' ':!ai-video-editor-requirements' | sort -u | while read -r id; do
   ls docs/requirements/"$id"-*.md >/dev/null 2>&1 || echo "orphan tag: $id"
 done
+# Baseline integrity, status and gate counts, ticked ACs
+python3 scripts/check_baseline.py
 # Unfilled placeholders
 grep -rn '^_TBD' docs --exclude=README.md
 ```
@@ -109,7 +130,7 @@ in their reports. Update the tables in the same commit as the requirement change
 
 Cell formats:
 - **Goal**: the plain ID; **Epics**: links to the epic files.
-- **Requirement**: link to the file, `[REQ-NNN](requirements/REQ-NNN-<slug>.md)`.
+- **Requirement**: link to the file, `[AVE-REQ-NNN](requirements/AVE-REQ-NNN-<slug>.md)`.
 - **Status**: the frontmatter value, lowercase.
 - **Implementation**: up to three primary paths in code spans; the full list stays in the REQ file.
 - **Tests**: test files or suites in code spans with the ACs they cover; `inspection` for ACs
@@ -119,21 +140,24 @@ Cell formats:
 - `—` marks a cell with nothing recorded yet.
 
 ```markdown
-| GOAL-001 | [EPIC-001](requirements/EPIC-001-example-slug.md), [EPIC-003](requirements/EPIC-003-example-slug.md) |
-| [REQ-012](requirements/REQ-012-example-slug.md) | done | `<path/to/module>`, `<path/to/other-module>` | `<path/to/test-file>` (AC-1–AC-3), inspection (AC-4) | PASS 2026-10-05 — [Test evidence](requirements/REQ-012-example-slug.md#test-evidence) | [ADR-004](decisions/ADR-004-example-slug.md) |
+| GOAL-001 | [AVE-EPIC-01](requirements/AVE-EPIC-01-example-slug.md), [AVE-EPIC-03](requirements/AVE-EPIC-03-example-slug.md) |
+| [AVE-REQ-012](requirements/AVE-REQ-012-example-slug.md) | done | `<path/to/module>`, `<path/to/other-module>` | `<path/to/test-file>` (AC-1–AC-3), inspection (AC-4) | PASS 2026-10-05 — [Test evidence](requirements/AVE-REQ-012-example-slug.md#test-evidence) | [ADR-004](decisions/ADR-004-example-slug.md) |
 ```
 
 `./scripts/check-project-control.sh` enforces, for the matrix outside code fences: the header row
 exists; rows follow it with no blank or text line between them; each row names one REQ ID, at
 most once; each row's requirement file exists; each row's status equals the file's frontmatter
-status; every `done` requirement has a row; every relative link resolves. `milestone-review`
-audits the rest:
+status; every `done` requirement has a row; every relative link resolves.
+`python3 scripts/check_baseline.py` enforces the link from each working requirement to its
+baseline (origins, scenarios, dependencies, criteria). `milestone-review` audits the rest:
 1. Every GOAL in [PRODUCT.md](PRODUCT.md) § Product goals not marked `retired` has at least one
    epic that is not superseded.
 2. Every `done` row has Implementation, Tests and Evidence filled.
 3. The untagged-AC loop above reports only ACs whose Test evidence records an inspection.
 4. The orphan-tag loop reports nothing.
 5. The ADRs column matches each ADR's § Related requirements.
+6. Every acceptance scenario `AT-NN` named by a `done` requirement has a tagged test whose latest
+   run passed on real rendered output.
 
 ## Scale
 
@@ -149,8 +173,16 @@ move in an ADR (see the revisit trigger in
 
 | Goal | Epics |
 |---|---|
-
-_No entries yet._
+| GOAL-001 | [AVE-EPIC-01](requirements/AVE-EPIC-01-project-and-asset-management.md) |
+| GOAL-002 | [AVE-EPIC-02](requirements/AVE-EPIC-02-editing-and-composition.md) |
+| GOAL-003 | [AVE-EPIC-03](requirements/AVE-EPIC-03-synchronized-perspectives-and-sound.md) |
+| GOAL-004 | [AVE-EPIC-04](requirements/AVE-EPIC-04-presentation-chapters-and-looks.md) |
+| GOAL-005 | [AVE-EPIC-05](requirements/AVE-EPIC-05-ai-orchestration-and-integration.md) |
+| GOAL-006 | [AVE-EPIC-06](requirements/AVE-EPIC-06-media-intelligence-and-captions.md) |
+| GOAL-007 | [AVE-EPIC-07](requirements/AVE-EPIC-07-short-form-content-and-delivery.md) |
+| GOAL-008 | [AVE-EPIC-08](requirements/AVE-EPIC-08-reliability-security-and-operations.md) |
+| GOAL-009 | [AVE-EPIC-09](requirements/AVE-EPIC-09-claude-code-delivery-process.md) |
+| GOAL-010 | [AVE-EPIC-10](requirements/AVE-EPIC-10-explicit-future-scope.md) |
 
 ## Requirement matrix
 

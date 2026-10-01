@@ -23,7 +23,7 @@ Input: `$ARGUMENTS` holds the product prompt or a path to a file holding it. Whe
 
 ## Preconditions
 
-1. Inspect `git status --short`. Commit unrelated completed work separately first. A requirement in `in-progress` or `verification` keeps its code and tests uncommitted, because develop commits a requirement only after its PASS; commit only its recorded transition (its requirement file, `docs/TRACEABILITY.md`, `docs/PROGRESS.md`, parent status edits) as `REQ-NNN: start implementation`. An interrupted run keeps its own pending changes.
+1. Inspect `git status --short`. Commit unrelated completed work separately first. A requirement in `in-progress` or `verification` keeps its code and tests uncommitted, because develop commits a requirement only after its PASS; commit only its recorded transition (its requirement file, `docs/TRACEABILITY.md`, `docs/PROGRESS.md`, parent status edits) as `AVE-REQ-NNN: start implementation`. An interrupted run keeps its own pending changes.
 2. `./scripts/verify.sh` passes; fix defects before starting.
 3. Determine the mode; the first match wins:
    - A `product-definition —` line in PROGRESS.md § In progress, or PRODUCT.md status `placeholder` with a file in `docs/product-inputs/`: an interrupted run. Resume at the step after the one that line names, in the procedure it names: an `amendment step <A> of 9` line resumes at amendment step A+1; an `in amendment step <A>, step <N> of 17` line resumes at step N+1 inside amendment step A (default: the first step whose output is missing).
@@ -54,7 +54,7 @@ The fence keeps links in the human's text out of the link check; when the input 
 List every explicit item in the input and classify it: must-have capability, quality expectation, constraint (platform, mandated technology, compliance, budget, deadline) or exclusion. Keep the human's wording. Write must-haves into PRODUCT.md § Must-have features, one line each; the FEAT link follows in step 8:
 
 ```markdown
-- "<human wording>" — [YYYY-MM-DD-<slug>](product-inputs/YYYY-MM-DD-<slug>.md) → [FEAT-NNN](requirements/FEAT-NNN-<slug>.md)
+- "<human wording>" — [YYYY-MM-DD-<slug>](product-inputs/YYYY-MM-DD-<slug>.md) → [AVE-FEAT-NNN](requirements/AVE-FEAT-NNN-<slug>.md)
 ```
 
 Collect every ambiguity and gap for step 10.
@@ -76,9 +76,9 @@ Group behavior into functional areas, one per future epic, in PRODUCT.md § Func
 
 ### Step 8 — Epics, features and requirements (user step 7)
 Create the files from the README templates, parents first:
-1. `EPIC-NNN` per functional area; `goals` lists its GOAL IDs.
-2. `FEAT-NNN` per user-visible capability, `parent: EPIC-NNN`; § User journey names its UJ steps.
-3. `REQ-NNN` per requirement, `parent: FEAT-NNN` (or `EPIC-NNN` for a cross-cutting non-functional requirement). `source: human` when it implements a stated must-have or constraint, with Intent linking `../product-inputs/<file>.md`; otherwise `source: derived`, with Intent naming the need it serves.
+1. `AVE-EPIC-NN` per functional area; `goals` lists its GOAL IDs.
+2. `AVE-FEAT-NNN` per user-visible capability, `parent: AVE-EPIC-NN`; § User journey names its UJ steps.
+3. `AVE-REQ-NNN` per requirement, `parent: AVE-FEAT-NNN` (or `AVE-EPIC-NN` for a cross-cutting non-functional requirement). `source: human` when it implements a stated must-have or constraint, with Intent linking `../product-inputs/<file>.md`; otherwise `source: derived`, with Intent naming the need it serves.
 
 Every parent lists its children with relative links. First Status line: `- YYYY-MM-DD — proposed — specified from <input file name> (product-definition)`. Complete the FEAT links in PRODUCT.md § Must-have features, § Functional areas (EPIC per area) and each journey.
 

@@ -46,12 +46,12 @@ Whatever the scope, the drift check in section 4 covers every section of `docs/A
 ## 2. Read the documented architecture
 
 1. `docs/ARCHITECTURE.md` in full. When its `**Status:**` line reads `placeholder`, no system architecture exists yet: review only the ADR set (section 4, Obsolete ADRs), state this in § Summary, and skip the code sections.
-2. The index in `docs/decisions/README.md`. Read every Accepted ADR in full for a whole-repository scope; for a narrower scope, read those that govern it (`grep -rl -e "<component or path>" -e "REQ-NNN" docs/decisions/`). Note every Proposed ADR.
+2. The index in `docs/decisions/README.md`. Read every Accepted ADR in full for a whole-repository scope; for a narrower scope, read those that govern it (`grep -rl -e "<component or path>" -e "AVE-REQ-NNN" docs/decisions/`). Note every Proposed ADR.
 3. The requirement set:
 
    ```sh
-   grep -H -E '^(title|type|status|priority):' docs/requirements/REQ-*.md
-   grep -l -E '^type: (non-functional|constraint)' docs/requirements/REQ-*.md
+   grep -H -E '^(title|type|status|priority):' docs/requirements/AVE-REQ-*.md
+   grep -l -E '^type: (non-functional|constraint)' docs/requirements/AVE-REQ-*.md
    ```
 
    Read in full every non-functional and constraint requirement that is not `superseded`, and, for an `M<n>` scope, the milestone's requirements. Read `docs/PRODUCT.md` § Product boundaries, § Security and privacy expectations, § Performance expectations and § Deployment assumptions.
@@ -103,7 +103,7 @@ Verdict: `ACTION-REQUIRED` when any finding is blocking; `ATTENTION` when any is
 
 - **ARCHITECTURE.md corrections**: section and the replacement content in one or two sentences each.
 - **ADR actions**: supersede `ADR-NNN` (with the proposed decision), a new ADR for an undocumented significant decision, or a decision on a pending Proposed ADR. Draft files only under ground rule 1.
-- **Follow-up requirements**: title, type, priority, parent (`FEAT-NNN` or `EPIC-NNN`), intent and the source finding. The lead allocates IDs and creates them as `proposed`.
+- **Follow-up requirements**: title, type, priority, parent (`AVE-FEAT-NNN` or `AVE-EPIC-NN`), intent and the source finding. The lead allocates IDs and creates them as `proposed`.
 - **Technical-debt entries** for minor findings worth tracking.
 - **Escalations**: only decisions meeting a criterion in `CLAUDE.md` § Autonomy and escalation, each with a recommended default.
 
@@ -120,7 +120,7 @@ Scope: <resolved scope> — HEAD <short hash> — YYYY-MM-DD
 ### Blocking
 1. <title> — <dimension>
    - Evidence: <path:line, or document § section>
-   - Impact: <REQ-NNN | ADR-NNN | driver | quality attribute> — <consequence>
+   - Impact: <AVE-REQ-NNN | ADR-NNN | driver | quality attribute> — <consequence>
    - Change: <smallest recommended change>
    - Effort: S | M | L
 ### Important

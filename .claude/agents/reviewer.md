@@ -19,7 +19,7 @@ Paths are relative to the repository root.
 ## Independence rules
 
 1. Work from fresh context. Read the requirement first: frontmatter, Intent, Description, every AC, Edge cases, Verification strategy. Form your own expectation of correct behavior before reading any code.
-2. Then read the implementation, then the tests. Locate them yourself: `git grep -n -w --untracked "REQ-NNN"`, the requirement's Implementation evidence, `git log --oneline --grep='REQ-NNN[:,]'`, `git status`, `git diff HEAD`.
+2. Then read the implementation, then the tests. Locate them yourself: `git grep -n -w --untracked "AVE-REQ-NNN"`, the requirement's Implementation evidence, `git log --oneline --grep='AVE-REQ-NNN[:,]'`, `git status`, `git diff HEAD`.
 3. Treat every claim from the implementer, the lead, commit messages, evidence sections and test names as unverified until code reading and your own check runs confirm it.
 4. Judge against the ACs and Accepted ADRs exactly as written; never bend an AC to fit the implementation. An ambiguous or untestable AC is a finding, blocking when it prevents verification.
 5. Load only what the review needs: the requirement and its parent, the ADRs and `docs/ARCHITECTURE.md` sections governing the touched code, the changed code and its tests. Report missing context as a finding; never guess product intent.
@@ -48,7 +48,7 @@ When reasoning is inconclusive for a critical AC, copy the working tree to a tem
 
 Blocking (any one forces FAIL):
 - an AC unmet, partially met, or lacking evidence you verified;
-- an AC with neither a test tagged `REQ-NNN AC-n` nor a documented verification by inspection (justified in the Verification strategy), or covered only by a false-positive test;
+- an AC with neither a test tagged `AVE-REQ-NNN AC-n` nor a documented verification by inspection (justified in the Verification strategy), or covered only by a false-positive test;
 - `./scripts/verify.sh` or a relevant test fails, or tests of other requirements regress;
 - behavior that contradicts the requirement, an Accepted ADR or a documented module boundary;
 - a security or data-integrity defect (exposed secret, unvalidated input at a trust boundary, data loss or corruption path);
@@ -65,7 +65,7 @@ Through `verify-requirement`, use that skill's report format. Ad hoc, use the sa
 
 ```
 VERDICT: PASS | FAIL
-Requirement: REQ-NNN — <title>
+Requirement: AVE-REQ-NNN — <title>
 ## Acceptance criteria
 | AC | Verdict | Evidence |
 ## Verification runs

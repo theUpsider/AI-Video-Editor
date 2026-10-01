@@ -51,7 +51,7 @@ Copy it, replace every `<…>`, keep the headings verbatim and in order.
 Proposed — <YYYY-MM-DD>
 
 ## Context
-<The problem, forces and constraints. Cite REQ-NNN, ASM-NNN, ADR-NNN and the architectural drivers in docs/ARCHITECTURE.md.>
+<The problem, forces and constraints. Cite AVE-REQ-NNN, ASM-NNN, ADR-NNN and the architectural drivers in docs/ARCHITECTURE.md.>
 
 ## Decision
 <What is decided, stated imperatively and specifically: scope, boundaries, versions where relevant.>
@@ -63,7 +63,7 @@ Proposed — <YYYY-MM-DD>
 - <Positive and negative effects, follow-up work (new requirements, verify.sh steps, ARCHITECTURE.md updates), revisit triggers.>
 
 ## Related requirements
-- [REQ-NNN — <Title>](../requirements/REQ-NNN-<slug>.md), or "None (process-level)."
+- [AVE-REQ-NNN — <Title>](../requirements/AVE-REQ-NNN-<slug>.md), or "None (process-level)."
 ```
 
 ## Status lifecycle
@@ -125,3 +125,10 @@ The lead adds a row for every ADR and updates its status on each transition.
 | ADR | Title | Status |
 |---|---|---|
 | [ADR-001](ADR-001-specification-driven-development-workflow.md) | Specification-driven development workflow | Accepted — 2026-10-01 |
+| [ADR-002](ADR-002-technology-stack.md) | Use Python/FastAPI, SQLite, FFmpeg and React/TypeScript as the version-one stack | Accepted — 2026-10-01 |
+| [ADR-003](ADR-003-requirements-baseline-import.md) | Adopt the AVE requirement IDs as working IDs over an immutable baseline | Accepted — 2026-10-01 |
+| [ADR-004](ADR-004-exact-time-and-composition-model.md) | Exact rational time and one typed, versioned composition document | Accepted — 2026-10-01 |
+| [ADR-005](ADR-005-segmented-cpu-reference-renderer.md) | Segmented CPU reference renderer with decoded-output validation | Accepted — 2026-10-01 |
+| [ADR-006](ADR-006-sqlite-revisions-and-durable-jobs.md) | SQLite revisions and a durable job table consumed by a separate worker | Accepted — 2026-10-01 |
+| [ADR-007](ADR-007-ai-integration-boundaries.md) | Separate provider, agent-runtime, analysis and MCP integrations behind the command service | Accepted — 2026-10-01 |
+| [ADR-008](ADR-008-local-speech-recognition.md) | Pluggable local ASR: faster-whisper when cached, bundled PocketSphinx as the offline floor | Accepted — 2026-10-01 |

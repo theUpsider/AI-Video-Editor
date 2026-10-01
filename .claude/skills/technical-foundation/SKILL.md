@@ -33,7 +33,7 @@ Turn the defined product into a verified technical base: a decided stack, a docu
 Read only:
 - PRODUCT.md § Product boundaries, § Security and privacy expectations, § Performance expectations, § Deployment assumptions;
 - ARCHITECTURE.md § Architectural drivers;
-- non-functional and constraint requirements: `grep -l -e '^type: non-functional' -e '^type: constraint' docs/requirements/REQ-*.md`;
+- non-functional and constraint requirements: `grep -l -e '^type: non-functional' -e '^type: constraint' docs/requirements/AVE-REQ-*.md`;
 - the M1 entry in ROADMAP.md and its requirement files.
 
 Derive: delivery form and platforms; data shapes, sizes and volumes; latency and throughput budgets; long-running work; external services; security and privacy constraints; mandated technologies. Append technical drivers that are missing to ARCHITECTURE.md § Architectural drivers with their source IDs. A testable technical need no requirement covers becomes a `proposed`, `source: derived` requirement (next free ID per [docs/requirements/README.md](../../../docs/requirements/README.md); first Status line `- YYYY-MM-DD — proposed — technical need derived by technical-foundation (lead)`). List it in an existing parent: the FEAT it serves, or the EPIC for a cross-cutting non-functional requirement. Place it in the ROADMAP.md milestone that needs it, ahead of its dependents in that milestone's dependency order, and add one Re-planning log row for the batch. When it lands in M1, refine it to the Definition of Ready now and record the `ready` transition. An unverifiable premise becomes an `ASM-NNN`.
@@ -67,7 +67,7 @@ For each Proposed draft:
 
 ### Step 6 — Fill ARCHITECTURE.md
 1. Replace the Status line with `**Status:** current — stack selected YYYY-MM-DD.`
-2. Fill Overview, System context (diagram in a fenced block), Components and boundaries (dependency direction; external services behind interfaces), Data model and persistence, Integration points (contract, failure handling, credentials by variable name), Technology stack (one row per concern, with its ADR), Cross-cutting concerns, Deployment and environments, Testing strategy (levels, tools, test locations, `REQ-NNN AC-n` tagging, fakes, and the commands that run each level, one test file, the tests for one `REQ-NNN` (a test-name filter, or the files `git grep -l -w --untracked "REQ-NNN" -- ':!*.md'` lists when tags sit in comments), and the separate live-service checks of step 11).
+2. Fill Overview, System context (diagram in a fenced block), Components and boundaries (dependency direction; external services behind interfaces), Data model and persistence, Integration points (contract, failure handling, credentials by variable name), Technology stack (one row per concern, with its ADR), Cross-cutting concerns, Deployment and environments, Testing strategy (levels, tools, test locations, `AVE-REQ-NNN AC-n` tagging, fakes, and the commands that run each level, one test file, the tests for one `AVE-REQ-NNN` (a test-name filter, or the files `git grep -l -w --untracked "AVE-REQ-NNN" -- ':!*.md'` lists when tags sit in comments), and the separate live-service checks of step 11).
 3. Add `### Local development` under Deployment and environments: the setup and run commands, plus `./scripts/verify.sh` as the full check (targeted test commands live in § Testing strategy). Implementers, worktrees, the cloud setup and milestone-review's journey walk use it; README.md points to it in one line.
 4. Replace every `_TBD` line; a deferred concern reads `Deferred to M<n> — <trigger>`.
 5. Run `./scripts/verify.sh`, inspect `git diff`, and commit `docs: select technology stack (ADR-NNN–ADR-NNN)`: ADRs, index, ARCHITECTURE.md, requirements created in step 1 and their parents, ROADMAP.md, assumptions, README.md, PROGRESS.md.
@@ -77,7 +77,7 @@ The skeleton is M1's first requirement(s): the thinnest slice of a core journey 
 1. Set M1 to `in-progress` in ROADMAP.md and PROGRESS.md § Current milestone. Record each skeleton requirement's transition to `in-progress` per [develop](../develop/SKILL.md) § Recording a transition.
 2. Create the project structure from § Components and boundaries, with dependency manifests, lockfiles and pinned versions.
 3. Implement the skeleton yourself through [implement-requirement](../implement-requirement/SKILL.md); its structure shapes every later file.
-4. Write one real test per chosen test level (unit, integration, end-to-end or smoke), each exercising skeleton behavior and tagged `REQ-NNN AC-n`. Never add placeholder or always-passing tests.
+4. Write one real test per chosen test level (unit, integration, end-to-end or smoke), each exercising skeleton behavior and tagged `AVE-REQ-NNN AC-n`. Never add placeholder or always-passing tests.
 5. Code external services against their interface; tests and verify.sh use the fake.
 
 ### Step 8 — Wire real checks into scripts/verify.sh
@@ -112,7 +112,7 @@ Take each skeleton requirement through [develop](../develop/SKILL.md) §§ 6–8
 1. ASSUMPTIONS.md: new assumptions (toolchain versions, environments); assumptions replaced by ADRs set to `superseded`.
 2. PROGRESS.md: M1 `in-progress`, objective, decisions (ADR list), blockers, verification status.
 3. Run `./scripts/verify.sh`; inspect `git status` and `git diff`.
-4. Delete the `technical-foundation —` line from PROGRESS.md § In progress and commit at once, so an interrupted run never loses its checkpoint before the commit. Commit the skeleton and its toolchain as one coherent unit, since each needs the other: `REQ-NNN: <imperative summary>` (several: `REQ-NNN, REQ-NNN: …`) with manifests, configuration, code, tests, verify.sh, CI, .gitignore, hooks, .env.example, evidence, traceability and progress.
+4. Delete the `technical-foundation —` line from PROGRESS.md § In progress and commit at once, so an interrupted run never loses its checkpoint before the commit. Commit the skeleton and its toolchain as one coherent unit, since each needs the other: `AVE-REQ-NNN: <imperative summary>` (several: `AVE-REQ-NNN, AVE-REQ-NNN: …`) with manifests, configuration, code, tests, verify.sh, CI, .gitignore, hooks, .env.example, evidence, traceability and progress.
 5. After the next push, check the CI run; when it is green, set ASM-003 to `confirmed`.
 
 ## Exit criteria

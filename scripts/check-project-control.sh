@@ -13,6 +13,8 @@
 # Portability: bash 3.2+, POSIX awk/grep/sed (mawk, gawk, BSD awk, busybox); CRLF tolerant.
 # Maintenance: add every file other files depend on to REQUIRED_FILES; keep the rules in sync with
 # docs/requirements/README.md, docs/decisions/README.md, docs/TRACEABILITY.md and docs/PROGRESS.md.
+# Baseline integrity (the requirements package and its import) is scripts/check_baseline.py's job.
+# Regression tests: scripts/tests/run.sh (test-checker.sh exercises every rule here).
 
 set -uo pipefail
 export LC_ALL=C
@@ -34,6 +36,7 @@ docs/PROGRESS.md
 docs/ASSUMPTIONS.md
 docs/TRACEABILITY.md
 docs/requirements/README.md
+docs/requirements/IMPORT_MAPPING.md
 docs/decisions/README.md
 docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/settings.json
@@ -54,7 +57,11 @@ docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/hooks/session-start.sh
 .claude/hooks/stop-verify.sh
 scripts/verify.sh
+scripts/verify.d/10-requirements.sh
+scripts/verify.d/90-tooling.sh
 scripts/check-project-control.sh
+scripts/check_baseline.py
+scripts/requirements/import_baseline.py
 scripts/lib/verify-state.sh
 '
 
@@ -328,7 +335,7 @@ AWK
 # section=trace docs/TRACEABILITY.md.
 IFS= read -r -d '' AWK_REQUIREMENTS <<'AWK' || true
 BEGIN {
-  STATUSES = "proposed|ready|in-progress|verification|done|blocked|superseded"
+  STATUSES = "proposed|ready|in-progress|verification|done|blocked|superseded|deferred"
   PRIORITIES = "must|should|could"
   TYPES = "functional|non-functional|constraint"
   SOURCES = "human|derived"
@@ -360,14 +367,14 @@ function start_requirement(   base) {
   n++
   path[n] = FILENAME
   base = basename(FILENAME)
-  valid[n] = (base ~ /^(EPIC|FEAT|REQ)-[0-9][0-9][0-9]+-[a-z0-9-]+\.md$/)
+  valid[n] = (base ~ /^(AVE-EPIC-[0-9][0-9]+|AVE-FEAT-[0-9][0-9][0-9]+|AVE-REQ-[0-9][0-9][0-9]+)-[a-z0-9-]+\.md$/)
   if (!valid[n]) {
-    err(FILENAME, "filename must match EPIC-NNN-<slug>.md, FEAT-NNN-<slug>.md or REQ-NNN-<slug>.md (slug: [a-z0-9-]+)")
+    err(FILENAME, "filename must match AVE-EPIC-NN-<slug>.md, AVE-FEAT-NNN-<slug>.md or AVE-REQ-NNN-<slug>.md (slug: [a-z0-9-]+)")
     return
   }
-  match(base, /^[A-Z]+-[0-9]+/)
+  match(base, /^AVE-[A-Z]+-[0-9]+/)
   fid[n] = substr(base, 1, RLENGTH)
-  kind[n] = substr(base, 1, index(base, "-") - 1)
+  kind[n] = substr(fid[n], 5, index(substr(fid[n], 5), "-") - 1)
   in_ac = 0
   in_status = 0
 }
@@ -417,9 +424,9 @@ function validate_requirement(i,   p, k, status) {
     if (k == "REQ") {
       check_enum(i, "type", TYPES)
       check_enum(i, "source", SOURCES)
-      check_parent(i, "^(FEAT|EPIC)-[0-9][0-9][0-9]+$", "FEAT-NNN or EPIC-NNN")
+      check_parent(i, "^AVE-(FEAT-[0-9][0-9][0-9]+|EPIC-[0-9][0-9]+)$", "AVE-FEAT-NNN or AVE-EPIC-NN")
     }
-    if (k == "FEAT") check_parent(i, "^EPIC-[0-9][0-9][0-9]+$", "EPIC-NNN")
+    if (k == "FEAT") check_parent(i, "^AVE-EPIC-[0-9][0-9]+$", "AVE-EPIC-NN")
     if (k == "EPIC") check_goals(i)
     if (fmv(i, "status") == "superseded") check_superseded_by(i)
   }
@@ -492,7 +499,7 @@ function scan_trace(line,   t, norm, cells) {
   norm = t
   gsub(/[ \t]/, "", norm)
   if (norm == MATRIX_HEADER) { in_matrix = 1; matrix_found = 1; return }
-  if (matrix_found && !in_matrix && substr(t, 1, 1) == "|" && t ~ /REQ-[0-9][0-9][0-9]/) {
+  if (matrix_found && !in_matrix && substr(t, 1, 1) == "|" && t ~ /AVE-REQ-[0-9][0-9][0-9]/) {
     err(trace_path, "line " FNR ": matrix row separated from the table (remove the blank or text line above it)")
     return
   }
@@ -503,7 +510,7 @@ function scan_trace(line,   t, norm, cells) {
   rows++
   row_line[rows] = FNR
   row_status[rows] = trim(cells[3])
-  row_id[rows] = match(cells[2], /REQ-[0-9][0-9][0-9]+/) ? substr(cells[2], RSTART, RLENGTH) : ""
+  row_id[rows] = match(cells[2], /AVE-REQ-[0-9][0-9][0-9]+/) ? substr(cells[2], RSTART, RLENGTH) : ""
 }
 
 function validate_matrix(   r, id, where, i) {
@@ -513,7 +520,7 @@ function validate_matrix(   r, id, where, i) {
   for (r = 1; r <= rows; r++) {
     id = row_id[r]
     where = "line " row_line[r] ": "
-    if (id == "") { err(trace_path, where "matrix row has no REQ-NNN ID in its first cell"); continue }
+    if (id == "") { err(trace_path, where "matrix row has no AVE-REQ-NNN ID in its first cell"); continue }
     if (id in row_seen) { err(trace_path, where "duplicate matrix row for " id); continue }
     row_seen[id] = 1
     if (!(id in owner)) { err(trace_path, where "no requirement file for " id); continue }
@@ -717,10 +724,15 @@ check_progress_headings() {
 }
 
 # Checks 8 and 10 in one awk run. Operands: section=goals [docs/PRODUCT.md] section=req
-# [requirement files...] section=trace [docs/TRACEABILITY.md].
+# [requirement files...] section=trace [docs/TRACEABILITY.md]. README.md (skipped by collect_files)
+# and the generated IMPORT_MAPPING.md are no requirement files.
 check_requirements() {
-  local inputs=0
-  collect_files docs/requirements/*.md
+  local inputs=0 file
+  set --
+  for file in docs/requirements/*.md; do
+    [ "$file" = docs/requirements/IMPORT_MAPPING.md ] || set -- "$@" "$file"
+  done
+  collect_files "$@"
   COUNT_REQUIREMENTS=$FILE_COUNT
   set -- section=goals
   if [ -f docs/PRODUCT.md ]; then set -- "$@" docs/PRODUCT.md; inputs=$((inputs + 1)); fi

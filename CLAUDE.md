@@ -21,7 +21,7 @@ The repository is the single source of truth. Canonical state:
 
 Sync rule: keep these files synchronized with the implementation and update them in the same commit as the change they describe. Any disagreement between code and documents is a defect: resolve it at once by fixing the code or by updating the document with a logged reason.
 
-IDs: `GOAL-001`, `UJ-001`, `EPIC-001`, `FEAT-001`, `REQ-001`, `AC-1` (globally `REQ-001 AC-1`), `ADR-001`, `ASM-001`, milestones `M1`. Allocate sequentially, zero-padded to 3 digits; never reuse an ID or rename a file slug. A line starting with `_TBD:` marks an unfilled placeholder (`grep -rn '^_TBD' docs --exclude=README.md`; README files hold templates).
+IDs: `GOAL-001`, `UJ-001`, `AVE-EPIC-01`, `AVE-FEAT-001`, `AVE-REQ-001`, `AC-1` (globally `AVE-REQ-001 AC-1`), scenarios `AT-01`, `ADR-001`, `ASM-001`, milestones `M0`…`M7`. Requirement IDs come from the immutable baseline [ai-video-editor-requirements/](ai-video-editor-requirements/README.md) (never edit it; [import mapping](docs/requirements/IMPORT_MAPPING.md)); new ones continue at `AVE-REQ-102`. Allocate sequentially; never reuse an ID or rename a file slug. A line starting with `_TBD:` marks an unfilled placeholder (`grep -rn '^_TBD' docs --exclude=README.md`; README files hold templates).
 
 ## Workflow
 
@@ -37,8 +37,16 @@ Pipeline: human goals → `product-definition` → `technical-foundation` → `d
 | [verify-requirement](.claude/skills/verify-requirement/SKILL.md) | Before any requirement moves to `done`; runs as the independent reviewer |
 | [architecture-review](.claude/skills/architecture-review/SKILL.md) | Milestone boundaries (inside `milestone-review`) and before large refactors |
 | [milestone-review](.claude/skills/milestone-review/SKILL.md) | Every requirement of the current milestone is done; product-level check |
+| [ai-video-editor-delivery](.claude/skills/ai-video-editor-delivery/SKILL.md) | Product-specific delivery rules: evidence contract, media verification, workflow improvement |
 
 The skills hold the procedures; this file holds the rules they share.
+
+## Product invariants (AI Video Editor)
+
+- Originals never change; derived files are registered and rebuildable. UI, AI and MCP edit one typed, versioned composition through the command service (validated, atomic, scoped, revision-checked, undoable).
+- Time is exact and domain-labeled (rational rates, half-open intervals; 60 ≠ 60000/1001); sync evidence is separate from final audio; insufficient evidence is reported, never invented.
+- Verify real decoded output with independent oracles. Mocks prove contracts only; CPU tests never prove GPU paths; missing credentials, models or devices are reported gaps ([ENVIRONMENT_CAPABILITIES.md](docs/ENVIRONMENT_CAPABILITIES.md)).
+- Object/motion tracking (AVE-REQ-101) and continuous video understanding (AVE-REQ-067) stay `deferred`.
 
 ## Development principles
 
@@ -83,7 +91,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 - Definition of Done: a requirement moves to `done` only when all hold (full rules in [docs/requirements/README.md](docs/requirements/README.md)):
   1. implementation exists;
   2. every AC is satisfied and ticked;
-  3. tests or other verification exist for every AC, tagged `REQ-NNN AC-n`;
+  3. tests or other verification exist for every AC, tagged `AVE-REQ-NNN AC-n`;
   4. `./scripts/verify.sh` passes;
   5. `verify-requirement` returned PASS with no blocking findings;
   6. traceability is updated: Implementation evidence and Test evidence filled (no `_TBD`), TRACEABILITY.md row with matching status.
@@ -109,7 +117,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 ## Git
 
 - Commit coherent, completed units; never bundle unrelated changes. Commit a requirement together with its tests, evidence, traceability and progress updates.
-- Messages: `REQ-012: <imperative summary>` (several: `REQ-012, REQ-013: …`). Other work uses a type prefix: `docs:`, `chore:`, `build:`, `ci:`, `test:`, `refactor:`, `fix:`.
+- Messages: `AVE-REQ-012: <imperative summary>` (several: `AVE-REQ-012, AVE-REQ-013: …`). Other work uses a type prefix: `docs:`, `chore:`, `build:`, `ci:`, `test:`, `refactor:`, `fix:`.
 - Inspect `git status` and `git diff` before every commit and before declaring a task complete.
 - Never rewrite shared history, force-push shared branches, or commit secrets.
 - Cloud sessions (`CLAUDE_CODE_REMOTE=true`) run in ephemeral containers: push the working branch after each commit.
@@ -120,7 +128,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 - After compaction or session restart, run `resume-project`. The SessionStart hook injects a "Project state" block (branch, recent commits, last verification, PROGRESS.md). When PROGRESS.md and the repository disagree, the repository wins; fix PROGRESS.md.
 - Never depend on conversation history for durable knowledge. Persist it where it belongs: state → PROGRESS.md, decisions → ADRs, assumptions → ASSUMPTIONS.md, scope → requirement files.
 - Keep PROGRESS.md concise (under ~80 lines) and current; update it after every requirement transition. § Recently completed and § Important recent decisions keep their five newest entries; Git, Status logs and the ADR index hold the rest.
-- Load only the documents the task needs. Prefer targeted inspection: `git grep -n -w --untracked "REQ-012"`, `grep -l '^status: ready' docs/requirements/*.md`, single sections.
+- Load only the documents the task needs. Prefer targeted inspection: `git grep -n -w --untracked "AVE-REQ-012"`, `grep -l '^status: ready' docs/requirements/*.md`, single sections.
 - Use subagents to isolate exploratory or specialized context.
 - Keep canonical documents authoritative: delete an instruction the moment it becomes obsolete, so contradictions never accumulate.
 

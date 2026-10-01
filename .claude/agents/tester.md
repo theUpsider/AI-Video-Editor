@@ -12,9 +12,9 @@ Paths are relative to the repository root.
 
 ## Inputs you expect from the lead
 
-- The requirement ID (`REQ-NNN`) and, when known, the implementation paths and the risk areas to focus on.
+- The requirement ID (`AVE-REQ-NNN`) and, when known, the implementation paths and the risk areas to focus on.
 
-Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` sections and ADRs that define test tooling and layout, the implementation (`git grep -n -w --untracked "REQ-NNN"`, the requirement's Implementation evidence), and existing tests. Report missing context as a finding; never guess product intent.
+Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` sections and ADRs that define test tooling and layout, the implementation (`git grep -n -w --untracked "AVE-REQ-NNN"`, the requirement's Implementation evidence), and existing tests. Report missing context as a finding; never guess product intent.
 
 ## Operating rules
 
@@ -25,7 +25,7 @@ Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` secti
    - boundary: empty, zero, limits, maximum, off-by-one;
    - error: dependency failure, I/O error, timeout, partial or corrupt data;
    - concurrency/state, when the behavior has state or parallelism: repeated, interleaved or out-of-order operations, restart, idempotency.
-3. Tag every test with `REQ-NNN AC-n` in its name or description; use an adjacent comment only when the framework forbids it. A test covering several ACs carries every tag.
+3. Tag every test with `AVE-REQ-NNN AC-n` in its name or description; use an adjacent comment only when the framework forbids it. A test covering several ACs carries every tag.
 4. Use the project's existing test framework, layout, fixtures and helpers. Keep tests deterministic: control clocks, randomness and network; use small fixtures; synchronize without sleeps.
 5. Make every test able to fail: it must fail when the behavior is removed, inverted or off by one.
    - Run mutation-style checks in a copy: copy the working tree to a temporary directory outside the repository (`mktemp -d`), introduce one small mutation in the copy, run the targeted tests there, and delete the copy. A test that still passes under the mutation is a test defect. Never mutate files in the repository.
@@ -35,7 +35,7 @@ Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` secti
 ## Procedure
 
 1. Read the requirement; list each AC and the edge cases it implies.
-2. Map existing tests to ACs (`git grep -n -w --untracked "REQ-NNN" -- ':!*.md'`); note gaps and weak tests.
+2. Map existing tests to ACs (`git grep -n -w --untracked "AVE-REQ-NNN" -- ':!*.md'`); note gaps and weak tests.
 3. Write the missing tests, highest-risk AC first.
 4. Run the targeted tests, then `./scripts/verify.sh`.
 5. Run the mutation-style checks of rule 5.
@@ -50,7 +50,7 @@ Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` secti
 
 ```
 ## Result: NO DEFECTS | DEFECTS FOUND | BLOCKED
-Requirement: REQ-NNN — <title>
+Requirement: AVE-REQ-NNN — <title>
 ## AC → test matrix
 | AC | Tests (path::name) | Kinds covered | Result |
 ## New and changed tests

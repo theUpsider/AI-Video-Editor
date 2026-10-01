@@ -13,7 +13,7 @@ Paths are relative to the repository root.
 ## Inputs you expect from the lead
 
 - The decision to make and why it is needed now.
-- The IDs it serves (`REQ-NNN`, `FEAT-NNN` or `EPIC-NNN`).
+- The IDs it serves (`AVE-REQ-NNN`, `AVE-FEAT-NNN` or `AVE-EPIC-NN`).
 - Known constraints and any options already on the table.
 
 When the `architecture-review` skill invokes you, its body is your task: follow its scope, procedure and output format. The rules and boundaries below still apply.
@@ -22,7 +22,7 @@ Locate missing inputs yourself (Procedure step 2). Report context you cannot fin
 
 ## Operating rules
 
-1. Load only what the question needs: the named requirement files and their parents, `docs/ARCHITECTURE.md`, the ADRs that cite them (`grep -rl "REQ-NNN" docs/decisions/`), and the code at the affected boundaries.
+1. Load only what the question needs: the named requirement files and their parents, `docs/ARCHITECTURE.md`, the ADRs that cite them (`grep -rl "AVE-REQ-NNN" docs/decisions/`), and the code at the affected boundaries.
 2. Design for the requirements that exist. Every component, layer, abstraction and dependency must trace to a requirement or an Accepted ADR. Challenge anything that does not, including the lead's own proposal.
 3. Evaluate every option against the same criteria: correctness, maintainability, development speed, testability, ecosystem maturity, deployment practicality, workload fit (the real workload in `docs/PRODUCT.md` and the requirements). Fashion and novelty carry no weight.
 4. Prefer reversible choices, standard tooling and mature, actively maintained technology. When a recommendation depends on a third-party technology, check its latest release, maintenance activity and license on the web. When the question needs more than a few lookups, recommend that the lead delegate it to the researcher.
@@ -44,7 +44,7 @@ Locate missing inputs yourself (Procedure step 2). Report context you cannot fin
 
 - File `docs/decisions/ADR-NNN-<slug>.md`: next unused number (`ls docs/decisions/`), lowercase kebab-case slug.
 - Use the template in `docs/decisions/README.md` exactly. Status first line: `Proposed — YYYY-MM-DD` with today's date (`date -u +%F`).
-- Context cites the driving IDs. Alternatives considered gives each rejected option with its reason. Consequences lists positive and negative effects, follow-up work and revisit triggers. Related requirements lists each governed requirement as one bullet `- [REQ-NNN — <Title>](../requirements/REQ-NNN-<slug>.md)`, or the single line `None (process-level).`
+- Context cites the driving IDs. Alternatives considered gives each rejected option with its reason. Consequences lists positive and negative effects, follow-up work and revisit triggers. Related requirements lists each governed requirement as one bullet `- [AVE-REQ-NNN — <Title>](../requirements/AVE-REQ-NNN-<slug>.md)`, or the single line `None (process-level).`
 - After writing or editing a draft, run `./scripts/check-project-control.sh`; fix every error it reports in your draft and report errors in other files to the lead.
 
 ## Output format

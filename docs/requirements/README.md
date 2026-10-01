@@ -2,23 +2,36 @@
 
 This directory holds every epic, feature and requirement, one Markdown file each. This README is
 the authoritative format. [scripts/check-project-control.sh](../../scripts/check-project-control.sh)
-enforces its mechanical rules (see [Enforced checks](#enforced-checks)). Traceability conventions
-live in [docs/TRACEABILITY.md](../TRACEABILITY.md); milestone membership lives in
+and [scripts/check_baseline.py](../../scripts/check_baseline.py) enforce its mechanical rules (see
+[Enforced checks](#enforced-checks)). Traceability conventions live in
+[docs/TRACEABILITY.md](../TRACEABILITY.md); milestone membership lives in
 [docs/ROADMAP.md](../ROADMAP.md); product goals and journeys live in [docs/PRODUCT.md](../PRODUCT.md).
+
+The working files start as an import of the immutable requirements baseline
+[ai-video-editor-requirements/](../../ai-video-editor-requirements/README.md) (package v1.0) and keep its
+stable AVE IDs ([ADR-003](../decisions/ADR-003-requirements-baseline-import.md)).
+[IMPORT_MAPPING.md](IMPORT_MAPPING.md) maps every baseline ID to its working file; see
+[Baseline import and integrity](#baseline-import-and-integrity).
 
 ## IDs and files
 
 | Kind | ID | File | Links upward via |
 |---|---|---|---|
-| Epic | `EPIC-NNN` | `EPIC-NNN-<slug>.md` | `goals: [GOAL-NNN]` (PRODUCT.md § Product goals) |
-| Feature | `FEAT-NNN` | `FEAT-NNN-<slug>.md` | `parent: EPIC-NNN` |
-| Requirement | `REQ-NNN` | `REQ-NNN-<slug>.md` | `parent: FEAT-NNN`, or `parent: EPIC-NNN` for a cross-cutting non-functional requirement or a removal (product-definition amendment mode) |
-| Acceptance criterion | `AC-n` | inside its REQ file | referenced globally as `REQ-NNN AC-n` |
+| Epic | `AVE-EPIC-NN` | `AVE-EPIC-NN-<slug>.md` | `goals: [GOAL-NNN]` (PRODUCT.md § Product goals) |
+| Feature | `AVE-FEAT-NNN` | `AVE-FEAT-NNN-<slug>.md` | `parent: AVE-EPIC-NN` |
+| Requirement | `AVE-REQ-NNN` | `AVE-REQ-NNN-<slug>.md` | `parent: AVE-FEAT-NNN`, or `parent: AVE-EPIC-NN` for a cross-cutting non-functional requirement or a removal (product-definition amendment mode) |
+| Acceptance criterion | `AC-n` | inside its requirement file | referenced globally as `AVE-REQ-NNN AC-n` |
 
-1. `NNN` has at least 3 digits, zero-padded, allocated sequentially per kind. Never reuse an ID,
-   including the IDs of superseded files.
-2. Slug: lowercase kebab-case `[a-z0-9-]+`, a few words from the title, fixed at creation.
-   Never rename a file; the ID is the anchor.
+In this README, "EPIC", "FEAT" and "REQ" name the three kinds of file.
+
+1. Epic numbers have at least 2 digits (`AVE-EPIC-01`, as in the baseline); feature and
+   requirement numbers have at least 3 (`AVE-FEAT-001`, `AVE-REQ-001`). All are zero-padded and
+   allocated sequentially per kind. The baseline IDs are used verbatim; IDs allocated later
+   continue after the baseline's last ones (`AVE-EPIC-11`, `AVE-FEAT-021`, `AVE-REQ-102`), and
+   such requirements carry `source: derived`. Never reuse an ID, including the IDs of superseded
+   files.
+2. Slug: lowercase kebab-case `[a-z0-9-]+` from the title (an imported file takes its whole
+   baseline title), fixed at creation. Never rename a file; the ID is the anchor.
 3. Files sit flat in `docs/requirements/`. Never create subdirectories.
 4. Never delete a requirement file; retire it with status `superseded`.
 5. Only the lead (main session) allocates IDs and creates files. Subagents propose follow-up
@@ -27,10 +40,10 @@ live in [docs/TRACEABILITY.md](../TRACEABILITY.md); milestone membership lives i
    number; a removed AC's line is deleted, its number stays retired, and the `## Status` log
    records the removal.
 
-Next free ID (set `K` to `EPIC`, `FEAT` or `REQ`):
+Next free ID (set `K` to `AVE-REQ` or `AVE-FEAT` with `W=3`, or to `AVE-EPIC` with `W=2`):
 
 ```sh
-K=REQ; n=$(ls docs/requirements | sed -n "s/^$K-\([0-9][0-9]*\)-.*/\1/p" | sort -n | tail -1); printf '%s-%03d\n' "$K" $((10#${n:-0} + 1))
+K=AVE-REQ W=3; n=$(ls docs/requirements | sed -n "s/^$K-\([0-9][0-9]*\)-.*/\1/p" | sort -n | tail -1); printf "%s-%0${W}d\n" "$K" $((10#${n:-0} + 1))
 ```
 
 ## Frontmatter
@@ -44,39 +57,51 @@ uses a YAML subset that the checker parses line by line:
 
 | Key | Used in | Allowed values | Meaning |
 |---|---|---|---|
-| `id` | all | `EPIC-NNN`, `FEAT-NNN`, `REQ-NNN` | Equals the ID in the filename and the H1 |
-| `title` | all | short plain text | Equals the title in the H1 |
-| `type` | REQ | `functional`, `non-functional`, `constraint` | functional: observable behavior. non-functional: a quality attribute with a measurable threshold (performance, security, reliability, accessibility, operability). constraint: an imposed limit on the solution (platform, compatibility, compliance, license, mandated technology) |
-| `status` | all | `proposed`, `ready`, `in-progress`, `verification`, `done`, `blocked`, `superseded` | Canonical lifecycle state; see [Status lifecycle](#status-lifecycle) |
-| `priority` | all | `must`, `should`, `could` | must: required for product completion. should: important; scheduled after the musts of its milestone. could: desirable; built when cheap. Exclusions belong in PRODUCT.md § Explicit non-goals |
-| `parent` | FEAT, REQ | FEAT: `EPIC-NNN`. REQ: `FEAT-NNN`, or `EPIC-NNN` for a cross-cutting non-functional requirement or a removal | The parent file exists and lists this child |
+| `id` | all | `AVE-EPIC-NN`, `AVE-FEAT-NNN`, `AVE-REQ-NNN` | Equals the ID in the filename and the H1 |
+| `title` | all | short plain text | Equals the title in the H1; an imported file keeps the baseline title |
+| `type` | REQ | `functional`, `non-functional`, `constraint` | functional: observable behavior. non-functional: a quality attribute with a measurable threshold (performance, security, reliability, accessibility, operability). constraint: an imposed limit on the solution (platform, compatibility, compliance, license, mandated technology or delivery process). Baseline mapping: `functional` → functional, `nonfunctional` → non-functional, `delivery` → constraint |
+| `status` | all | `proposed`, `ready`, `in-progress`, `verification`, `done`, `blocked`, `superseded`, `deferred` | Canonical lifecycle state; see [Status lifecycle](#status-lifecycle) |
+| `priority` | all | `must`, `should`, `could` | must: required for product completion. should: important; scheduled after the musts of its milestone. could: desirable; built when cheap. A `deferred` file carries `could` (the baseline's `future` priority) and stays unbuilt while deferred. Exclusions belong in PRODUCT.md § Explicit non-goals |
+| `parent` | FEAT, REQ | FEAT: `AVE-EPIC-NN`. REQ: `AVE-FEAT-NNN`, or `AVE-EPIC-NN` for a cross-cutting non-functional requirement or a removal | The parent file exists and lists this child |
 | `goals` | EPIC | non-empty list of `GOAL-NNN` | Each goal exists in PRODUCT.md § Product goals |
-| `source` | REQ | `human`, `derived` | human: stated by the human; Intent cites the input file in `docs/product-inputs/`. derived: inferred by Claude (decomposition, baseline capability, technical need) |
+| `source` | REQ | `human`, `derived` | human: stated by the human; Intent cites the human input (an imported file cites its user-brief clauses `U01`–`U27` in [USER_BRIEF.md](../../ai-video-editor-requirements/intake/USER_BRIEF.md); other files cite `docs/product-inputs/`). derived: inferred by Claude (decomposition, baseline capability, technical need); an imported file is derived when its origins hold only the brief's derived clauses `D01`–`D05` |
+| `scope` | REQ | `v1`, `future` | v1: part of version one. future: explicit future scope with status `deferred`. An imported file keeps the baseline scope |
+| `primary_gate` | REQ | `M0`…`M7` (milestones of [ROADMAP.md](../ROADMAP.md)), `FUTURE` | The milestone whose review completes the requirement; `FUTURE` exactly for scope future |
+| `origins` | REQ | flow list of brief clause IDs; `[]` allowed for later derived files | The user-brief clauses the requirement implements |
+| `dependencies` | REQ | flow list of `AVE-REQ-NNN`; `[]` when none | Requirements that are `done` before this one starts; § Dependencies links them |
+| `scenarios` | REQ | flow list of `AT-NN`; `[]` allowed for later derived files | Acceptance scenarios of [ACCEPTANCE_TESTS.md](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) that exercise the requirement |
+| `baseline` | REQ, imported files only | relative path to the baseline requirement file | The immutable source of the imported statement and criteria |
 | `superseded_by` | all, optional, last key | ID of the same kind; for an EPIC or FEAT retired by a removal, the removal REQ | Required when status is `superseded`; names the replacement |
 
 ## Templates
 
 Copy a template, replace every `<…>`, keep the headings verbatim and in order. Unfilled
 sections hold one `_TBD: …_` line. Link children and dependencies with relative links such as
-`[REQ-NNN — Title](REQ-NNN-<slug>.md)`; every link must resolve.
+`[AVE-REQ-NNN — Title](AVE-REQ-NNN-<slug>.md)`; every link must resolve. The import tool fills
+imported files from the same templates (see [Baseline import and integrity](#baseline-import-and-integrity)).
 
 ### Requirement (REQ)
 
 ```markdown
 ---
-id: REQ-NNN
+id: AVE-REQ-NNN
 title: <Title>
 type: functional
 status: proposed
 priority: must
-parent: FEAT-NNN
+parent: AVE-FEAT-NNN
 source: derived
+scope: v1
+primary_gate: M<n>
+origins: []
+dependencies: []
+scenarios: []
 ---
 
-# REQ-NNN — <Title>
+# AVE-REQ-NNN — <Title>
 
 ## Intent
-<Why this requirement exists: the user need, GOAL-NNN or UJ-NNN step it serves. For source: human, cite docs/product-inputs/<file>.md.>
+<Why this requirement exists: the user need, GOAL-NNN or UJ-NNN step it serves. For source: human, cite the human input (brief clause or docs/product-inputs/<file>.md).>
 
 ## Description
 <Precise expected behavior: inputs, outputs, states, rules and limits with concrete values.>
@@ -90,10 +115,11 @@ source: derived
 - <case> — <expected behavior and the AC that covers it, or "out of scope: <reason>">
 
 ## Dependencies
-- <REQ-NNN / ADR-NNN / external service — why>, or "None."
+- <AVE-REQ-NNN / ADR-NNN / external service — why>, or "None."
 
 ## Verification strategy
 - AC-1 — <unit | integration | end-to-end | inspection> — <what is exercised, fixtures, data>
+- Acceptance scenarios: <AT-NN links; scenario tests carry the tag `AT-NN`>, or "None."
 
 ## Implementation evidence
 _TBD: filled by the implementer when the implementation is complete._
@@ -111,7 +137,7 @@ Filled evidence sections look like this:
 ## Implementation evidence
 - `<path/to/module>` — <what it implements> (AC-1, AC-2)
 - `<path/to/other-module>` — <role> (AC-3)
-- Tests: `<path/to/test-file>` — REQ-NNN AC-1, REQ-NNN AC-2, REQ-NNN AC-3
+- Tests: `<path/to/test-file>` — AVE-REQ-NNN AC-1, AVE-REQ-NNN AC-2, AVE-REQ-NNN AC-3
 - Decisions: ADR-NNN, ASM-NNN (or "None.")
 
 ## Test evidence
@@ -120,21 +146,21 @@ Filled evidence sections look like this:
 - AC-1 → `<test location>` — pass
 - AC-2 → `<test location>` — pass
 - AC-3 → inspection: <what was checked and how> — pass
-- Non-blocking findings: <summary with follow-up REQ/ASM IDs, or "None.">
+- Non-blocking findings: <summary with follow-up AVE-REQ/ASM IDs, or "None.">
 ```
 
 ### Epic (EPIC)
 
 ```markdown
 ---
-id: EPIC-NNN
+id: AVE-EPIC-NN
 title: <Title>
 status: proposed
 priority: must
 goals: [GOAL-NNN]
 ---
 
-# EPIC-NNN — <Title>
+# AVE-EPIC-NN — <Title>
 
 ## Goal
 <The product goal(s) this epic serves and the outcome it delivers.>
@@ -143,8 +169,8 @@ goals: [GOAL-NNN]
 <Capabilities included and the boundary of the epic.>
 
 ## Features
-- [FEAT-NNN — <Title>](FEAT-NNN-<slug>.md)
-- Cross-cutting: [REQ-NNN — <Title>](REQ-NNN-<slug>.md)
+- [AVE-FEAT-NNN — <Title>](AVE-FEAT-NNN-<slug>.md)
+- Cross-cutting: [AVE-REQ-NNN — <Title>](AVE-REQ-NNN-<slug>.md)
 
 ## Success criteria
 - <measurable outcome, checked in milestone-review>
@@ -157,14 +183,14 @@ goals: [GOAL-NNN]
 
 ```markdown
 ---
-id: FEAT-NNN
+id: AVE-FEAT-NNN
 title: <Title>
 status: proposed
 priority: must
-parent: EPIC-NNN
+parent: AVE-EPIC-NN
 ---
 
-# FEAT-NNN — <Title>
+# AVE-FEAT-NNN — <Title>
 
 ## Intent
 <The user need this feature satisfies.>
@@ -173,7 +199,7 @@ parent: EPIC-NNN
 <The UJ-NNN step(s) from docs/PRODUCT.md this feature enables.>
 
 ## Requirements
-- [REQ-NNN — <Title>](REQ-NNN-<slug>.md)
+- [AVE-REQ-NNN — <Title>](AVE-REQ-NNN-<slug>.md)
 
 ## Out of scope
 <What this feature deliberately excludes, with the reason.>
@@ -194,7 +220,7 @@ Every requirement is:
 3. **Reasonably scoped**: implementable and verifiable in one focused session.
 4. **Linked to its parent**: `parent` names an existing FEAT (or EPIC) that lists it.
 5. **Traceable to implementation**: `## Implementation evidence` names the files and modules.
-6. **Traceable to verification**: tests carry `REQ-NNN AC-n`; `## Test evidence` records results.
+6. **Traceable to verification**: tests carry `AVE-REQ-NNN AC-n`; `## Test evidence` records results.
 
 Section guidance:
 - **Intent**: one to three sentences on the need and the goal or journey it serves.
@@ -233,6 +259,7 @@ proposed → ready → in-progress → verification → done
 any state → blocked → the prior state     (reason in the Status log and PROGRESS.md § Blockers)
 any state → superseded                    (terminal; superseded_by set)
 done → in-progress                        (reopened with a logged reason)
+deferred                                  (future scope; leaves it only through a human scope change)
 ```
 
 | Value | Display name | Enter when |
@@ -244,6 +271,7 @@ done → in-progress                        (reopened with a logged reason)
 | `done` | Done | Every Definition of Done item holds |
 | `blocked` | Blocked | Progress needs something outside Claude's control |
 | `superseded` | Superseded | A replacement exists |
+| `deferred` | Deferred | The requirement is explicit future scope (`scope: future`); version one excludes it |
 
 Rules:
 1. The lead sets every status. Frontmatter `status` is canonical. Every transition appends
@@ -257,16 +285,24 @@ Rules:
    on resolution return to the prior state and remove the blocker.
 5. Reopening `done`: log the reason (regression, changed AC), untick the affected ACs, and run
    the full Definition of Done again.
-6. EPIC and FEAT status derives from their children: `ready` when every non-superseded child
-   is ready or later; `in-progress` once any child is in progress or later; `verification`
-   while milestone-review checks Feature acceptance or Success criteria after every child is
-   `done`; `done` when every non-superseded child is `done` and Feature acceptance or Success
-   criteria hold; `blocked` when no remaining child can progress. The lead updates them on
-   child transitions. A `superseded` EPIC or FEAT keeps that status.
+6. EPIC and FEAT status derives from their children, leaving out superseded and deferred
+   children: `ready` when every remaining child is ready or later; `in-progress` once any child
+   is in progress or later; `verification` while milestone-review checks Feature acceptance or
+   Success criteria after every remaining child is `done`; `done` when every remaining child is
+   `done` and Feature acceptance or Success criteria hold; `blocked` when no remaining child can
+   progress. An EPIC or FEAT whose every non-superseded child is deferred is `deferred`. The
+   lead updates them on child transitions. A `superseded` EPIC or FEAT keeps that status.
+7. `deferred`: a requirement with `scope: future` holds this status and `primary_gate: FUTURE`.
+   It stays out of `in-progress` and `done`, and no version-one requirement depends on it.
+   Moving it into version one is a product change: the human decides it through
+   `product-definition` amendment mode, a new baseline version carries the new scope, and the
+   Status log records the decision. A version-one requirement never becomes `deferred`.
 
 ## Definition of Ready
 
-A requirement moves to `ready` when:
+A requirement moves to `ready` when all items below hold. An imported requirement starts `ready`
+because the baseline specified it for planning; the lead settles its Edge cases and dependency
+order before it moves to `in-progress`, as its Status log records.
 - [ ] Intent states the need and the goal or journey it serves.
 - [ ] Description specifies the behavior with concrete values.
 - [ ] At least one testable AC exists, and the ACs cover error and boundary behavior.
@@ -277,10 +313,11 @@ A requirement moves to `ready` when:
 
 ## Definition of Done
 
-A requirement moves to `done` only when ALL hold:
+A requirement moves to `done` only when ALL hold. A `deferred` requirement lies outside version
+one: it never moves to `done`, and product completion counts the version-one requirements.
 1. implementation exists;
 2. every AC is satisfied and ticked;
-3. tests or other verification exist for every AC and are tagged with `REQ-NNN AC-n`;
+3. tests or other verification exist for every AC and are tagged with `AVE-REQ-NNN AC-n`;
 4. `./scripts/verify.sh` passes;
 5. [`verify-requirement`](../../.claude/skills/verify-requirement/SKILL.md) (independent
    reviewer) returned PASS with no blocking findings;
@@ -290,16 +327,19 @@ A requirement moves to `done` only when ALL hold:
 ## Changing requirements
 
 `proposed` requirements change freely within rule 2; log substantial changes. "Approved"
-means status `ready` or later. For an approved requirement:
+means status `ready` or later, and `deferred`. For an approved requirement:
 1. Log every change to Intent or ACs in `## Status` with the reason before or with the edit.
-   Never change a requirement silently.
+   Never change a requirement silently. For a changed or removed baseline AC, the log line
+   contains `AC-n changed: <reason>` ([Baseline import and integrity](#baseline-import-and-integrity)).
 2. `source: human` and the change alters product intent, in any status: a change the human
    requested is authorized; apply it through `product-definition` amendment mode, which records
    the input and cites it in the log. Escalate any other such change to the human (CLAUDE.md
    § Autonomy and escalation), leave the requirement unchanged until the answer arrives, and
    continue independent work.
 3. `source: derived`: the lead decides, logs the reason, and records the underlying assumption
-   in docs/ASSUMPTIONS.md when one exists.
+   in docs/ASSUMPTIONS.md when one exists. An imported requirement keeps the requested
+   behavior, safety and testability of its baseline criteria; a change that weakens one goes to
+   the human as in rule 2.
 4. Changing a `done` requirement reopens it (`in-progress`).
 5. Discovered work becomes a new `proposed` requirement. Never expand the current one silently.
 
@@ -332,14 +372,53 @@ requirements that always change together.
 
 When the lead implements directly, the lead also fills Implementation evidence.
 
+## Baseline import and integrity
+
+The human's requirements package lives unchanged in
+[ai-video-editor-requirements/](../../ai-video-editor-requirements/README.md); its `MANIFEST.json`
+pins the SHA-256 hash of every file. The working files in this directory carry the lifecycle.
+
+1. **Never edit the baseline.** A requirement change happens in the working file, with a logged
+   reason; a new baseline version comes only from the human.
+2. **Import.** `python3 scripts/requirements/import_baseline.py`
+   ([source](../../scripts/requirements/import_baseline.py)) creates one working file per
+   baseline epic, feature and requirement and regenerates [IMPORT_MAPPING.md](IMPORT_MAPPING.md).
+   It keeps every existing working file and prints `kept` for it, so a rerun creates only
+   missing files; `--check` lists what a run would create or regenerate and exits 1 when that is
+   anything. An imported requirement holds: the baseline statement verbatim as Description; the
+   baseline criteria verbatim as `- [ ] AC-n <text>` with the same AC numbers; Intent with the
+   goal, the parent feature and links to the origin clauses of
+   [USER_BRIEF.md](../../ai-video-editor-requirements/intake/USER_BRIEF.md) and to the baseline
+   file; Dependencies linking the working files of the baseline dependencies; a Verification
+   strategy naming the criterion-level test tags and the linked
+   [acceptance scenarios](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md); `_TBD:`
+   lines for Edge cases and the evidence sections; a first Status-log line
+   `- 2026-10-01 — ready — imported from baseline v1.0 (lead)` or
+   `- 2026-10-01 — deferred — future scope in baseline (lead)`.
+3. **Value mappings** (also listed in IMPORT_MAPPING.md): type `functional` → functional,
+   `nonfunctional` → non-functional, `delivery` → constraint; priority `must` → must, `future` →
+   could; status `ready` → ready, `deferred` → deferred; source human when the origins include a
+   user clause (`U01`–`U27`) and derived when they hold only derived clauses (`D01`–`D05`).
+4. **Changing an imported requirement.** Log every change in `## Status` (see
+   [Changing requirements](#changing-requirements)). A baseline AC whose text changes, or which
+   is removed, needs a Status-log line containing `AC-n changed: <reason>`; check_baseline.py
+   reports it as a recorded change. Added ACs take the next unused AC number and are reported.
+   `scope`, `parent`, `dependencies`, `origins`, `scenarios`, `baseline`, the title, the type,
+   the priority and the source stay equal to the baseline (mapped); a different value fails the
+   check. A primary gate moved by the roadmap is reported.
+5. **New work.** A requirement found later takes the next free ID after the baseline range
+   (`AVE-REQ-102` onward) with `source: derived`, a `scope` and a `primary_gate`; it is absent
+   from IMPORT_MAPPING.md.
+
 ## Enforced checks
 
 `./scripts/check-project-control.sh` (run by `./scripts/verify.sh`) fails on:
-1. a filename outside the `<KIND>-<NNN>-<slug>.md` pattern (this README excepted);
+1. a filename outside the `AVE-EPIC-NN-<slug>.md`, `AVE-FEAT-NNN-<slug>.md` and
+   `AVE-REQ-NNN-<slug>.md` patterns (this README and IMPORT_MAPPING.md excepted);
 2. an empty file, a missing or unterminated frontmatter block, an empty `title`, a frontmatter
    `id` different from the filename ID, or a duplicate ID;
-3. an invalid `status` or `priority`, or an invalid REQ `type` or `source`;
-4. a missing parent (REQ → FEAT or EPIC; FEAT → EPIC);
+3. an invalid `status` (including `deferred`) or `priority`, or an invalid REQ `type` or `source`;
+4. a missing parent or a parent of the wrong kind (REQ → AVE-FEAT or AVE-EPIC; FEAT → AVE-EPIC);
 5. an EPIC with empty `goals` or a GOAL ID absent from PRODUCT.md;
 6. `superseded` without `superseded_by`, or a `superseded_by` that names no file;
 7. an H1 that does not start with `# <ID>`;
@@ -350,8 +429,29 @@ When the lead implements directly, the lead also fills Implementation evidence.
 10. a `done` REQ with an unticked AC or a `_TBD` marker;
 11. a relative link that does not resolve;
 12. a missing TRACEABILITY.md matrix header; a matrix row separated from the header by a blank or
-    text line, without a REQ ID, duplicated, or whose requirement file is missing or whose status
-    differs from the frontmatter; or a `done` REQ without a row.
+    text line, without an `AVE-REQ-NNN` ID, duplicated, or whose requirement file is missing or
+    whose status differs from the frontmatter; or a `done` REQ without a row.
 
-The checker covers mechanics only. The lead enforces the Definition of Ready, and
+The checker ignores frontmatter keys it does not know, so the requirement keys `scope`,
+`primary_gate`, `origins`, `dependencies`, `scenarios` and `baseline` pass through to
+`python3 scripts/check_baseline.py`, which fails on:
+1. a failing baseline package validation (`tools/validate_package.py`: consistency and the
+   `MANIFEST.json` hashes, so any edit of the baseline fails);
+2. a baseline epic, feature or requirement without exactly one working file of the same ID, or
+   with a different title or H1;
+3. an imported requirement whose type, priority or source differs from the mapped baseline
+   value, or whose `scope`, `parent`, `dependencies`, `origins`, `scenarios` or `baseline`
+   differs from the baseline; a parent that does not link its baseline child;
+4. scope and status out of step: `deferred` without `scope: future`, a future requirement in a
+   status other than `deferred` or `superseded`, or `primary_gate: FUTURE` outside future scope;
+5. a baseline AC that is missing or altered without a `AC-n changed: <reason>` Status-log line;
+6. a version-one requirement that depends on a `deferred` requirement, or a dependency without
+   a working file;
+7. a working file numbered inside the baseline range without a baseline entry, or a later
+   requirement without `source: derived`, `scope`, `primary_gate` or `dependencies`;
+8. a missing or stale IMPORT_MAPPING.md.
+It also prints requirements by status and by gate and the ticked ACs. The regression suites
+for both checkers and the hooks run with `scripts/tests/run.sh`.
+
+The checkers cover mechanics only. The lead enforces the Definition of Ready, and
 `verify-requirement` judges whether ACs are met.
