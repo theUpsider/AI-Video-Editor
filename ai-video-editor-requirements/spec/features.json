@@ -1,0 +1,116 @@
+{
+  "epics": {
+    "01": "Project and asset management",
+    "02": "Editing and composition",
+    "03": "Synchronized perspectives and sound",
+    "04": "Presentation, chapters, and looks",
+    "05": "AI orchestration and integration",
+    "06": "Media intelligence and captions",
+    "07": "Short-form content and delivery",
+    "08": "Reliability, security, and operations",
+    "09": "Claude Code delivery process",
+    "10": "Explicit future scope"
+  },
+  "features": [
+    {
+      "id": "AVE-FEAT-001",
+      "epic": "AVE-EPIC-01",
+      "title": "Projects and media collection"
+    },
+    {
+      "id": "AVE-FEAT-002",
+      "epic": "AVE-EPIC-02",
+      "title": "Manual timeline and history"
+    },
+    {
+      "id": "AVE-FEAT-003",
+      "epic": "AVE-EPIC-02",
+      "title": "Canvas and mixed layouts"
+    },
+    {
+      "id": "AVE-FEAT-004",
+      "epic": "AVE-EPIC-03",
+      "title": "Multicamera synchronization"
+    },
+    {
+      "id": "AVE-FEAT-005",
+      "epic": "AVE-EPIC-03",
+      "title": "Audio routing and mixing"
+    },
+    {
+      "id": "AVE-FEAT-006",
+      "epic": "AVE-EPIC-04",
+      "title": "Overlays and titles"
+    },
+    {
+      "id": "AVE-FEAT-007",
+      "epic": "AVE-EPIC-04",
+      "title": "Sections and chapters"
+    },
+    {
+      "id": "AVE-FEAT-008",
+      "epic": "AVE-EPIC-04",
+      "title": "Color and reusable looks"
+    },
+    {
+      "id": "AVE-FEAT-009",
+      "epic": "AVE-EPIC-05",
+      "title": "AI draft and conversational editing"
+    },
+    {
+      "id": "AVE-FEAT-010",
+      "epic": "AVE-EPIC-05",
+      "title": "Typed editing API and MCP"
+    },
+    {
+      "id": "AVE-FEAT-011",
+      "epic": "AVE-EPIC-05",
+      "title": "Providers and downloadable models"
+    },
+    {
+      "id": "AVE-FEAT-012",
+      "epic": "AVE-EPIC-05",
+      "title": "AI trust and tool authorization"
+    },
+    {
+      "id": "AVE-FEAT-013",
+      "epic": "AVE-EPIC-06",
+      "title": "Speech, translation, and captions"
+    },
+    {
+      "id": "AVE-FEAT-014",
+      "epic": "AVE-EPIC-06",
+      "title": "Visual indexing and understanding"
+    },
+    {
+      "id": "AVE-FEAT-015",
+      "epic": "AVE-EPIC-07",
+      "title": "Shorts"
+    },
+    {
+      "id": "AVE-FEAT-016",
+      "epic": "AVE-EPIC-07",
+      "title": "Publication metadata"
+    },
+    {
+      "id": "AVE-FEAT-017",
+      "epic": "AVE-EPIC-07",
+      "title": "Rendering and output delivery"
+    },
+    {
+      "id": "AVE-FEAT-018",
+      "epic": "AVE-EPIC-08",
+      "title": "Runtime quality and handover"
+    },
+    {
+      "id": "AVE-FEAT-019",
+      "epic": "AVE-EPIC-09",
+      "title": "Autonomous implementation workflow"
+    },
+    {
+      "id": "AVE-FEAT-020",
+      "epic": "AVE-EPIC-10",
+      "title": "Future tracking"
+    }
+  ]
+}

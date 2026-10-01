@@ -1,0 +1,677 @@
+{
+  "schema_version": "1.0",
+  "package": "AI Video Editor requirements",
+  "version": "1.0",
+  "prepared": "2026-10-02",
+  "hash_algorithm": "SHA-256",
+  "excludes": [
+    "MANIFEST.json"
+  ],
+  "files": [
+    {
+      "path": "IMPLEMENTATION_PROMPT.md",
+      "bytes": 11877,
+      "sha256": "3e4fb2c21a10a0773b2e4933187d5f28b44a019627407cdb638a2d4c1dcb8a73"
+    },
+    {
+      "path": "LAUNCHER_PROMPT.txt",
+      "bytes": 1558,
+      "sha256": "997b3334ec2efe208f9d6b7491f8bbb8d17784bf557e09d1f4b867f37d1a1527"
+    },
+    {
+      "path": "PACKAGE_VALIDATION.md",
+      "bytes": 3070,
+      "sha256": "e81e58ab9d769c56456a33e6b36b4478acc18609565d1090c46b6ebf17b14496"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4583,
+      "sha256": "3093a232175bde10d211ab5a1c86a3793cb44052b92ce98be6d5da28a9164d1a"
+    },
+    {
+      "path": "RESUME_PROMPT.md",
+      "bytes": 1358,
+      "sha256": "39ea5ccc5234550bca957457a2344be9c8436a46083e411e69c50d1458fbe516"
+    },
+    {
+      "path": "intake/USER_BRIEF.md",
+      "bytes": 4807,
+      "sha256": "328c61de715c826773e68a16a5db59301e76ba9d7f4be730fba52ed89415d085"
+    },
+    {
+      "path": "spec/ACCEPTANCE_TESTS.md",
+      "bytes": 38900,
+      "sha256": "042437989b1647fd12b3da7365ebd06858d84787b448a4f4d99eb9529913146a"
+    },
+    {
+      "path": "spec/AGENT_WORKFLOW.md",
+      "bytes": 9262,
+      "sha256": "0e8415b6aaf2116440584b1280b04c347ce962bcb6edabb622910793639fae5d"
+    },
+    {
+      "path": "spec/DATA_AND_TIMING_MODEL.md",
+      "bytes": 7721,
+      "sha256": "833b7dd8ae4f7e7d29c056fcc70342abecf3a01928cc177ef2f104f6461ff60a"
+    },
+    {
+      "path": "spec/DELIVERY_CHECKLIST.md",
+      "bytes": 3524,
+      "sha256": "46257abde9c92f3e0caeb895dba9ab87e57b35e16bbc0d85f7510a536a62a7a4"
+    },
+    {
+      "path": "spec/EDITING_API.md",
+      "bytes": 6887,
+      "sha256": "cf95ebab96ee5d9cc47e650bb3934ea011e1c4a02c39ca45aecbdade849fad9b"
+    },
+    {
+      "path": "spec/EPICS_AND_FEATURES.md",
+      "bytes": 6582,
+      "sha256": "7df8af824ca9c006d3fbb4eb9a13e81b7dbaa5848d1a3138e491b2caef4d8b9a"
+    },
+    {
+      "path": "spec/PRODUCT.md",
+      "bytes": 7586,
+      "sha256": "a4f437de58b1ca58f3ca4cd2a50e332179db01d774448d2ebf091d56490c048e"
+    },
+    {
+      "path": "spec/REQUIREMENTS_INDEX.md",
+      "bytes": 12555,
+      "sha256": "acc73d4556d5468b497182ce744f263317dcb7f7d71fe22ae0507eb0a465e1e3"
+    },
+    {
+      "path": "spec/ROADMAP.md",
+      "bytes": 5292,
+      "sha256": "936f19bc206790cef05b21d464acddc833a4777c2d027e2c4248e8ec0e9e4ca4"
+    },
+    {
+      "path": "spec/SCOPE_AND_ASSUMPTIONS.md",
+      "bytes": 6476,
+      "sha256": "504d6af97f62764732ec49929b128e676a2e860ed6211b0dee005ab28917c375"
+    },
+    {
+      "path": "spec/SOURCES.md",
+      "bytes": 8115,
+      "sha256": "1d69ee86a21fb50d69d80094ccf96451e6ed0f178b919ed270b8408707211bb9"
+    },
+    {
+      "path": "spec/TECHNICAL_DEFAULTS.md",
+      "bytes": 7878,
+      "sha256": "2220b4ad738590b524b43ad9809851a4a7763c02d5092ba96bf68fce0f64139f"
+    },
+    {
+      "path": "spec/THREAT_MODEL.md",
+      "bytes": 3779,
+      "sha256": "eb45dd41fed3422f4256cb52f72838930bfeae4147682cdfaa0dca6a325d5579"
+    },
+    {
+      "path": "spec/TRACEABILITY.md",
+      "bytes": 20946,
+      "sha256": "565345da887205ca6e7bcf12ae326b478f0dc5720ffb7ba2f47dc7783d4749b9"
+    },
+    {
+      "path": "spec/acceptance_scenarios.json",
+      "bytes": 30049,
+      "sha256": "b066f66ff056ce35f8e8eaff67b646c67e7f8a034b6f2dc6c9d3d02419d12038"
+    },
+    {
+      "path": "spec/features.json",
+      "bytes": 2756,
+      "sha256": "baf9035a6541b1ea492bbbeea02c712849e40f369fd577218410a966854417f9"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-001.md",
+      "bytes": 1842,
+      "sha256": "6375a3244807f60d0731f059a3755fea405a192329074057611a40b543df9493"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-002.md",
+      "bytes": 1827,
+      "sha256": "5dca48c8bd5a5748a0c36d67a503dd51ec2ba3c1a27a5142c4a7aacbc580415c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-003.md",
+      "bytes": 1840,
+      "sha256": "a1bd9c4c6558f1cbd2ccbd70939ddd1eba33b05347586b13283bcdbe50360421"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-004.md",
+      "bytes": 2034,
+      "sha256": "d50e34e9c1da7ff45947a459cd858d006de1fb9e8a88668b145a30251e6e551d"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-005.md",
+      "bytes": 1842,
+      "sha256": "6e2f0577dd4a35409184de9dfaae8b684422add669281721f659bb6301e14657"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-006.md",
+      "bytes": 1838,
+      "sha256": "aa95f349598315455cacb1caf4ea8af0d478a46ad33156555002d0f3ce2f525d"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-007.md",
+      "bytes": 1909,
+      "sha256": "c3cf4a8afc636136771b5ed5913ab6d69483f974c2960b7c549ad7ab13390ed1"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-008.md",
+      "bytes": 1826,
+      "sha256": "2e84bde7e727a970db614578f3382c37d55cc8389904c4919ca28b77667b2618"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-009.md",
+      "bytes": 1768,
+      "sha256": "09ad78187e7473e308ed142e8cc9e5f3ad29f11bb682917567d9c791bd98b927"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-010.md",
+      "bytes": 1821,
+      "sha256": "401c79b889946effd57b780cc778b56c1c41b4b6c2d9a5ebd5d063e3e457c2c1"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-011.md",
+      "bytes": 1877,
+      "sha256": "b890fd8bf4969915049bf3d0f3b21796234224a026c4641039c7cbba19790c66"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-012.md",
+      "bytes": 2010,
+      "sha256": "9a1f66eb26bdd2120e2daa83fd95e6a0be793664920dd2f32460c954ef7dcb39"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-013.md",
+      "bytes": 1828,
+      "sha256": "9c6fd1c1950d735d26268efe9121683d7499fbed28fb40fe8b6ae28863880aa2"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-014.md",
+      "bytes": 1755,
+      "sha256": "81df980bfb906634b75092708e4f5809bc1e58ca0099966627255e05e016f5b0"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-015.md",
+      "bytes": 1846,
+      "sha256": "6dfb13d4029ee5f97647071195fbd9c9b8d7b7b5fb3fe6e6727625b148dbc274"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-016.md",
+      "bytes": 1805,
+      "sha256": "e16510c590214ff232817116176ce87eadf33b2d989c003b84cf2bf7bedff0a5"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-017.md",
+      "bytes": 1870,
+      "sha256": "20dcd1aca4de4b47198bd72fb8a472ccf6529fb39593726f6bf1f50c19c451c7"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-018.md",
+      "bytes": 2019,
+      "sha256": "3f30da4ca20541a1e1757b358099c5a80b968be53d24bb48d19683973ef456b1"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-019.md",
+      "bytes": 1789,
+      "sha256": "a844d7569b2f84046af622fd28da313cf70b5684192b5f35d83fb4de89ebef94"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-020.md",
+      "bytes": 1884,
+      "sha256": "6a44c9292b2afa18f4d153bf0059112d25be8e133edb1f07fb69486b1fc17003"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-021.md",
+      "bytes": 1789,
+      "sha256": "1de9dad70a5e4574c36eaf0a96887fe49647c48b1632edb0a7e8db063c824d4c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-022.md",
+      "bytes": 2035,
+      "sha256": "59449df037c5754742566a2945648f5c286ff4e37d647e2d4900746a3bca4935"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-023.md",
+      "bytes": 1939,
+      "sha256": "01d67a1e09cb3d558413d0c9c8b3ac3ae75b64160b22eb1423add41336a5328e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-024.md",
+      "bytes": 1847,
+      "sha256": "1c3b8d4e46f7dbc69e30d4881049df07b07cd70de310c214bb7ad06cb5322653"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-025.md",
+      "bytes": 1800,
+      "sha256": "51ca3c23299e4164b41d8ca8f52b295941bb20211ac8d274607537cf70cea3f8"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-026.md",
+      "bytes": 1883,
+      "sha256": "ce1f67c8d9dd4e07362862c38960c518a55dcd52eba520dda301dcb6a6a0f7b8"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-027.md",
+      "bytes": 1868,
+      "sha256": "5b6c8cfb589df109201902811c04e0bcd5b2f8379178fe2f3aa82faf018ceb98"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-028.md",
+      "bytes": 1912,
+      "sha256": "7b44499a81af9d9af17a44030f794a36962ac834fa3c8f949c08a3b85bb204c1"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-029.md",
+      "bytes": 1832,
+      "sha256": "52849700cae54c6195a9ff5a19db22d2849f2fa8a7fc6a1f545373e06f7d553f"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-030.md",
+      "bytes": 1812,
+      "sha256": "488a69908c78dcbbb071c06910f46033174d42438ed95ed19f142088b1d44036"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-031.md",
+      "bytes": 1906,
+      "sha256": "1b515090211e8b7b796b1c6b21bcfd43d318f8487bf2cbbba8b38cbae9b51f7e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-032.md",
+      "bytes": 1686,
+      "sha256": "4a2cad9a6572a92b9445686f7b25dd432a4e9b406198907dab60502413c195d0"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-033.md",
+      "bytes": 2025,
+      "sha256": "68f0eb68d10d306b7e757a4c4592feb458a082bcbd3db649480b1673c4f2023d"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-034.md",
+      "bytes": 1736,
+      "sha256": "93f7ef59c9ceed32c98cac6cae9046bd3a90fad25097afd771ed03d7b170c327"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-035.md",
+      "bytes": 2019,
+      "sha256": "6b36be2b32c5abae6944fd068481d9b5b98faab3213df469edf5658dab5568b9"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-036.md",
+      "bytes": 1894,
+      "sha256": "4a424f5b23f926d7fc26833f5bcb616ed6759a37ff559dedac6f00771d2a96f3"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-037.md",
+      "bytes": 1759,
+      "sha256": "0b0f4a7f3e56a3c372f78ce9c2362211b43045e2b02bf610f44790795251ccde"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-038.md",
+      "bytes": 1777,
+      "sha256": "c1194ce1a827459801421950165de581c589c6e0be91962cf832fd38e9d38930"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-039.md",
+      "bytes": 1849,
+      "sha256": "1a9f7e7c17a16e07f515ac13ed3c1f9331a5279440d238b67b6d9ca8dbe30063"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-040.md",
+      "bytes": 1768,
+      "sha256": "546a93cfc1494d4e0bec96e3f9777930cbe6cdf5c58610f9ed4dd4f5282cd33e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-041.md",
+      "bytes": 1736,
+      "sha256": "9f8aaad312efc19d36a56aec91493ba3dda5937ef596c695ca83aeb0ba14b0d6"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-042.md",
+      "bytes": 1942,
+      "sha256": "9c15f81259aeadb82584ce339bf1762c343b52c8e3a42be89b1ab14d6d53ad6d"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-043.md",
+      "bytes": 1846,
+      "sha256": "ce4fe692ea8f90a9aff3f75600d9b194763c60c4d244ad8a6fbf57d176dbd55f"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-044.md",
+      "bytes": 1892,
+      "sha256": "ccfaf0961a0f639b96fdfab032929aa2e13eeef784e9b84e3e06680c4c8b6d1e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-045.md",
+      "bytes": 2350,
+      "sha256": "c98f7311f3b773c261892d49c127a13d6a930a0b1e389c5f541cc8a3ceeb6d09"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-046.md",
+      "bytes": 1963,
+      "sha256": "4fed2675e02a8c9ac5e3aaf6c6fd2799dfaeb5be2d55e7fdc2003b5b27b52efd"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-047.md",
+      "bytes": 1942,
+      "sha256": "641d02d8988999764627948dc2a1fd625d6e62b2f4ee62e264a36ac8c768948c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-048.md",
+      "bytes": 1953,
+      "sha256": "5403e50d05328e23827bafce7fbe3f0dcaf3058e3a815e0fb7c20cecfce4cb1b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-049.md",
+      "bytes": 2095,
+      "sha256": "cacaab6e7ea434a1ff2d744d3820d15d8b8371ffecad53d9d4ab677846333291"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-050.md",
+      "bytes": 1945,
+      "sha256": "9a32eee89384c5848189b2c2abfff3b6474e3f6c4bc65ce343307fee0b7c7f6b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-051.md",
+      "bytes": 1962,
+      "sha256": "87619143f361e32609f679999a7dcc948c19b97d6663372ad8fb629e10d7587c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-052.md",
+      "bytes": 1878,
+      "sha256": "2814d8864c1ba0bec461a36f0c74bbb1566a13cb4a9f2fc909e0973a1c000a18"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-053.md",
+      "bytes": 1995,
+      "sha256": "a9f29ab64f0a046dfbb507bb2fe4a272a387eccbadfd03eb21cbcd5ed99ee51b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-054.md",
+      "bytes": 2003,
+      "sha256": "95548ef59b10ec9db4dce27ca6e54e54add2c5505ad7a356a7e3b415acbc78f6"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-055.md",
+      "bytes": 1824,
+      "sha256": "901f169671f2872635456e3ac6dce256a291ab072e29a47700d83d79d8d6f7dd"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-056.md",
+      "bytes": 1912,
+      "sha256": "7d44735c51e4586ba659781e2409be46f95fc82a054b37c7b93b551977644aac"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-057.md",
+      "bytes": 1896,
+      "sha256": "3b6c43e8cb1f6496feff9c43368f0730ba401b9c182223a33379b74b7fcfd6f3"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-058.md",
+      "bytes": 1749,
+      "sha256": "60b3d9a006f7079b2c13b19fee4af7b7709a88f21fe9ee120fd72ec8db4547b6"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-059.md",
+      "bytes": 1714,
+      "sha256": "d7a3864df93d81162540cc54c9c0e3ec9e3f42029dd64a037ceb886c01b0101b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-060.md",
+      "bytes": 1861,
+      "sha256": "65928c6b9c382e56783d1b666c6062ac67d9c276a0114f2d22eb75198713e551"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-061.md",
+      "bytes": 1773,
+      "sha256": "b9bdfe7b6aeea13bb7965456410314c767aabcb7f9aebab67c8befce1da9f790"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-062.md",
+      "bytes": 1969,
+      "sha256": "648431c117f666931367cdc3654dabbb0656bc7fecefadf4d584f0fc26f5985c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-063.md",
+      "bytes": 1868,
+      "sha256": "26c9240dd6606c91d5ed2e643b8648d8420f79edea144de2ae08a12d5697c03f"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-064.md",
+      "bytes": 1781,
+      "sha256": "af0b37e35e27fe669164b98280adba5ba9968d17714d201615a467ae2338520e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-065.md",
+      "bytes": 1826,
+      "sha256": "9e6caec3ee383f59282c728a4208110270358bf0a251f2ca2899e7a1187bef5e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-066.md",
+      "bytes": 2032,
+      "sha256": "a02f575e089e1deaafcd91289199ffc721b546e3e80842ae379218361d7486cb"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-067.md",
+      "bytes": 1591,
+      "sha256": "ce14b3b3d34f1af386e8e3d36e02326b506f5fc126e518162654330f815cb381"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-068.md",
+      "bytes": 1901,
+      "sha256": "ed53161068211efb187225fc071c3fb5e468651a162223cff733cee6e144d6ef"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-069.md",
+      "bytes": 1885,
+      "sha256": "cc3cd5b0eb73d82ea43d8171f2367402bbca27365f113d49dbd77d1f938b22eb"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-070.md",
+      "bytes": 1841,
+      "sha256": "46dcc935f3f55d1ce889da5a7220d452efd5eca96cf482df180bfc717cb6ac2c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-071.md",
+      "bytes": 1801,
+      "sha256": "74a25f9088e5c47c2f2d49782db820787d3ae75419aeeaf2c31d4fd2452f0c4b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-072.md",
+      "bytes": 2025,
+      "sha256": "af33a7ad23bc63091037c3b0984191b002a0025988dcbc60c8f92b4e09f0b810"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-073.md",
+      "bytes": 1749,
+      "sha256": "1c556606fa93a7271008643847ba0ae29b35b26c986a7e482a448f69fa1a1fd1"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-074.md",
+      "bytes": 1856,
+      "sha256": "1018537c1bda7e0c4d2ef257c9edc97eb0d868f92cc5552085a26eda90cdc82f"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-075.md",
+      "bytes": 1717,
+      "sha256": "13aa4831b4c4f2b62d6c40326aded75c5f1c8b10fc2f95ff07f3f2b676ecd66b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-076.md",
+      "bytes": 2028,
+      "sha256": "8b60a30c2e368f1ccb5199ed3971e1fbd9e253b115d991d43e4d6f5add49acf7"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-077.md",
+      "bytes": 1887,
+      "sha256": "2504f63830aa408ff20c29247731ffe6f58f014a323a45ce37aedc0a529f8079"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-078.md",
+      "bytes": 2017,
+      "sha256": "37ea58af6c0c13c7e3ceff647626d23a34061ab6222878a9da5da7c9fbaff3a2"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-079.md",
+      "bytes": 1948,
+      "sha256": "30cccefb994f22094dfec964c093596225ef2fcef714136906ce8a7075611cb0"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-080.md",
+      "bytes": 1875,
+      "sha256": "aea68451c56e100c93f5bbc88694c6cbf3ccb600b0be803bc44e2e3febe3ce60"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-081.md",
+      "bytes": 1948,
+      "sha256": "ec71852bd7cf1bfde18696e85a2bd8d4baba7d2223ef918d95493f9101db4dd8"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-082.md",
+      "bytes": 1910,
+      "sha256": "0deff8e34954eee9fca697e294bdf13e3019d9eea3ad82b432683c729ab6eb56"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-083.md",
+      "bytes": 1964,
+      "sha256": "309fbb71c2a4553941d596fbdabea7a60710288159bfb00aa1af8e62945e136c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-084.md",
+      "bytes": 2258,
+      "sha256": "492790fdc3a3e308c23ea65310c2f978525e44511ff7d3b80683be0939ed3aba"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-085.md",
+      "bytes": 1732,
+      "sha256": "e9086d87c0ab7ff92e45d9e078c4ea166b4e345d032b8027449caa92c425ad97"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-086.md",
+      "bytes": 1789,
+      "sha256": "5cb3934a6b47b90be9a839313e7c2115c2a221f5c2115124e6c55f853522763c"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-087.md",
+      "bytes": 1875,
+      "sha256": "28d132b8d80756cd22db825ff4415c25e0189473c72e1ed439cdf9af97ae8bb2"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-088.md",
+      "bytes": 1814,
+      "sha256": "c6a00e33c216eba124f64f3078df04e369aba46e6c436bffce6e306f85626743"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-089.md",
+      "bytes": 1880,
+      "sha256": "e10c98b27787801aea4474b710533e11a14a8f300da8f2d87c1e229847c8127b"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-090.md",
+      "bytes": 1767,
+      "sha256": "ace83ee518c0fa3f91cbf07f6ed1c40b3e4417cb603a4b34dd58c941ffa764b7"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-091.md",
+      "bytes": 1946,
+      "sha256": "976789936466f659fa3408f9202caeb223e322df5017df1ed0bbd7a91e72c432"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-092.md",
+      "bytes": 1835,
+      "sha256": "a6b86ee5d63bf0842a86e097c326ffc18d06fc7098ff9444c95abce97b8d3270"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-093.md",
+      "bytes": 1837,
+      "sha256": "7a9121d5af306956a3592639530ded4db5daabb88bedefa475a173285053f842"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-094.md",
+      "bytes": 1977,
+      "sha256": "6d3b3f71a823aa1f54a06457379d91676d9a60d50c991f91b9f1785201dfcff2"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-095.md",
+      "bytes": 1912,
+      "sha256": "ba60a69f0796ecffb4fde67c368379965f0f560e9965e9637af7c57ca2dcd81e"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-096.md",
+      "bytes": 1910,
+      "sha256": "d05049c71ef1d782ed52bbe658d28a28682254d0572cdb7c77b8ae0362d471f0"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-097.md",
+      "bytes": 1902,
+      "sha256": "c26f33f5260ca1fdb3f4efd87ebdf719b9632050a58b02aae35933edb5f164c0"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-098.md",
+      "bytes": 1949,
+      "sha256": "5c92722f0a639292c85794cf2579d04c0fe213c5179c4e797f2c0b176ff8e575"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-099.md",
+      "bytes": 1922,
+      "sha256": "004c2020a7785c1f143fe12aa4da1c80be6d5d2fbd4bdf6277375fdd25b35031"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-100.md",
+      "bytes": 1869,
+      "sha256": "7c36de4ac9d2375032f67d84619537b6278a04f4295bf715fc19f868351117e5"
+    },
+    {
+      "path": "spec/requirements/AVE-REQ-101.md",
+      "bytes": 1681,
+      "sha256": "9910b35512aef4d45e2ee4a1fb12ccaa4fcd8a477ced93a54b92bc9e24648855"
+    },
+    {
+      "path": "spec/requirements.json",
+      "bytes": 141232,
+      "sha256": "4c531993df5c144480235511d9425ba486b608e84b22fb14a53c70c579bc1c2b"
+    },
+    {
+      "path": "spec/source_clauses.json",
+      "bytes": 4066,
+      "sha256": "89f28c2264119493a8f88f52ae11a333044e0803fe01a0d961389968e6b4bf19"
+    },
+    {
+      "path": "spec/sources.json",
+      "bytes": 7567,
+      "sha256": "4f51e4310068642d23c271c336b7b5c892467c487e65b01e349dae8331cf8d75"
+    },
+    {
+      "path": "tools/validate_package.py",
+      "bytes": 15898,
+      "sha256": "73a0bcb65745638a99c67c656162f50fcbff42f926718adea9be53c2bf0db650"
+    },
+    {
+      "path": "workflow/INSTALLATION.md",
+      "bytes": 1049,
+      "sha256": "f488eb061372db722188389be3b6462c5cfe39c91515380253604fdbe1568cc4"
+    },
+    {
+      "path": "workflow/ai-video-editor-delivery/SKILL.md",
+      "bytes": 3193,
+      "sha256": "39d96b776621f1198df4fd0272974d44885b6a4a32e70c34b31ed7225cd0bc80"
+    },
+    {
+      "path": "workflow/ai-video-editor-delivery/agents/openai.yaml",
+      "bytes": 133,
+      "sha256": "2c9690d97782084ecc55468f24d46b00058fc1c3148a4827c2ac1f2fbe684a1d"
+    },
+    {
+      "path": "workflow/ai-video-editor-delivery/references/verification.md",
+      "bytes": 1208,
+      "sha256": "af9d9df5cc140e2382a44740012f67e4056c31ad8932c9db17c1fc9f380c2f95"
+    },
+    {
+      "path": "workflow/ai-video-editor-delivery/references/workflow-improvement.md",
+      "bytes": 1109,
+      "sha256": "e3d344f798bc16a42237f0a5dcfe40e403a165426e8850709de4ca2098be5bc6"
+    },
+    {
+      "path": "workflow/skill.zip",
+      "bytes": 3643,
+      "sha256": "c160b21de3e89c69f0d3fced97a5bbba93581726d8ac07c6862308d960475bbd"
+    }
+  ]
+}

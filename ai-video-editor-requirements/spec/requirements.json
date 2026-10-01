@@ -1,0 +1,4195 @@
+{
+  "schema_version": "1.0",
+  "product": "AI Video Editor",
+  "prepared": "2026-10-02",
+  "requirements": [
+    {
+      "id": "AVE-REQ-001",
+      "title": "Persistent projects and project settings",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U01",
+        "U24",
+        "D01"
+      ],
+      "dependencies": [],
+      "statement": "The application shall create, name, reopen, duplicate, and persist editing projects, including their media references, timeline, output settings, and revisions.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A new project opens an empty collection and timeline without requiring an AI account."
+        },
+        {
+          "id": "AC-2",
+          "text": "After saving and restarting the application, timeline content, output settings, selected profiles, and project metadata are unchanged."
+        },
+        {
+          "id": "AC-3",
+          "text": "Project duplication produces an independent edit history while safely reusing immutable source media."
+        },
+        {
+          "id": "AC-4",
+          "text": "Project deletion clearly distinguishes deleting editing data from deleting original media; originals are not deleted by default."
+        }
+      ],
+      "scenarios": [
+        "AT-01",
+        "AT-22"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-002",
+      "title": "Collection-based batch ingestion",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U01",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-001"
+      ],
+      "statement": "The collection shall accept batches of video, audio, and image files, including large camera recordings, with visible import progress and recoverable failures.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can add multiple files through a file picker and drag-and-drop, then see per-file queued, importing, ready, or failed states."
+        },
+        {
+          "id": "AC-2",
+          "text": "An interrupted large upload can resume or retry without duplicating the media asset or exhausting server memory."
+        },
+        {
+          "id": "AC-3",
+          "text": "A failed or unsupported file does not prevent valid files in the same batch from importing."
+        },
+        {
+          "id": "AC-4",
+          "text": "Local file references, when offered, are limited to explicitly configured import roots; browser filenames are never treated as trusted server paths."
+        }
+      ],
+      "scenarios": [
+        "AT-01",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-003",
+      "title": "Immutable originals and stable asset identities",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U24",
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-002"
+      ],
+      "statement": "Each imported asset shall have a stable identifier and provenance, and editing shall never modify the original media bytes.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Checksums before and after trim, synchronization, grading, subtitle generation, and export match for every original."
+        },
+        {
+          "id": "AC-2",
+          "text": "Re-importing the same bytes identifies an existing asset or deliberately creates another reference without silent storage duplication."
+        },
+        {
+          "id": "AC-3",
+          "text": "Timeline references survive filename changes and supported relinking without silently substituting different content."
+        },
+        {
+          "id": "AC-4",
+          "text": "Derived proxies, thumbnails, transcripts, and renders record their source asset, source revision or checksum, and generation settings."
+        }
+      ],
+      "scenarios": [
+        "AT-01",
+        "AT-22"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-004",
+      "title": "Media probing, exact dimensions, and source timing",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U02",
+        "U03",
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-002"
+      ],
+      "statement": "Ingestion shall probe actual video and audio stream properties rather than infer resolution, frame rate, or camera capabilities from names.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Persist actual width and height, sample/display aspect ratio, rotation, duration, time base, frame-rate metadata, codec, pixel format, color tags, and audio stream properties when available."
+        },
+        {
+          "id": "AC-2",
+          "text": "Distinguish 60/1 from 60000/1001 and inspect presentation timestamps when constant versus variable frame rate is uncertain."
+        },
+        {
+          "id": "AC-3",
+          "text": "Accept a real or synthetic approximately 2K, 60 fps input; display its exact pixel dimensions instead of treating the label 2K as a specification."
+        },
+        {
+          "id": "AC-4",
+          "text": "Handle multiple audio streams, no audio, portrait rotation metadata, and missing optional tags without inventing values."
+        }
+      ],
+      "scenarios": [
+        "AT-01",
+        "AT-03",
+        "AT-26"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-005",
+      "title": "Capture date, timezone, and location metadata",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M3",
+      "origins": [
+        "U17",
+        "U18"
+      ],
+      "dependencies": [
+        "AVE-REQ-004"
+      ],
+      "statement": "The application shall extract available capture date, time, timezone, location, and camera metadata, preserve provenance, and support user corrections.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Show raw metadata and normalized values separately, including whether capture time and timezone are known, assumed, or user-supplied."
+        },
+        {
+          "id": "AC-2",
+          "text": "Do not equate file modification time with recording time or silently treat timezone-free camera timestamps as UTC."
+        },
+        {
+          "id": "AC-3",
+          "text": "Missing GPS or location remains unknown; manual city and timezone labels are supported and retained."
+        },
+        {
+          "id": "AC-4",
+          "text": "An optional reverse-geocoding request requires consent before coordinates leave the system, and exported metadata can omit location."
+        }
+      ],
+      "scenarios": [
+        "AT-09",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-006",
+      "title": "Library organization and filtering",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M3",
+      "origins": [
+        "U17",
+        "U18",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-003",
+        "AVE-REQ-005"
+      ],
+      "statement": "The collection shall support stable labels and filters for camera or perspective, recording day, location, pairing, duration, and analysis status.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can tag or correct camera A/B, left/right preference, trip day, and city in bulk or per asset."
+        },
+        {
+          "id": "AC-2",
+          "text": "Sorting by capture time respects declared timezone handling and exposes unknown or conflicting timestamps."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users can preview and select assets using combinations of text, date, location, camera, and analysis filters."
+        },
+        {
+          "id": "AC-4",
+          "text": "Changing a label updates suggestions without silently rewriting existing manual timeline edits."
+        }
+      ],
+      "scenarios": [
+        "AT-09",
+        "AT-14"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-007",
+      "title": "Proxies, thumbnails, and waveforms",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U20",
+        "U24",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-003",
+        "AVE-REQ-004"
+      ],
+      "statement": "The system shall generate bounded, cacheable preview proxies, thumbnails, and audio waveforms while preserving exact links to original source time.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Proxy generation is a visible asynchronous job and can be cancelled or retried."
+        },
+        {
+          "id": "AC-2",
+          "text": "Preview proxies preserve duration, orientation, aspect ratio, and a mapping to original presentation timestamps, including variable-rate inputs."
+        },
+        {
+          "id": "AC-3",
+          "text": "Final exports use originals unless the user explicitly selects a clearly labeled draft/proxy export."
+        },
+        {
+          "id": "AC-4",
+          "text": "Derived caches can be evicted and regenerated without losing edits, source files, or synchronization anchors."
+        }
+      ],
+      "scenarios": [
+        "AT-03",
+        "AT-22",
+        "AT-27"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-008",
+      "title": "Reviewable accidental-recording detection",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M4",
+      "origins": [
+        "U14"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-007"
+      ],
+      "statement": "The system shall flag likely accidental or unusable recordings as reviewable suggestions, never delete or discard them irreversibly.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "At minimum inspect decode failure, unusually short duration, prolonged near-black imagery, frozen frames, and silence, with configurable thresholds and reasons."
+        },
+        {
+          "id": "AC-2",
+          "text": "A silent scenic shot and a dark but usable night scene remain available; absence of speech is not proof of no content."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users can include or exclude flagged clips and override the classification; overrides survive reanalysis."
+        },
+        {
+          "id": "AC-4",
+          "text": "AI draft generation reports which assets were excluded and why, and can restore them into another proposal."
+        }
+      ],
+      "scenarios": [
+        "AT-15",
+        "AT-14"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-009",
+      "title": "Broken media and relinking",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M1",
+      "origins": [
+        "U24",
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-003",
+        "AVE-REQ-004"
+      ],
+      "statement": "Missing, corrupted, unsupported, or inaccessible media shall produce recoverable errors rather than fabricated successful analysis or export.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The collection and affected timeline items display the specific problem and retain their edit metadata."
+        },
+        {
+          "id": "AC-2",
+          "text": "Relinking validates identity or asks for explicit replacement confirmation when the content differs."
+        },
+        {
+          "id": "AC-3",
+          "text": "Exports using broken media fail preflight or require an explicit, recorded gap policy; they never silently omit clips."
+        },
+        {
+          "id": "AC-4",
+          "text": "Errors identify the failing asset and actionable diagnostics without exposing secrets."
+        }
+      ],
+      "scenarios": [
+        "AT-01",
+        "AT-22"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-010",
+      "title": "Portable project backups",
+      "feature": "AVE-FEAT-001",
+      "milestone": "M7",
+      "origins": [
+        "U24",
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-003"
+      ],
+      "statement": "Users shall be able to export and restore a versioned editing-project bundle, with optional original media inclusion and a manifest of external references.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A metadata-only bundle restores projects after media relinking; a self-contained bundle restores without external paths."
+        },
+        {
+          "id": "AC-2",
+          "text": "Bundles contain edit decisions, profiles, sections, subtitles, and provenance but never API keys or session credentials."
+        },
+        {
+          "id": "AC-3",
+          "text": "Import validates bundle paths, schema version, hashes, and reference integrity before modifying an existing project."
+        },
+        {
+          "id": "AC-4",
+          "text": "Unsupported future schema versions are rejected safely and existing projects remain unchanged."
+        }
+      ],
+      "scenarios": [
+        "AT-22",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-01"
+    },
+    {
+      "id": "AVE-REQ-011",
+      "title": "Non-destructive multitrack timeline",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M2",
+      "origins": [
+        "U02",
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-003"
+      ],
+      "statement": "The editor shall provide multiple simultaneous video, audio, image, and text tracks with non-destructive clip instances.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A project can contain at least four simultaneous video tracks, four audio tracks, and independent overlay tracks; this is a baseline test, not an artificial product limit."
+        },
+        {
+          "id": "AC-2",
+          "text": "Each clip instance has independent source in/out, timeline position, track, transform, and relevant audio or effect settings."
+        },
+        {
+          "id": "AC-3",
+          "text": "Layer order, track visibility, mute, solo, and lock have defined, consistent effects in preview and export."
+        },
+        {
+          "id": "AC-4",
+          "text": "Using the same asset twice creates independent clip instances rather than altering the source or the other instance."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-11"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-012",
+      "title": "Canonical rational timing and temporal invariants",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M1",
+      "origins": [
+        "U03",
+        "U15",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-004"
+      ],
+      "statement": "All editing, synchronization, subtitles, and rendering shall share a canonical timing model with exact rational values or integer ticks and explicit time domains.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Distinguish source presentation time, synchronization-group time, project time, section time, and export time."
+        },
+        {
+          "id": "AC-2",
+          "text": "Use half-open intervals [start, end) and reject negative durations, invalid source bounds, NaN values, and unsupported time transforms."
+        },
+        {
+          "id": "AC-3",
+          "text": "At 60000/1001 fps, repeated edits and long timelines do not accumulate errors from rounding the rate to 60 or storing frame counts as approximate seconds."
+        },
+        {
+          "id": "AC-4",
+          "text": "Variable-frame-rate inputs are mapped by presentation timestamps; output frame-rate conversion does not change intended playback speed."
+        }
+      ],
+      "scenarios": [
+        "AT-03",
+        "AT-04",
+        "AT-13"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-013",
+      "title": "Manual editing and precision controls",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M2",
+      "origins": [
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-011",
+        "AVE-REQ-012"
+      ],
+      "statement": "Users shall be able to manually drag, arrange, trim, split, extend within available handles, and delete clip instances using familiar timeline interactions.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Dragging either clip edge changes its visible interval with snapping and precise numeric in/out controls."
+        },
+        {
+          "id": "AC-2",
+          "text": "Split-at-playhead, move, reorder, insert, overwrite, and ripple-delete have documented effects on linked items and downstream material."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users can zoom and scroll the timeline, select a range, step frames, and navigate with keyboard controls."
+        },
+        {
+          "id": "AC-4",
+          "text": "Invalid trims beyond source handles are prevented or require an explicit freeze/gap effect; the editor never invents source frames."
+        }
+      ],
+      "scenarios": [
+        "AT-11",
+        "AT-05"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-014",
+      "title": "Basic transitions and handles",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M2",
+      "origins": [
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-013"
+      ],
+      "statement": "The editor shall support hard cuts, video cross-dissolves, fades to or from a background, and audio fades or crossfades with editable timing.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Transition start, end, and duration can be adjusted through the timeline and the editing API."
+        },
+        {
+          "id": "AC-2",
+          "text": "The editor validates available source handles and prevents accidental shortening, overlap corruption, or audio duplication."
+        },
+        {
+          "id": "AC-3",
+          "text": "Transitions between split-screen and full-width segments render consistently without leaving stale imagery from a previous layout."
+        },
+        {
+          "id": "AC-4",
+          "text": "Shortening or deleting a transition is undoable and updates dependent subtitle and section timing correctly when project time changes."
+        }
+      ],
+      "scenarios": [
+        "AT-11",
+        "AT-02"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-015",
+      "title": "Undo, redo, autosave, and revisions",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M2",
+      "origins": [
+        "U20",
+        "U24",
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-011"
+      ],
+      "statement": "All user and AI editing mutations shall be versioned, undoable, and recoverable after interruption.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A multi-operation AI edit can be undone as one transaction and redone without changing unrelated edits."
+        },
+        {
+          "id": "AC-2",
+          "text": "Autosave does not mark an edit durable until its atomic persistence succeeds; restart recovers the last durable revision."
+        },
+        {
+          "id": "AC-3",
+          "text": "History records actor, timestamp, affected objects, previous revision, and a human-readable change summary."
+        },
+        {
+          "id": "AC-4",
+          "text": "An export is pinned to one immutable revision even while the user continues editing."
+        }
+      ],
+      "scenarios": [
+        "AT-12",
+        "AT-22",
+        "AT-17"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-016",
+      "title": "Concurrent user and AI edit safety",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M5",
+      "origins": [
+        "U20",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-015",
+        "AVE-REQ-048"
+      ],
+      "statement": "An AI proposal shall not overwrite newer user changes or locked timeline objects without an explicit resolution policy.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Every proposal references the project revision it read and the assets or objects it intends to change."
+        },
+        {
+          "id": "AC-2",
+          "text": "A proposal based on a stale revision is rejected with a structured conflict, safely rebased with renewed validation, or presented for user resolution."
+        },
+        {
+          "id": "AC-3",
+          "text": "Locked objects are protected by the domain service, not only by UI controls."
+        },
+        {
+          "id": "AC-4",
+          "text": "Users can scope a prompt to selected clips or sections; edits outside the scope are rejected unless explicitly authorized."
+        }
+      ],
+      "scenarios": [
+        "AT-12",
+        "AT-16"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-017",
+      "title": "Usable synchronized preview",
+      "feature": "AVE-FEAT-002",
+      "milestone": "M2",
+      "origins": [
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-007",
+        "AVE-REQ-011",
+        "AVE-REQ-012"
+      ],
+      "statement": "The editor shall provide a preview canvas with play/pause, scrubbing, frame stepping, timeline selection, audio playback, and visible render status.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Preview presents all visible layers and the selected final audio routing, not one independent audio player per camera."
+        },
+        {
+          "id": "AC-2",
+          "text": "Proxy-backed playback and quality changes do not modify project frame rate, timing, or export quality."
+        },
+        {
+          "id": "AC-3",
+          "text": "The current playhead, clip selection, trim handles, waveforms, and overlay selection remain coordinated."
+        },
+        {
+          "id": "AC-4",
+          "text": "Scrubbing or frame inspection uses bounded work and displays pending reference frames rather than blocking the entire interface."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-11",
+        "AT-27"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-018",
+      "title": "Configurable canvas, dimensions, and output rate",
+      "feature": "AVE-FEAT-003",
+      "milestone": "M1",
+      "origins": [
+        "U02",
+        "U03"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-004",
+        "AVE-REQ-012"
+      ],
+      "statement": "Projects and export presets shall define output aspect ratio, exact pixel dimensions, and frame rate independently of individual inputs.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The initial canvas defaults to 16:9 and 1920x1080; 1:1, 9:16, and validated custom dimensions are selectable."
+        },
+        {
+          "id": "AC-2",
+          "text": "An Auto frame-rate setting resolves from the selected reference or dominant source on first draft; 60/1 input remains 60/1 and 60000/1001 remains distinct."
+        },
+        {
+          "id": "AC-3",
+          "text": "If no source exists, display a provisional 30 fps default; once resolved, do not silently change project timing after another import."
+        },
+        {
+          "id": "AC-4",
+          "text": "Validate encoder constraints such as even dimensions and explain any requested adjustment rather than silently stretching media."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-03",
+        "AT-18"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-019",
+      "title": "Aspect-preserving composition and transforms",
+      "feature": "AVE-FEAT-003",
+      "milestone": "M2",
+      "origins": [
+        "U02"
+      ],
+      "dependencies": [
+        "AVE-REQ-011",
+        "AVE-REQ-018"
+      ],
+      "statement": "Clip instances shall support position, scale, crop, rotation, opacity, z-order, and explicit contain or cover fitting inside layout regions.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Contain preserves the complete source image with an explicit background; cover fills the region with visible crop controls."
+        },
+        {
+          "id": "AC-2",
+          "text": "No default operation stretches a source to change its aspect ratio."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users and AI can specify transforms in normalized canvas or region coordinates, with preview and export using the same semantics."
+        },
+        {
+          "id": "AC-4",
+          "text": "Per-clip focal position or crop can be set manually or as a static AI suggestion; this does not require object tracking."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-10"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-020",
+      "title": "Two-perspective split-screen layout",
+      "feature": "AVE-FEAT-003",
+      "milestone": "M1",
+      "origins": [
+        "U02",
+        "U15",
+        "U16"
+      ],
+      "dependencies": [
+        "AVE-REQ-019"
+      ],
+      "statement": "The editor shall provide a reusable left/right split-screen layout for synchronized sources of arbitrary aspect ratios.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "For a 1920x1080 canvas and two square sources in contain mode, each image is 960x960 with 60 pixels of vertical background above and below; sources remain undistorted."
+        },
+        {
+          "id": "AC-2",
+          "text": "Cover mode fills each 960x1080 region by cropping; the user can inspect and adjust the crop rather than accepting hidden loss of content."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users can swap perspectives, resize the divider, configure a gap or background, and save a layout preset."
+        },
+        {
+          "id": "AC-4",
+          "text": "The layout binds clip instances and synchronization-group membership without changing the selected final audio source."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-04"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-021",
+      "title": "Mixed split-screen and full-width segments",
+      "feature": "AVE-FEAT-003",
+      "milestone": "M2",
+      "origins": [
+        "U19"
+      ],
+      "dependencies": [
+        "AVE-REQ-020",
+        "AVE-REQ-031"
+      ],
+      "statement": "A sequence shall switch between simultaneous split-screen recordings and single full-width recordings, then return to split-screen without creating separate projects.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A split/full/split fixture displays both perspectives, then the full 16:9 shot, then both perspectives again at the specified boundaries."
+        },
+        {
+          "id": "AC-2",
+          "text": "The full-width segment can use its own audio while adjacent split segments use their designated reference audio."
+        },
+        {
+          "id": "AC-3",
+          "text": "Cuts and transitions retain the intended total duration, synchronization, and subtitle mapping."
+        },
+        {
+          "id": "AC-4",
+          "text": "Users and AI can change the layout per segment rather than only globally."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-11"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-022",
+      "title": "Preview and export composition parity",
+      "feature": "AVE-FEAT-003",
+      "milestone": "M7",
+      "origins": [
+        "U02",
+        "U20",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-017",
+        "AVE-REQ-019",
+        "AVE-REQ-040",
+        "AVE-REQ-072"
+      ],
+      "statement": "Preview and final rendering shall derive from the same validated composition model and share testable rendering semantics.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Compare reference frames around cuts, overlays, crops, subtitles, grades, and layout transitions against the final encoded result."
+        },
+        {
+          "id": "AC-2",
+          "text": "Any browser approximation is explicitly labeled and a backend reference-frame preview is available for authoritative inspection."
+        },
+        {
+          "id": "AC-3",
+          "text": "Define numerical or image-mask tolerances suitable for lossy codecs rather than requiring byte-identical GPU and CPU outputs."
+        },
+        {
+          "id": "AC-4",
+          "text": "No effect is advertised as supported in final export solely because it appears in the browser preview."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-13",
+        "AT-18"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-02"
+    },
+    {
+      "id": "AVE-REQ-023",
+      "title": "Synchronization candidate matching",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16",
+        "U17"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-005",
+        "AVE-REQ-006"
+      ],
+      "statement": "The system shall propose likely simultaneous recordings and camera pairs using available capture metadata, audio similarity, and user camera labels.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Display candidate pairings, evidence, estimated overlap, and confidence; the user can override or create a group manually."
+        },
+        {
+          "id": "AC-2",
+          "text": "Do not pair unrelated recordings merely because filenames or coarse timestamps are similar."
+        },
+        {
+          "id": "AC-3",
+          "text": "Handle different start and end times and recording segments split into multiple files without assuming one-to-one filenames."
+        },
+        {
+          "id": "AC-4",
+          "text": "Retain the pairing decision independently from layout and final audio routing."
+        }
+      ],
+      "scenarios": [
+        "AT-04",
+        "AT-07",
+        "AT-09"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-024",
+      "title": "Audio-based offset estimation",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16"
+      ],
+      "dependencies": [
+        "AVE-REQ-023",
+        "AVE-REQ-012"
+      ],
+      "statement": "When recordings contain sufficiently correlated audio, the system shall estimate their temporal offset from the original audio signals.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Use audio from a camera for synchronization even when that camera will be muted in the final edit."
+        },
+        {
+          "id": "AC-2",
+          "text": "Test positive and negative known offsets, gain changes, background noise, different audio sample rates, and partial overlaps."
+        },
+        {
+          "id": "AC-3",
+          "text": "Report the estimation method, residual error or equivalent confidence evidence, and aligned source intervals."
+        },
+        {
+          "id": "AC-4",
+          "text": "On the qualified synthetic fixtures in AT-04, alignment error is at most one project output frame; do not generalize this bound to arbitrary real footage."
+        }
+      ],
+      "scenarios": [
+        "AT-04",
+        "AT-05"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-025",
+      "title": "Silent or weak-evidence synchronization",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16"
+      ],
+      "dependencies": [
+        "AVE-REQ-023"
+      ],
+      "statement": "For sources without usable shared audio, the system shall attempt available timestamp or explicit visual-event alignment and otherwise offer manual anchors.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A visible shared flash or marked event may establish an offset; object tracking is not required."
+        },
+        {
+          "id": "AC-2",
+          "text": "Coarse camera timestamps alone are labeled approximate, especially when clocks or timezones differ."
+        },
+        {
+          "id": "AC-3",
+          "text": "When neither shared audio, reliable timestamps, nor a common event exists, return insufficient evidence rather than a fabricated exact alignment."
+        },
+        {
+          "id": "AC-4",
+          "text": "A manual anchor can complete synchronization without requiring the silent source to gain an audio track."
+        }
+      ],
+      "scenarios": [
+        "AT-06",
+        "AT-07"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-026",
+      "title": "Persistent synchronization transforms",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-012",
+        "AVE-REQ-024",
+        "AVE-REQ-025"
+      ],
+      "statement": "Persist synchronization as explicit reversible transforms between each source time domain and a chosen group reference.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Document the offset sign convention and store source anchors, method, confidence, and residuals."
+        },
+        {
+          "id": "AC-2",
+          "text": "The same real-world event maps to the same group time across sources, including sources that began earlier or later."
+        },
+        {
+          "id": "AC-3",
+          "text": "Changing the selected reference re-expresses transforms without altering established relative alignment."
+        },
+        {
+          "id": "AC-4",
+          "text": "Synchronization never overwrites or physically trims source files."
+        }
+      ],
+      "scenarios": [
+        "AT-04",
+        "AT-05",
+        "AT-08"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-027",
+      "title": "Unequal coverage and missing-perspective policy",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16",
+        "U19"
+      ],
+      "dependencies": [
+        "AVE-REQ-026",
+        "AVE-REQ-021"
+      ],
+      "statement": "The editor shall explicitly handle unequal recording coverage rather than repeat stale frames or silently discard material.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Default auto-draft split-screen segments use the common overlap and preserve unused material in the collection."
+        },
+        {
+          "id": "AC-2",
+          "text": "Users may instead retain the union using an explicit full-width fallback, background gap, or separately selected freeze policy."
+        },
+        {
+          "id": "AC-3",
+          "text": "For A covering master time 0..30 and B covering 2..27, default split coverage is 2..27, not 0..30."
+        },
+        {
+          "id": "AC-4",
+          "text": "The UI shows which time spans lose a perspective or reference audio and explains the selected policy."
+        }
+      ],
+      "scenarios": [
+        "AT-05",
+        "AT-02"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-028",
+      "title": "Clock-drift detection and correction",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U16",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-026"
+      ],
+      "statement": "The synchronization subsystem shall inspect alignment at multiple points, identify evidence of clock drift, and support a recorded affine time correction when justified.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Distinguish a constant offset from progressive drift using more than one anchor on a sufficiently long recording."
+        },
+        {
+          "id": "AC-2",
+          "text": "A qualified synthetic offset-plus-drift fixture aligns at beginning, middle, and end to within one output frame after correction."
+        },
+        {
+          "id": "AC-3",
+          "text": "Apply the chosen mapping consistently to video, audio, and transcript times; preserve audio pitch when time-stretching audio."
+        },
+        {
+          "id": "AC-4",
+          "text": "Low-confidence or non-linear drift is flagged for manual review; a single uncertain match is not silently converted into a speed change."
+        }
+      ],
+      "scenarios": [
+        "AT-08",
+        "AT-13"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-029",
+      "title": "Linked edits preserve synchronization",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-013",
+        "AVE-REQ-026"
+      ],
+      "statement": "Timeline edits on a synchronized group shall preserve relative timing unless the user explicitly chooses to slip or unlink one source.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Moving, splitting, ripple-deleting, or trimming a linked group updates all affected video, audio, and overlay mappings as specified."
+        },
+        {
+          "id": "AC-2",
+          "text": "A deliberate single-source slip warns that alignment changes and creates an undoable operation."
+        },
+        {
+          "id": "AC-3",
+          "text": "Locked linked members prevent a conflicting group edit rather than leaving the group partially updated."
+        },
+        {
+          "id": "AC-4",
+          "text": "Undo and redo restore both visible arrangement and synchronization transforms."
+        }
+      ],
+      "scenarios": [
+        "AT-05",
+        "AT-11",
+        "AT-12"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-030",
+      "title": "Manual synchronization tools",
+      "feature": "AVE-FEAT-004",
+      "milestone": "M2",
+      "origins": [
+        "U15",
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-017",
+        "AVE-REQ-026"
+      ],
+      "statement": "Users shall be able to inspect and refine synchronization using waveform views, reference-frame comparisons, anchors, and precise nudges.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Provide one-frame video nudges and numeric offsets with finer audio precision where supported."
+        },
+        {
+          "id": "AC-2",
+          "text": "Allow setting at least two corresponding event anchors for drift inspection or correction."
+        },
+        {
+          "id": "AC-3",
+          "text": "Play an aligned preview with one reference audio source and expose the predicted residual or manual status."
+        },
+        {
+          "id": "AC-4",
+          "text": "Manual overrides remain stable during subsequent automatic draft or analysis operations unless explicitly reset."
+        }
+      ],
+      "scenarios": [
+        "AT-06",
+        "AT-08",
+        "AT-11"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-031",
+      "title": "Explicit master audio and routing",
+      "feature": "AVE-FEAT-005",
+      "milestone": "M1",
+      "origins": [
+        "U02",
+        "U15",
+        "U19"
+      ],
+      "dependencies": [
+        "AVE-REQ-011",
+        "AVE-REQ-012"
+      ],
+      "statement": "A segment or synchronization group shall be able to use one selected source audio track as the final audio while displaying multiple video perspectives.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Selecting camera A as reference audio mutes camera B in the final mix without removing B audio needed for analysis."
+        },
+        {
+          "id": "AC-2",
+          "text": "A silent secondary video is supported without generating a synthetic duplicate audio stream."
+        },
+        {
+          "id": "AC-3",
+          "text": "Switching between split-screen and full-width segments follows explicit segment-level audio routing and fade rules."
+        },
+        {
+          "id": "AC-4",
+          "text": "An unavailable reference audio stream triggers a visible fallback decision, not an unnoticed substitute."
+        }
+      ],
+      "scenarios": [
+        "AT-04",
+        "AT-02",
+        "AT-28"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-032",
+      "title": "Independent audio tracks and basic mixing",
+      "feature": "AVE-FEAT-005",
+      "milestone": "M2",
+      "origins": [
+        "U02"
+      ],
+      "dependencies": [
+        "AVE-REQ-031"
+      ],
+      "statement": "The timeline shall support independent audio clips and basic mixing controls for source audio, voice, music, and other imported audio.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can add audio-only assets, trim and move them, adjust gain, mute or solo, and apply fades or crossfades."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provide level metering and clipping warnings; optional loudness normalization remains an explicit, reversible choice."
+        },
+        {
+          "id": "AC-3",
+          "text": "Audio sample-rate conversion and encoder delay handling do not introduce a growing video/audio offset."
+        },
+        {
+          "id": "AC-4",
+          "text": "Unselected camera audio is not accidentally doubled into the mix."
+        }
+      ],
+      "scenarios": [
+        "AT-28",
+        "AT-04"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-033",
+      "title": "Rendered audiovisual synchronization verification",
+      "feature": "AVE-FEAT-005",
+      "milestone": "M7",
+      "origins": [
+        "U15",
+        "U16",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-028",
+        "AVE-REQ-031",
+        "AVE-REQ-072"
+      ],
+      "statement": "Synchronization acceptance shall measure the exported media, not only the internal offset calculation.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A fixture with known visible events and audible impulses is decoded after export and checked at beginning, middle, and end."
+        },
+        {
+          "id": "AC-2",
+          "text": "The qualified test bound is at most one output video frame after accounting for container timestamps and audio encoder delay."
+        },
+        {
+          "id": "AC-3",
+          "text": "Conversion between 44.1 kHz and 48 kHz and between fractional and integer video rates does not silently change real-time duration."
+        },
+        {
+          "id": "AC-4",
+          "text": "Unverifiable real-world alignment remains labeled unverified or manual; the UI does not claim perfect lip synchronization without evidence."
+        }
+      ],
+      "scenarios": [
+        "AT-04",
+        "AT-08",
+        "AT-28"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-03"
+    },
+    {
+      "id": "AVE-REQ-034",
+      "title": "Timed text and image overlays",
+      "feature": "AVE-FEAT-006",
+      "milestone": "M3",
+      "origins": [
+        "U04"
+      ],
+      "dependencies": [
+        "AVE-REQ-011",
+        "AVE-REQ-019",
+        "AVE-REQ-048"
+      ],
+      "statement": "Users and AI shall add, edit, remove, and time text and image overlays through the same project editing model.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Each overlay has explicit start and end, position, size, z-order, opacity, and applicable style settings."
+        },
+        {
+          "id": "AC-2",
+          "text": "A fixture overlay from 3 to 6 seconds appears at 3 seconds and disappears at 6 seconds under half-open interval semantics."
+        },
+        {
+          "id": "AC-3",
+          "text": "Image transparency, scaling, and text wrapping are represented in both preview and export."
+        },
+        {
+          "id": "AC-4",
+          "text": "Overlay edits are undoable and invalid timing or unknown image assets are rejected."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-16"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-035",
+      "title": "Contextual opening titles and end references",
+      "feature": "AVE-FEAT-006",
+      "milestone": "M3",
+      "origins": [
+        "U05",
+        "U17",
+        "U18"
+      ],
+      "dependencies": [
+        "AVE-REQ-034",
+        "AVE-REQ-005",
+        "AVE-REQ-038"
+      ],
+      "statement": "The editor shall support brief opening titles, location/date labels, and ending references or credits without displaying them throughout the video by default.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Initial suggestions use a configurable approximately 3-second opening title and 4-second ending card, bounded by the actual segment length."
+        },
+        {
+          "id": "AC-2",
+          "text": "Location and date wording comes from verified metadata or user labels; unknown locations are omitted or left for confirmation."
+        },
+        {
+          "id": "AC-3",
+          "text": "Users can choose project-level or section-level title placement and suppress repeated titles."
+        },
+        {
+          "id": "AC-4",
+          "text": "End references and credits accept user-supplied content and sources; the AI does not fabricate attribution."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-09",
+        "AT-14"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-036",
+      "title": "Readable international text and safe areas",
+      "feature": "AVE-FEAT-006",
+      "milestone": "M3",
+      "origins": [
+        "U04",
+        "U05",
+        "U10"
+      ],
+      "dependencies": [
+        "AVE-REQ-034"
+      ],
+      "statement": "Text overlays and captions shall support Unicode, configurable typography, readable contrast, and aspect-ratio-aware safe areas.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Validate Latin and CJK sample strings with appropriately licensed font fallback and no missing-glyph boxes in reference renders."
+        },
+        {
+          "id": "AC-2",
+          "text": "Changing between 16:9, 1:1, and 9:16 exposes overflow and permits independent layout adjustments."
+        },
+        {
+          "id": "AC-3",
+          "text": "Text is passed to rendering libraries safely; punctuation and control-like strings do not become commands or filter expressions."
+        },
+        {
+          "id": "AC-4",
+          "text": "Font and text-style choices are persisted and exported with appropriate dependency or font-license documentation."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-13",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-037",
+      "title": "Basic overlay animation without tracking",
+      "feature": "AVE-FEAT-006",
+      "milestone": "M3",
+      "origins": [
+        "U04",
+        "U05",
+        "U06"
+      ],
+      "dependencies": [
+        "AVE-REQ-034"
+      ],
+      "statement": "Overlays shall support simple timed opacity fades and explicit user-defined position or scale keyframes without following detected objects.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Fade-in and fade-out durations can be edited and do not exceed the overlay duration without validation."
+        },
+        {
+          "id": "AC-2",
+          "text": "Keyframed values use defined interpolation and are identical in the composition contract for preview and rendering."
+        },
+        {
+          "id": "AC-3",
+          "text": "Static overlay operation does not depend on a tracking model."
+        },
+        {
+          "id": "AC-4",
+          "text": "No object- or motion-tracking implementation is introduced as a prerequisite for version one."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-31"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-038",
+      "title": "Editable date and location sections",
+      "feature": "AVE-FEAT-007",
+      "milestone": "M3",
+      "origins": [
+        "U17",
+        "U18"
+      ],
+      "dependencies": [
+        "AVE-REQ-005",
+        "AVE-REQ-011"
+      ],
+      "statement": "The project shall support named sections or chapters with explicit timeline boundaries, optionally suggested from recording days or locations.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can create, rename, move, split, and delete sections and correct automatic day/city groupings."
+        },
+        {
+          "id": "AC-2",
+          "text": "Suggestions record whether grouping derives from metadata, user labels, or uncertain inference."
+        },
+        {
+          "id": "AC-3",
+          "text": "Section boundaries remain valid after timeline edits using a documented anchoring policy."
+        },
+        {
+          "id": "AC-4",
+          "text": "A trip can contain multiple sections for one city or date; unknown metadata does not prevent manual organization."
+        }
+      ],
+      "scenarios": [
+        "AT-09",
+        "AT-11"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-039",
+      "title": "Section and whole-project export",
+      "feature": "AVE-FEAT-007",
+      "milestone": "M6",
+      "origins": [
+        "U18"
+      ],
+      "dependencies": [
+        "AVE-REQ-038",
+        "AVE-REQ-072",
+        "AVE-REQ-063"
+      ],
+      "statement": "Users shall export one section, selected sections, or the entire project through the same render pipeline.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Individual section exports start at output time zero and correctly rebase overlays, audio, and subtitle cues."
+        },
+        {
+          "id": "AC-2",
+          "text": "Whole-project export preserves chosen section order and can include supported chapter metadata and a text chapter list."
+        },
+        {
+          "id": "AC-3",
+          "text": "Transitions crossing a section boundary have an explicit clip, include-handle, or rerender policy shown before export."
+        },
+        {
+          "id": "AC-4",
+          "text": "Batch section export reports independent job status and does not corrupt successful outputs if another section fails."
+        }
+      ],
+      "scenarios": [
+        "AT-09",
+        "AT-13",
+        "AT-17"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-040",
+      "title": "Non-destructive color and tonal controls",
+      "feature": "AVE-FEAT-008",
+      "milestone": "M3",
+      "origins": [
+        "U21"
+      ],
+      "dependencies": [
+        "AVE-REQ-011",
+        "AVE-REQ-019"
+      ],
+      "statement": "The editor shall expose non-destructive exposure, contrast, saturation, white balance or temperature/tint, shadows, highlights, and tonal adjustments.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Controls operate on a defined working color representation, have bounded values, and can be reset or bypassed."
+        },
+        {
+          "id": "AC-2",
+          "text": "The selected clip or project look can be inspected before and after adjustment without changing source bytes."
+        },
+        {
+          "id": "AC-3",
+          "text": "The grading model is exposed through validated editing operations rather than arbitrary filter-string injection."
+        },
+        {
+          "id": "AC-4",
+          "text": "Known color-ramp fixtures produce the documented tonal change in reference rendering."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-26"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-041",
+      "title": "Reusable project, camera, and clip color profiles",
+      "feature": "AVE-FEAT-008",
+      "milestone": "M3",
+      "origins": [
+        "U21"
+      ],
+      "dependencies": [
+        "AVE-REQ-040"
+      ],
+      "statement": "Users shall save reusable color profiles and apply them project-wide, by camera/perspective, or to individual clips.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A project profile affects all applicable current clips and newly imported clips according to an explicit inheritance rule."
+        },
+        {
+          "id": "AC-2",
+          "text": "Camera-level and clip-level overrides have visible precedence and never accidentally apply the same input transform twice."
+        },
+        {
+          "id": "AC-3",
+          "text": "Profiles can be named, duplicated, imported, exported, previewed, and reset without altering originals."
+        },
+        {
+          "id": "AC-4",
+          "text": "A linked preset update has a documented effect; users can detach or freeze an individual clip look."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-22"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-042",
+      "title": "Input color interpretation and SDR normalization",
+      "feature": "AVE-FEAT-008",
+      "milestone": "M3",
+      "origins": [
+        "U21",
+        "U23",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-040"
+      ],
+      "statement": "The system shall distinguish technical input color transforms from creative looks and provide a validated SDR output path.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Inspect color primaries, transfer, matrix, range, and available bit-depth metadata, and allow user correction when tags are absent or wrong."
+        },
+        {
+          "id": "AC-2",
+          "text": "Do not assume a DJI recording is log or apply a camera-specific LUT without confirmed profile information."
+        },
+        {
+          "id": "AC-3",
+          "text": "Default output uses a documented SDR Rec.709 path; recognized HDR inputs require supported tone mapping or an explicit unsupported warning."
+        },
+        {
+          "id": "AC-4",
+          "text": "Unknown log/HDR material is not silently labeled color-accurate; optional LUT import validates format and records provenance."
+        }
+      ],
+      "scenarios": [
+        "AT-26",
+        "AT-10"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-043",
+      "title": "Color consistency across outputs",
+      "feature": "AVE-FEAT-008",
+      "milestone": "M7",
+      "origins": [
+        "U21",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-022",
+        "AVE-REQ-041",
+        "AVE-REQ-042"
+      ],
+      "statement": "Project and camera looks shall remain consistent across full exports, section exports, shorts, and available CPU/GPU encoding paths.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "All outputs inherit the intended grade unless an explicit per-output override is set."
+        },
+        {
+          "id": "AC-2",
+          "text": "Color tags and pixel format in the encoded file match the selected output policy."
+        },
+        {
+          "id": "AC-3",
+          "text": "Reference tests compare color patches with documented lossy-codec tolerances and detect double transforms or full/limited-range errors."
+        },
+        {
+          "id": "AC-4",
+          "text": "Hardware encoding availability does not imply every grading filter executes on the GPU."
+        }
+      ],
+      "scenarios": [
+        "AT-10",
+        "AT-18",
+        "AT-26"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-04"
+    },
+    {
+      "id": "AVE-REQ-044",
+      "title": "Natural-language editing interface",
+      "feature": "AVE-FEAT-009",
+      "milestone": "M5",
+      "origins": [
+        "U24",
+        "U25"
+      ],
+      "dependencies": [
+        "AVE-REQ-015",
+        "AVE-REQ-048",
+        "AVE-REQ-050"
+      ],
+      "statement": "The editor shall offer a project-aware text interface for initial editing instructions and subsequent modifications.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can reference selected clips, named sections, visible timeline items, or a scoped time range in a prompt."
+        },
+        {
+          "id": "AC-2",
+          "text": "Show planning, analysis, proposal, application, and failure/cancel states rather than one indefinite spinner."
+        },
+        {
+          "id": "AC-3",
+          "text": "A request such as shorten the last section and move its title is converted to inspectable editing operations."
+        },
+        {
+          "id": "AC-4",
+          "text": "Provider errors or missing credentials do not masquerade as completed AI edits, and manual editing remains available."
+        }
+      ],
+      "scenarios": [
+        "AT-14",
+        "AT-12",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-045",
+      "title": "End-to-end AI first draft",
+      "feature": "AVE-FEAT-009",
+      "milestone": "M5",
+      "origins": [
+        "U24",
+        "U01",
+        "U15",
+        "U05"
+      ],
+      "dependencies": [
+        "AVE-REQ-006",
+        "AVE-REQ-008",
+        "AVE-REQ-023",
+        "AVE-REQ-035",
+        "AVE-REQ-038",
+        "AVE-REQ-047",
+        "AVE-REQ-057",
+        "AVE-REQ-065"
+      ],
+      "statement": "From a populated collection and a high-level brief, the AI shall produce a playable first-draft timeline, not merely editing advice.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The workflow examines available metadata and analysis, proposes camera groups and synchronization, organizes sections, and selects coherent source intervals."
+        },
+        {
+          "id": "AC-2",
+          "text": "It assembles split-screen and full-width segments, routes reference audio, applies the chosen look, and adds bounded titles and requested captions."
+        },
+        {
+          "id": "AC-3",
+          "text": "It reports uncertain alignment, exclusions, missing metadata, and assumptions without presenting them as verified facts."
+        },
+        {
+          "id": "AC-4",
+          "text": "An initial empty-project draft may apply automatically as a reversible transaction; replacing an existing edit requires a diff or explicit scoped authorization."
+        }
+      ],
+      "scenarios": [
+        "AT-14",
+        "AT-02",
+        "AT-09"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-046",
+      "title": "Reviewable and atomic AI edit proposals",
+      "feature": "AVE-FEAT-009",
+      "milestone": "M5",
+      "origins": [
+        "U20",
+        "U24",
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-015",
+        "AVE-REQ-016",
+        "AVE-REQ-048"
+      ],
+      "statement": "AI outputs shall be validated structured edit proposals with a readable diff, dry run, scoped application, and undo.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can inspect affected clips, source ranges, layout changes, audio changes, captions, and estimated expensive operations before acceptance."
+        },
+        {
+          "id": "AC-2",
+          "text": "A transaction either applies completely against the expected revision or leaves the project unchanged."
+        },
+        {
+          "id": "AC-3",
+          "text": "Repeating an idempotent request does not duplicate clips, captions, or export jobs."
+        },
+        {
+          "id": "AC-4",
+          "text": "Clear-all, overwrite, media deletion, external uploads, and spending actions are not silently authorized by a general editing prompt."
+        }
+      ],
+      "scenarios": [
+        "AT-12",
+        "AT-16",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-047",
+      "title": "Grounded editorial reasoning",
+      "feature": "AVE-FEAT-009",
+      "milestone": "M5",
+      "origins": [
+        "U07",
+        "U12",
+        "U13",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-058",
+        "AVE-REQ-065"
+      ],
+      "statement": "AI recommendations shall be grounded in identified assets, source intervals, transcripts, metadata, or explicitly labeled visual inference.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Every suggested cut, title fact, highlight, or content summary references the relevant asset and source range or a user instruction."
+        },
+        {
+          "id": "AC-2",
+          "text": "Unsupported claims about location, people, dialogue, or events are omitted or labeled uncertain."
+        },
+        {
+          "id": "AC-3",
+          "text": "Media analysis is retrieved in bounded chunks rather than sending every original video into every model request."
+        },
+        {
+          "id": "AC-4",
+          "text": "Candidate scores describe editorial estimates, not guaranteed correctness, engagement, or virality."
+        }
+      ],
+      "scenarios": [
+        "AT-14",
+        "AT-19",
+        "AT-25"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-048",
+      "title": "One typed editing command service",
+      "feature": "AVE-FEAT-010",
+      "milestone": "M1",
+      "origins": [
+        "U04",
+        "U08",
+        "U20",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-012"
+      ],
+      "statement": "The UI, internal AI, and external integrations shall use one versioned, typed editing service with shared validation.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Support project inspection, asset search, analysis requests, timeline reads, validated batch edits, synchronization, profiles, subtitles, sections, and render-job operations."
+        },
+        {
+          "id": "AC-2",
+          "text": "Use stable identifiers, schema validation, expected revisions, idempotency keys, and structured errors."
+        },
+        {
+          "id": "AC-3",
+          "text": "Do not expose arbitrary shell commands, arbitrary filesystem writes, or raw unvalidated FFmpeg filter graphs as editing operations."
+        },
+        {
+          "id": "AC-4",
+          "text": "Unit and contract tests demonstrate that equivalent UI and AI requests yield equivalent project state."
+        }
+      ],
+      "scenarios": [
+        "AT-16",
+        "AT-12"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-049",
+      "title": "MCP editing interface and external agent clients",
+      "feature": "AVE-FEAT-010",
+      "milestone": "M5",
+      "origins": [
+        "U08",
+        "U25"
+      ],
+      "dependencies": [
+        "AVE-REQ-048",
+        "AVE-REQ-056"
+      ],
+      "statement": "Expose the supported editor operations through a standards-based MCP server so externally configured Claude Code and Codex clients can inspect and edit a project.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Provide working tool discovery, validated tool calls, concise descriptions, structured results, and references to paginated project resources."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provide a local stdio connection and, when remote access is enabled, an authenticated Streamable HTTP configuration using the supported protocol/SDK version."
+        },
+        {
+          "id": "AC-3",
+          "text": "Long-running analysis and export calls return job identifiers with status and cancellation operations instead of holding a tool call open indefinitely."
+        },
+        {
+          "id": "AC-4",
+          "text": "Document and test a read -> propose -> validate -> apply -> export workflow from an MCP client; distinguish protocol-level tests from a live Claude/Codex integration test."
+        }
+      ],
+      "scenarios": [
+        "AT-16",
+        "AT-24",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-050",
+      "title": "Provider-neutral language-model adapters",
+      "feature": "AVE-FEAT-011",
+      "milestone": "M5",
+      "origins": [
+        "U25",
+        "U26"
+      ],
+      "dependencies": [
+        "AVE-REQ-048"
+      ],
+      "statement": "The runtime shall support configurable Anthropic and OpenAI-compatible endpoints through explicit provider capabilities rather than one hard-coded model.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users configure server-side credentials, endpoint, model ID, and capability settings; a bounded connection test reports actual support."
+        },
+        {
+          "id": "AC-2",
+          "text": "Handle differences in tool calling, structured output, vision, streaming, timeouts, and context limits instead of assuming all OpenAI-compatible servers behave identically."
+        },
+        {
+          "id": "AC-3",
+          "text": "Text-only models remain usable for transcript-grounded editing; absent capabilities are clearly disabled or routed to another selected provider."
+        },
+        {
+          "id": "AC-4",
+          "text": "Use an available account-configured model by default; do not depend on a model name or subscription entitlement that has not been verified."
+        }
+      ],
+      "scenarios": [
+        "AT-24",
+        "AT-14"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-051",
+      "title": "Claude Agent runtime adapter",
+      "feature": "AVE-FEAT-011",
+      "milestone": "M5",
+      "origins": [
+        "U25"
+      ],
+      "dependencies": [
+        "AVE-REQ-049",
+        "AVE-REQ-050",
+        "AVE-REQ-056"
+      ],
+      "statement": "Provide a first-class optional server-side Claude Agent integration using the currently supported Claude Agent SDK and a constrained editor tool surface.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Treat Claude Code or Claude Agent as an agent runtime, not a model ID or an OpenAI-compatible endpoint."
+        },
+        {
+          "id": "AC-2",
+          "text": "The adapter can start or resume a scoped editing request, stream progress, return a proposal, and cancel using supported SDK mechanisms."
+        },
+        {
+          "id": "AC-3",
+          "text": "Credentials and product authentication use supported provider mechanisms; do not copy developer-session tokens or assume a Claude subscription authorizes an embedded application."
+        },
+        {
+          "id": "AC-4",
+          "text": "Without the required installation or credentials, expose an actionable unavailable state and retain external MCP and other provider paths; do not label a stub verified."
+        }
+      ],
+      "scenarios": [
+        "AT-24",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-052",
+      "title": "Codex runtime adapter",
+      "feature": "AVE-FEAT-011",
+      "milestone": "M5",
+      "origins": [
+        "U25"
+      ],
+      "dependencies": [
+        "AVE-REQ-049",
+        "AVE-REQ-050",
+        "AVE-REQ-056"
+      ],
+      "statement": "Provide a first-class optional server-side Codex integration using the current supported SDK or app-server interface and the same constrained editing tools.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The adapter starts or resumes an editing request, reports streamed progress and cancellation, and returns validated proposals."
+        },
+        {
+          "id": "AC-2",
+          "text": "It does not assume Codex is a raw language model or implement against a removed CLI command."
+        },
+        {
+          "id": "AC-3",
+          "text": "Authentication, process isolation, and writable workspace are explicitly configured and do not expose original media or unrelated files to general coding tools."
+        },
+        {
+          "id": "AC-4",
+          "text": "Contract fixtures and a documented credentialed live smoke test distinguish adapter implementation from externally verified operation."
+        }
+      ],
+      "scenarios": [
+        "AT-24",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-053",
+      "title": "Hugging Face model registry and downloads",
+      "feature": "AVE-FEAT-011",
+      "milestone": "M4",
+      "origins": [
+        "U07",
+        "U09",
+        "U26"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-082"
+      ],
+      "statement": "The application shall support explicitly selected, downloadable Hugging Face analysis models with a model registry and bounded resource handling.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The registry records task, repository ID, pinned revision, license, supported languages/modalities, files, and selected execution profile."
+        },
+        {
+          "id": "AC-2",
+          "text": "Downloads are opt-in, show progress and estimated storage, resume safely, and respect an application-controlled cache."
+        },
+        {
+          "id": "AC-3",
+          "text": "Do not enable arbitrary repository code or trust_remote_code by default; additional executable code requires separate reviewed approval."
+        },
+        {
+          "id": "AC-4",
+          "text": "Cached models can run offline; insufficient RAM/VRAM or unsupported acceleration results in a fallback choice or clear unavailable status rather than an OOM loop."
+        }
+      ],
+      "scenarios": [
+        "AT-24",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-054",
+      "title": "AI budgets, retries, caching, and cancellation",
+      "feature": "AVE-FEAT-011",
+      "milestone": "M5",
+      "origins": [
+        "U24",
+        "U26",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-044",
+        "AVE-REQ-050",
+        "AVE-REQ-077"
+      ],
+      "statement": "AI and media-analysis workflows shall have configurable budgets, bounded retries, caching, cancellation, and persistent stage state.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can bound duration, model calls, token or cost limits when available, and local concurrency; unknown costs remain labeled unknown."
+        },
+        {
+          "id": "AC-2",
+          "text": "Cache analysis by source checksum, model revision, prompt/schema version, language, and relevant settings; invalidate stale entries."
+        },
+        {
+          "id": "AC-3",
+          "text": "Retry transient failures with limits and backoff, but do not blindly repeat a mutating operation or an authorization failure."
+        },
+        {
+          "id": "AC-4",
+          "text": "Cancellation stops queued work and terminates or safely detaches active processing, preserving already accepted project edits."
+        }
+      ],
+      "scenarios": [
+        "AT-17",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-055",
+      "title": "Untrusted media and prompt-injection boundary",
+      "feature": "AVE-FEAT-012",
+      "milestone": "M5",
+      "origins": [
+        "D04",
+        "U08",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-048"
+      ],
+      "statement": "Filenames, transcripts, subtitles, metadata, OCR text, and model-generated captions shall be treated as untrusted content rather than executable instructions.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A clip containing text that requests deleting files or leaking credentials cannot override the editing policy."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provider outputs are parsed against schemas and authorized operations before any project mutation."
+        },
+        {
+          "id": "AC-3",
+          "text": "User-authored instructions are distinguished from quoted content inside media and retrieved analysis."
+        },
+        {
+          "id": "AC-4",
+          "text": "Prompt-injection regression fixtures are included for transcripts, filenames, and MCP tool results."
+        }
+      ],
+      "scenarios": [
+        "AT-20",
+        "AT-16"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-056",
+      "title": "Tool authorization and credential boundaries",
+      "feature": "AVE-FEAT-012",
+      "milestone": "M5",
+      "origins": [
+        "D04",
+        "U08",
+        "U25"
+      ],
+      "dependencies": [
+        "AVE-REQ-048",
+        "AVE-REQ-087"
+      ],
+      "statement": "Tool access shall be scoped by project and operation, with secrets held outside browser-visible data and project bundles.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Read, edit, render, external-analysis, and administrative capabilities are separable; project A credentials cannot edit project B."
+        },
+        {
+          "id": "AC-2",
+          "text": "Remote MCP/API access is authenticated and follows a documented transport-security deployment profile."
+        },
+        {
+          "id": "AC-3",
+          "text": "Configurable local model endpoints are supported through explicit allowlists; arbitrary media URLs cannot become an SSRF route to private services."
+        },
+        {
+          "id": "AC-4",
+          "text": "Application logs, exported projects, AI context, error messages, and browser state do not contain raw secrets."
+        }
+      ],
+      "scenarios": [
+        "AT-20",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-05"
+    },
+    {
+      "id": "AVE-REQ-057",
+      "title": "Speech extraction and local transcription",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U09",
+        "U26"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-053"
+      ],
+      "statement": "Extract speech-bearing audio for automatic transcription with source-aligned timestamps and a functional CPU-capable local model path.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Transcribe the selected audible source or explicit analysis source, retaining asset identity and source-time word or segment timestamps."
+        },
+        {
+          "id": "AC-2",
+          "text": "A multilingual small-model CPU profile is available; larger or GPU profiles are optional and resource-checked."
+        },
+        {
+          "id": "AC-3",
+          "text": "Silence and non-speech fixtures do not produce accepted invented dialogue; uncertain text is flagged and editable."
+        },
+        {
+          "id": "AC-4",
+          "text": "Transcription errors or unavailable models are visible and never replaced by fabricated transcript text."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-24",
+        "AT-15"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-058",
+      "title": "Editable searchable source transcripts",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U07",
+        "U09"
+      ],
+      "dependencies": [
+        "AVE-REQ-057"
+      ],
+      "statement": "Users shall inspect, correct, and search transcripts linked to source intervals without changing original recordings.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Search results jump to the relevant source or timeline occurrence and show asset identity."
+        },
+        {
+          "id": "AC-2",
+          "text": "Corrections preserve source timing or allow explicit timing adjustment and invalidate affected derived translations or summaries."
+        },
+        {
+          "id": "AC-3",
+          "text": "A source appearing multiple times on a timeline retains a single source transcript with separate timeline mappings."
+        },
+        {
+          "id": "AC-4",
+          "text": "Imported or manually written transcripts remain labeled as such, distinct from model-generated text."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-19"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-059",
+      "title": "Language detection and source-language control",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U09",
+        "U10"
+      ],
+      "dependencies": [
+        "AVE-REQ-057"
+      ],
+      "statement": "The transcription workflow shall support detected or user-selected source languages and preserve language metadata.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can override a wrong detected language per asset or transcript."
+        },
+        {
+          "id": "AC-2",
+          "text": "Original-language text is retained rather than silently replaced by a translation."
+        },
+        {
+          "id": "AC-3",
+          "text": "Mixed-language content is represented using the selected model capabilities and flagged where detection is uncertain."
+        },
+        {
+          "id": "AC-4",
+          "text": "The UI reports actual model-supported language capabilities rather than claiming every language is supported equally."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-060",
+      "title": "Translated subtitle language tracks",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U10"
+      ],
+      "dependencies": [
+        "AVE-REQ-058",
+        "AVE-REQ-059",
+        "AVE-REQ-050"
+      ],
+      "statement": "The system shall generate editable translated subtitle tracks in user-selected target languages while preserving timing and original text.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Translation is a distinct capability from speech recognition and may use the configured text provider or an explicitly installed translation model."
+        },
+        {
+          "id": "AC-2",
+          "text": "Preserve names and proper nouns where appropriate, keep source links, and mark translations as machine-generated until reviewed."
+        },
+        {
+          "id": "AC-3",
+          "text": "Changing a source cue marks affected translations stale without deleting user corrections silently."
+        },
+        {
+          "id": "AC-4",
+          "text": "When translation is unavailable, original-language captions still work and the missing capability is explained."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-061",
+      "title": "Toggleable single- and dual-language captions",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U10",
+        "U11"
+      ],
+      "dependencies": [
+        "AVE-REQ-060",
+        "AVE-REQ-064"
+      ],
+      "statement": "Users shall choose no captions, one language, or a primary plus secondary language in the editor without permanently burning them into source video.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Caption visibility and selected language tracks can be changed during preview."
+        },
+        {
+          "id": "AC-2",
+          "text": "Dual-language display keeps the two languages distinguishable and avoids overlapping text."
+        },
+        {
+          "id": "AC-3",
+          "text": "Export settings independently choose sidecars, supported embedded tracks, or intentional burn-in."
+        },
+        {
+          "id": "AC-4",
+          "text": "Turning editor captions off does not delete the stored subtitle tracks or prohibit exporting sidecars."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-10"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-062",
+      "title": "Subtitle retiming through edits and synchronization",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U10",
+        "U15",
+        "U20",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-012",
+        "AVE-REQ-026",
+        "AVE-REQ-058"
+      ],
+      "statement": "Subtitle cues shall be derived from source-aligned text through the same time mappings used by video and audio.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Trims, cuts, repeated source uses, synchronization offsets, drift correction, and section/short exports produce correct output cue timing."
+        },
+        {
+          "id": "AC-2",
+          "text": "Cues are split or clipped at removed regions rather than spanning unrelated footage."
+        },
+        {
+          "id": "AC-3",
+          "text": "No exported cue has negative duration, invalid ordering, or times beyond the selected output interval."
+        },
+        {
+          "id": "AC-4",
+          "text": "Editing a timeline does not corrupt the original source transcript timestamps."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-08",
+        "AT-09"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-063",
+      "title": "Subtitle sidecars and supported embedded tracks",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M6",
+      "origins": [
+        "U10",
+        "U11"
+      ],
+      "dependencies": [
+        "AVE-REQ-062"
+      ],
+      "statement": "Export per-language UTF-8 SRT and WebVTT subtitle files and offer compatible embedded subtitle tracks when the selected container supports them.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "One selected language produces a separately named, valid subtitle file with rebased output timing and language metadata."
+        },
+        {
+          "id": "AC-2",
+          "text": "Burn-in is optional and clearly distinguished from toggleable captions; original-language and translated files can be exported together."
+        },
+        {
+          "id": "AC-3",
+          "text": "Unsupported codec/container subtitle combinations are rejected or redirected to sidecars with an explanation."
+        },
+        {
+          "id": "AC-4",
+          "text": "Document uploading subtitle files to external platforms; do not claim that embedding tracks automatically creates selectable platform captions."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-18"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-064",
+      "title": "Caption formatting and manual cue editor",
+      "feature": "AVE-FEAT-013",
+      "milestone": "M4",
+      "origins": [
+        "U10",
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-034",
+        "AVE-REQ-058"
+      ],
+      "statement": "Provide editable caption text, cue timings, line breaks, style, and readability checks suitable for different canvas ratios and languages.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Users can correct text, split or merge cues, and adjust timings without regenerating the whole transcript."
+        },
+        {
+          "id": "AC-2",
+          "text": "Check safe-area overflow, excessive lines, and configurable reading-speed concerns without discarding speech automatically."
+        },
+        {
+          "id": "AC-3",
+          "text": "Title and primary/secondary caption regions can be adjusted to avoid collisions."
+        },
+        {
+          "id": "AC-4",
+          "text": "Caption styles remain consistent in authoritative preview and optional burn-in export."
+        }
+      ],
+      "scenarios": [
+        "AT-13",
+        "AT-10"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-065",
+      "title": "Timestamped keyframes and shot summaries",
+      "feature": "AVE-FEAT-014",
+      "milestone": "M4",
+      "origins": [
+        "U07",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-004",
+        "AVE-REQ-007"
+      ],
+      "statement": "Create a bounded source index of representative timestamped frames, scene boundaries, metadata, and available transcript excerpts for AI retrieval.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Extraction samples the whole source progressively with configurable limits instead of decoding every frame into memory."
+        },
+        {
+          "id": "AC-2",
+          "text": "Each frame or shot record includes asset ID, exact source interval, extraction method, and derived-asset provenance."
+        },
+        {
+          "id": "AC-3",
+          "text": "The AI can retrieve relevant subsets for an edit request and inspect where coverage is incomplete."
+        },
+        {
+          "id": "AC-4",
+          "text": "Basic metadata/transcript-driven drafting remains available when a visual model is not configured."
+        }
+      ],
+      "scenarios": [
+        "AT-19",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-066",
+      "title": "Optional local or remote visual-caption adapter",
+      "feature": "AVE-FEAT-014",
+      "milestone": "M4",
+      "origins": [
+        "U07",
+        "U26"
+      ],
+      "dependencies": [
+        "AVE-REQ-053",
+        "AVE-REQ-065",
+        "AVE-REQ-050"
+      ],
+      "statement": "Provide an optional visual-captioning adapter that can summarize selected frames or short windows using a configured vision model, including a documented Hugging Face candidate.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "At least one supported model execution path is implemented behind the adapter and has contract tests plus a reproducible live-model validation command."
+        },
+        {
+          "id": "AC-2",
+          "text": "Caption requests have frame-count, resolution, context, duration, and memory limits appropriate to detected hardware."
+        },
+        {
+          "id": "AC-3",
+          "text": "Results are timestamped visual inferences with provenance, not verified facts about identity, location, or unseen events."
+        },
+        {
+          "id": "AC-4",
+          "text": "When no feasible vision model is available, expose that limitation and use metadata/transcript evidence rather than returning placeholder visual descriptions."
+        }
+      ],
+      "scenarios": [
+        "AT-19",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-067",
+      "title": "Advanced continuous video understanding",
+      "feature": "AVE-FEAT-014",
+      "milestone": "FUTURE",
+      "origins": [
+        "U07"
+      ],
+      "dependencies": [
+        "AVE-REQ-065",
+        "AVE-REQ-066"
+      ],
+      "statement": "A later version may add richer continuous temporal video understanding and semantic retrieval beyond bounded frames, shots, and transcripts.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Preserve extensible analysis schemas and source-time references in version one."
+        },
+        {
+          "id": "AC-2",
+          "text": "Do not require a large video model, vector database, tracking, or full-video semantic comprehension to ship version one."
+        },
+        {
+          "id": "AC-3",
+          "text": "Keep this feature visibly deferred and do not advertise it as implemented based on frame captions alone."
+        }
+      ],
+      "scenarios": [
+        "AT-31"
+      ],
+      "priority": "future",
+      "scope": "future",
+      "status": "deferred",
+      "epic": "AVE-EPIC-06"
+    },
+    {
+      "id": "AVE-REQ-068",
+      "title": "Grounded short-form highlight suggestions",
+      "feature": "AVE-FEAT-015",
+      "milestone": "M6",
+      "origins": [
+        "U12"
+      ],
+      "dependencies": [
+        "AVE-REQ-047",
+        "AVE-REQ-058",
+        "AVE-REQ-065"
+      ],
+      "statement": "The AI shall propose short-form highlights with a default duration range of 15 to 20 seconds and editable editorial rationale.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Default target is 18 seconds within the user-configurable 15..20-second range; source duration and hard constraints are respected."
+        },
+        {
+          "id": "AC-2",
+          "text": "Candidates reference selected source/project intervals, relevant transcript or visual evidence, and an explanation of the proposed hook or subject."
+        },
+        {
+          "id": "AC-3",
+          "text": "Prefer coherent starts and endings; if no adequate candidate exists, report that rather than padding with invented footage or claiming guaranteed engagement."
+        },
+        {
+          "id": "AC-4",
+          "text": "Users can compare candidates, choose one or several, and adjust their ranges before export."
+        }
+      ],
+      "scenarios": [
+        "AT-19",
+        "AT-14"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-069",
+      "title": "Independent short sequences and reframing",
+      "feature": "AVE-FEAT-015",
+      "milestone": "M6",
+      "origins": [
+        "U12",
+        "U02"
+      ],
+      "dependencies": [
+        "AVE-REQ-068",
+        "AVE-REQ-019",
+        "AVE-REQ-015"
+      ],
+      "statement": "Shorts shall be derived editable sequences that reuse originals without destructively changing the main edit.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Default short canvas is 1:1 as requested; 9:16, 16:9, and custom ratios remain selectable."
+        },
+        {
+          "id": "AC-2",
+          "text": "Derived shorts preserve intended sync, audio routing, grades, overlays, and subtitle time mappings."
+        },
+        {
+          "id": "AC-3",
+          "text": "Provide static split, stacked, full-width, or cropped composition options suitable for the chosen output; no tracking is required."
+        },
+        {
+          "id": "AC-4",
+          "text": "Editing a short does not mutate the parent sequence unless the user explicitly applies a supported shared change."
+        }
+      ],
+      "scenarios": [
+        "AT-19",
+        "AT-13",
+        "AT-02"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-070",
+      "title": "Short preview and batch delivery",
+      "feature": "AVE-FEAT-015",
+      "milestone": "M6",
+      "origins": [
+        "U12",
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-069",
+        "AVE-REQ-072",
+        "AVE-REQ-063"
+      ],
+      "statement": "Users shall preview, adjust, and export selected short sequences with associated subtitles and publication metadata.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Validate actual output duration, ratio, resolution, and audio after rendering; do not merely trust preset labels."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provide per-short naming, thumbnail/reference frame, caption choices, and export job status."
+        },
+        {
+          "id": "AC-3",
+          "text": "Batch export isolates failures and uses bounded worker concurrency."
+        },
+        {
+          "id": "AC-4",
+          "text": "Platform presets are editable recommendations, dated when tied to external guidance, and not guarantees of platform acceptance."
+        }
+      ],
+      "scenarios": [
+        "AT-19",
+        "AT-18",
+        "AT-17"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-071",
+      "title": "Copyable SEO and publication suggestions",
+      "feature": "AVE-FEAT-016",
+      "milestone": "M6",
+      "origins": [
+        "U13"
+      ],
+      "dependencies": [
+        "AVE-REQ-047",
+        "AVE-REQ-058",
+        "AVE-REQ-038"
+      ],
+      "statement": "The AI shall generate editable keyword, tag, title, and description suggestions for the whole video, a section, or a short.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Suggestions are grounded in available content, locations, language, and user instructions, without invented claims."
+        },
+        {
+          "id": "AC-2",
+          "text": "Users can copy individual fields or export a text/JSON metadata bundle in a selected language."
+        },
+        {
+          "id": "AC-3",
+          "text": "Suggested keywords and hashtags are distinguished from technical container metadata and subtitle tracks."
+        },
+        {
+          "id": "AC-4",
+          "text": "The interface makes no promise of search ranking, reach, or virality and does not upload to a platform automatically."
+        }
+      ],
+      "scenarios": [
+        "AT-25",
+        "AT-19"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-072",
+      "title": "Real export pipeline and default delivery profile",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M1",
+      "origins": [
+        "U22",
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-012",
+        "AVE-REQ-048"
+      ],
+      "statement": "The product shall render real playable video files from the composition graph, with an initial MP4/H.264/AAC SDR delivery profile and configurable output parameters.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The initial delivery profile uses the project canvas/rate, normally 1920x1080 at resolved source-appropriate rate, with 48 kHz AAC audio."
+        },
+        {
+          "id": "AC-2",
+          "text": "Expose quality-based and target-bitrate controls with encoder-specific defaults; use a documented software starting point such as CRF 20 rather than claiming universal optimality."
+        },
+        {
+          "id": "AC-3",
+          "text": "Render video, selected audio, layouts, transforms, transitions, effects, and chosen captions; a downloaded project JSON is not a rendered video."
+        },
+        {
+          "id": "AC-4",
+          "text": "Outputs are written atomically and become downloadable only after validation succeeds."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-18",
+        "AT-28"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-073",
+      "title": "Multiple containers and codec choices",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M6",
+      "origins": [
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-072"
+      ],
+      "statement": "The editor shall offer validated export combinations beyond the default profile and show capability-dependent alternatives honestly.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The reference software build supports MP4/H.264/AAC, WebM/VP9/Opus, and a documented MKV profile with correct muxing and playback tests."
+        },
+        {
+          "id": "AC-2",
+          "text": "Additional HEVC, AV1, ProRes/MOV, or other choices are exposed only when installed encoders and output constraints permit them."
+        },
+        {
+          "id": "AC-3",
+          "text": "The UI distinguishes container, video codec, audio codec, pixel format, quality, and bitrate."
+        },
+        {
+          "id": "AC-4",
+          "text": "Changing a container revalidates audio/subtitle compatibility rather than only changing the filename extension."
+        }
+      ],
+      "scenarios": [
+        "AT-18",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-074",
+      "title": "Mixed-rate input and controlled output timing",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M6",
+      "origins": [
+        "U03"
+      ],
+      "dependencies": [
+        "AVE-REQ-012",
+        "AVE-REQ-018",
+        "AVE-REQ-072"
+      ],
+      "statement": "Inputs with different frame rates shall play at their intended real-time speed within one configurable output rate.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Validate combinations of 24, 25, 30, 60, 30000/1001, 60000/1001, and a variable-frame-rate fixture."
+        },
+        {
+          "id": "AC-2",
+          "text": "Default frame-rate conversion uses documented frame selection/repetition where necessary; optical-flow interpolation is not required."
+        },
+        {
+          "id": "AC-3",
+          "text": "Duration, audio timing, synchronization, and overlays remain aligned after conversion."
+        },
+        {
+          "id": "AC-4",
+          "text": "Exports record the exact rational output rate and do not relabel 59.94 material as 60 without an explicit conversion."
+        }
+      ],
+      "scenarios": [
+        "AT-03",
+        "AT-04",
+        "AT-18"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-075",
+      "title": "CPU-only reference rendering",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M1",
+      "origins": [
+        "U22"
+      ],
+      "dependencies": [
+        "AVE-REQ-072",
+        "AVE-REQ-082"
+      ],
+      "statement": "All version-one editing and mandatory export operations shall have a functional CPU-only rendering path.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "The application starts, imports, edits, and exports in the documented reference environment without a GPU."
+        },
+        {
+          "id": "AC-2",
+          "text": "The CPU renderer supports the same required composition semantics as accelerated profiles."
+        },
+        {
+          "id": "AC-3",
+          "text": "No visual analysis model or cloud provider is required merely to render an existing timeline."
+        },
+        {
+          "id": "AC-4",
+          "text": "Tests use real media and decoding of outputs; a mocked render job cannot satisfy this requirement."
+        }
+      ],
+      "scenarios": [
+        "AT-02",
+        "AT-18",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-076",
+      "title": "Capability-tested hardware acceleration",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M6",
+      "origins": [
+        "U22"
+      ],
+      "dependencies": [
+        "AVE-REQ-075"
+      ],
+      "statement": "Detect and use available hardware acceleration for supported processing stages, with explicit CPU fallback and truthful capability reporting.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Probe compiled encoders, device access, and a short real encode before declaring a GPU path usable; an encoder name alone is insufficient."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provide an NVIDIA NVENC acceleration profile when available on the reference Linux deployment; other hardware backends may be added through the same capability layer."
+        },
+        {
+          "id": "AC-3",
+          "text": "Report acceleration separately for decode, filters/composition, encode, and AI inference."
+        },
+        {
+          "id": "AC-4",
+          "text": "If acceleration fails, offer or perform the configured CPU retry without changing project content; report which path actually produced the output."
+        },
+        {
+          "id": "AC-5",
+          "text": "GPU integration tests are conditional on real hardware and reported as not run when unavailable, never as CPU-tested GPU success."
+        }
+      ],
+      "scenarios": [
+        "AT-18",
+        "AT-23",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-077",
+      "title": "Durable asynchronous jobs",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M1",
+      "origins": [
+        "U22",
+        "U24",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-001"
+      ],
+      "statement": "Import analysis, proxies, AI drafts, and exports shall run as durable jobs with observable state, bounded concurrency, cancellation, and safe retry.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Jobs have queued, running, succeeded, failed, and cancelled states, input revision, progress, timestamps, and structured failure details."
+        },
+        {
+          "id": "AC-2",
+          "text": "A process crash recovers queued work and marks interrupted work for safe restart; partially written outputs are not published."
+        },
+        {
+          "id": "AC-3",
+          "text": "Retrying a job with the same idempotency key does not duplicate an accepted project transaction or completed output."
+        },
+        {
+          "id": "AC-4",
+          "text": "Long jobs run outside HTTP request handlers and preserve a responsive application; resource limits prevent unbounded parallel encoders/models."
+        }
+      ],
+      "scenarios": [
+        "AT-17",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-078",
+      "title": "Export preflight and decoded-output validation",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M7",
+      "origins": [
+        "U23",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-072",
+        "AVE-REQ-077"
+      ],
+      "statement": "Preflight exports and verify the produced files against the selected immutable revision and output contract.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Before rendering, validate source availability, intervals, capabilities, free disk space, audio routing, font availability, and relevant subtitle choices."
+        },
+        {
+          "id": "AC-2",
+          "text": "After rendering, probe dimensions, exact rate, streams, codecs, duration, color metadata, and decode representative or complete small-test outputs."
+        },
+        {
+          "id": "AC-3",
+          "text": "Check reference frames and audio for critical fixtures, detecting black outputs, missing overlays, doubled audio, or truncated endings."
+        },
+        {
+          "id": "AC-4",
+          "text": "Validation failure leaves the job failed with diagnostics and never presents an invalid file as a completed delivery."
+        }
+      ],
+      "scenarios": [
+        "AT-18",
+        "AT-04",
+        "AT-10",
+        "AT-17"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-079",
+      "title": "Editable output presets and quality guidance",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M6",
+      "origins": [
+        "U02",
+        "U12",
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-018",
+        "AVE-REQ-072",
+        "AVE-REQ-073"
+      ],
+      "statement": "Offer sensible editable export presets, with visible tradeoffs between dimensions, rate, quality, bitrate, speed, and estimated file size.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Provide landscape 16:9, square 1:1, and portrait 9:16 starting profiles using the selected content and platform-independent defaults."
+        },
+        {
+          "id": "AC-2",
+          "text": "Preserve the user-selected output ratio and rate when recommending bitrate or encoder choices."
+        },
+        {
+          "id": "AC-3",
+          "text": "Label size and time estimates as estimates, and warn about avoidable upscaling or unsupported combinations."
+        },
+        {
+          "id": "AC-4",
+          "text": "Encoder-specific controls are mapped explicitly; do not assume software CRF and hardware quality numbers have identical meaning."
+        }
+      ],
+      "scenarios": [
+        "AT-18",
+        "AT-19"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-080",
+      "title": "Storage quotas and safe derived-file cleanup",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M7",
+      "origins": [
+        "U24",
+        "D01",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-003",
+        "AVE-REQ-077"
+      ],
+      "statement": "The application shall manage derived media storage with quotas, preflight checks, safe temporary directories, and recoverable cleanup.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Low disk space prevents unsafe work or cancels it with a clear error while preserving originals and durable edits."
+        },
+        {
+          "id": "AC-2",
+          "text": "Cache cleanup removes only identified unreferenced derived files within application-owned roots."
+        },
+        {
+          "id": "AC-3",
+          "text": "Failed or cancelled jobs clean temporary outputs without deleting unrelated files or other jobs artifacts."
+        },
+        {
+          "id": "AC-4",
+          "text": "Users can inspect media, proxy, model-cache, and render storage separately."
+        }
+      ],
+      "scenarios": [
+        "AT-22",
+        "AT-23",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-081",
+      "title": "Complete output delivery bundle",
+      "feature": "AVE-FEAT-017",
+      "milestone": "M6",
+      "origins": [
+        "U11",
+        "U13",
+        "U18",
+        "U23"
+      ],
+      "dependencies": [
+        "AVE-REQ-039",
+        "AVE-REQ-063",
+        "AVE-REQ-071",
+        "AVE-REQ-072"
+      ],
+      "statement": "Deliver a coherent output bundle containing the rendered video and the selected supporting artifacts.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Bundle selected per-language captions, chapter list, editable publication metadata, and a render manifest with source/project revision and output settings."
+        },
+        {
+          "id": "AC-2",
+          "text": "Artifacts use consistent names and match the same exported time range."
+        },
+        {
+          "id": "AC-3",
+          "text": "No credentials, private filesystem paths, or unintended GPS data leak into publication bundles."
+        },
+        {
+          "id": "AC-4",
+          "text": "Users can download an individual artifact or the complete bundle."
+        }
+      ],
+      "scenarios": [
+        "AT-18",
+        "AT-25",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-07"
+    },
+    {
+      "id": "AVE-REQ-082",
+      "title": "Self-hostable browser application and CPU reference setup",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M1",
+      "origins": [
+        "U24",
+        "D02"
+      ],
+      "dependencies": [],
+      "statement": "Deliver a working desktop-browser editor backed by a local or self-hosted media-processing service, with a documented CPU-first reference deployment.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Provide repeatable installation/start commands, persistent storage configuration, migrations, and health checks."
+        },
+        {
+          "id": "AC-2",
+          "text": "A reference Linux environment can run without Docker when cloud-development policy prevents nested containers; container deployment is also documented."
+        },
+        {
+          "id": "AC-3",
+          "text": "Do not depend on Claude Code Cloud as a permanent production host, storage service, or GPU provider."
+        },
+        {
+          "id": "AC-4",
+          "text": "Bind local-only deployments safely by default; remote exposure requires the documented authentication and transport settings."
+        }
+      ],
+      "scenarios": [
+        "AT-21",
+        "AT-23",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-083",
+      "title": "Real-media automated verification suite",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D03",
+        "U03",
+        "U15"
+      ],
+      "dependencies": [
+        "AVE-REQ-072"
+      ],
+      "statement": "Implement layered automated verification with real generated media fixtures, independent expected outcomes, and traceability to acceptance criteria.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Include unit tests for time mappings, contract tests for editing tools, integration tests using the real renderer, and browser end-to-end journeys."
+        },
+        {
+          "id": "AC-2",
+          "text": "Generate small fixtures with known timestamps, event markers, audio impulses, aspect ratios, and rate/offset/drift variations."
+        },
+        {
+          "id": "AC-3",
+          "text": "At least one regression exercises approximately 2K input at 60 fps and validates actual output content and synchronization."
+        },
+        {
+          "id": "AC-4",
+          "text": "Mocks are limited to provider/network isolation and cannot alone satisfy media, AI quality, or hardware integration claims."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-04",
+        "AT-03"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-084",
+      "title": "Measured responsiveness and bounded memory",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D02",
+        "U03",
+        "U20"
+      ],
+      "dependencies": [
+        "AVE-REQ-007",
+        "AVE-REQ-017",
+        "AVE-REQ-077"
+      ],
+      "statement": "Keep interactive editing responsive and media processing memory-bounded, with declared reference hardware and measurable performance tests.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "On the declared reference browser/system, a 300-item timeline targets p95 under 150 ms for local selection/trim feedback after assets are indexed, excluding network and rendering completion."
+        },
+        {
+          "id": "AC-2",
+          "text": "Exercise two 2560x1440 60 fps sources in a CPU render smoke test; record elapsed time and peak memory instead of promising real-time export."
+        },
+        {
+          "id": "AC-3",
+          "text": "On the reference 4-vCPU/8-GiB CPU worker profile, one baseline render job excluding optional local LLM/VLM inference stays within a configured 6-GiB worker budget."
+        },
+        {
+          "id": "AC-4",
+          "text": "Import large files and analyze long recordings with streaming/chunked processing; do not read an entire recording into application RAM."
+        },
+        {
+          "id": "AC-5",
+          "text": "If a target cannot be met, report the benchmark and bottleneck; do not silently lower input rate, resolution, or test coverage."
+        }
+      ],
+      "scenarios": [
+        "AT-23",
+        "AT-27"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-085",
+      "title": "Observable jobs and reproducible diagnostics",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-077"
+      ],
+      "statement": "Provide structured diagnostics that identify the state and provenance of media and AI processing without exposing secrets.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Record job ID, project revision, relevant asset IDs, engine/model versions, settings, actual device path, and redacted errors."
+        },
+        {
+          "id": "AC-2",
+          "text": "Users can inspect progress and export a redacted diagnostic report."
+        },
+        {
+          "id": "AC-3",
+          "text": "Log noisy media-process output in bounded files rather than filling the UI or agent context."
+        },
+        {
+          "id": "AC-4",
+          "text": "An exported manifest identifies enough configuration to reproduce a rendering decision on compatible software."
+        }
+      ],
+      "scenarios": [
+        "AT-17",
+        "AT-18",
+        "AT-20"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-086",
+      "title": "Safe media processing boundary",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D04"
+      ],
+      "dependencies": [
+        "AVE-REQ-002",
+        "AVE-REQ-048"
+      ],
+      "statement": "Process uploaded media and images as untrusted input with constrained subprocesses, paths, protocols, and resource usage.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Build subprocess argument arrays without shell interpolation; validate or safely serialize any generated filter expressions."
+        },
+        {
+          "id": "AC-2",
+          "text": "Prevent path traversal, symlink escape, decompression/resource abuse, unapproved protocols, and unauthorized network fetches."
+        },
+        {
+          "id": "AC-3",
+          "text": "Use supported patched dependencies, per-job working directories, timeouts, cancellation, and least-privilege workers."
+        },
+        {
+          "id": "AC-4",
+          "text": "Security tests cover malicious filenames, overlay text, project bundles, subtitles, and oversized or malformed media."
+        }
+      ],
+      "scenarios": [
+        "AT-20",
+        "AT-23"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-087",
+      "title": "Private-by-default media and secrets handling",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M5",
+      "origins": [
+        "D04",
+        "U25",
+        "U26"
+      ],
+      "dependencies": [
+        "AVE-REQ-001"
+      ],
+      "statement": "Keep original recordings, location metadata, transcripts, and credentials private by default and require clear configuration before external processing.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Local import, manual editing, and CPU export do not upload source media to model providers."
+        },
+        {
+          "id": "AC-2",
+          "text": "Before enabling remote analysis, show which data types and approximate payloads leave the system and allow text-only or reduced-frame policies."
+        },
+        {
+          "id": "AC-3",
+          "text": "Secrets are server-side and redacted; they are excluded from repositories, browser responses, project exports, prompts, and logs."
+        },
+        {
+          "id": "AC-4",
+          "text": "Provide retention and deletion controls for derived analysis without deleting originals by default."
+        }
+      ],
+      "scenarios": [
+        "AT-20",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-088",
+      "title": "Pinned dependencies and license inventory",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D02",
+        "D04"
+      ],
+      "dependencies": [
+        "AVE-REQ-082"
+      ],
+      "statement": "Deliver reproducible dependency configuration and a documented inventory of software, model, codec, and font licensing considerations.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Pin supported stable dependency versions and model revisions in lockfiles or equivalent reproducible manifests."
+        },
+        {
+          "id": "AC-2",
+          "text": "Use permissively usable defaults where feasible; do not introduce paid SDKs or subscription-gated editing components without approval."
+        },
+        {
+          "id": "AC-3",
+          "text": "Document the actual FFmpeg build and enabled codecs rather than claiming all possible codec distributions have identical licensing."
+        },
+        {
+          "id": "AC-4",
+          "text": "Provide dependency-update and vulnerability-check commands and report unresolved issues honestly."
+        }
+      ],
+      "scenarios": [
+        "AT-21",
+        "AT-29"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-089",
+      "title": "Accessible, discoverable editing interface",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "U20",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-017",
+        "AVE-REQ-044"
+      ],
+      "statement": "Deliver a usable desktop editing layout with a collection, preview, timeline, inspector, AI panel, and job/output views.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Core actions have labels, keyboard access, focus visibility, useful empty states, and actionable errors."
+        },
+        {
+          "id": "AC-2",
+          "text": "Provide numeric alternatives to pointer-only trim, crop, synchronization, and overlay-position controls."
+        },
+        {
+          "id": "AC-3",
+          "text": "Test current Chromium and Firefox desktop paths supported by the chosen proxy formats and document any browser limitations."
+        },
+        {
+          "id": "AC-4",
+          "text": "Editing and export remain available when AI analysis is busy or disabled; no dead primary buttons or decorative-only timeline."
+        }
+      ],
+      "scenarios": [
+        "AT-11",
+        "AT-21",
+        "AT-27"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-090",
+      "title": "Crash recovery and safe migrations",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "D01"
+      ],
+      "dependencies": [
+        "AVE-REQ-001",
+        "AVE-REQ-015",
+        "AVE-REQ-077"
+      ],
+      "statement": "Project persistence and schema migrations shall recover safely from crashes and preserve existing user edits.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Transactions interrupted before commit leave the previous revision intact; interrupted jobs can be inspected and retried."
+        },
+        {
+          "id": "AC-2",
+          "text": "Back up or otherwise safely checkpoint project data before destructive schema migration."
+        },
+        {
+          "id": "AC-3",
+          "text": "Version checks reject unsupported states instead of guessing at missing fields."
+        },
+        {
+          "id": "AC-4",
+          "text": "Recovery tests restart the application during autosave, analysis, and export and verify originals and accepted edits remain intact."
+        }
+      ],
+      "scenarios": [
+        "AT-22",
+        "AT-17"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-091",
+      "title": "Offline editing and graceful AI degradation",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "U22",
+        "U26",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-075",
+        "AVE-REQ-053"
+      ],
+      "statement": "Once installed, manual editing and supported CPU export shall work without an external model connection, and cached local analysis shall work where its dependencies are present.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Disconnected operation still permits project load, preview, manual edits, and render to supported local formats."
+        },
+        {
+          "id": "AC-2",
+          "text": "Cached speech models operate offline; missing uncached models produce a clear download requirement."
+        },
+        {
+          "id": "AC-3",
+          "text": "A deterministic metadata-based draft may be offered but is explicitly labeled rule-based and does not count as a successful generative-AI integration."
+        },
+        {
+          "id": "AC-4",
+          "text": "Provider or model failures preserve accepted project state and leave alternative manual workflows usable."
+        }
+      ],
+      "scenarios": [
+        "AT-21",
+        "AT-24"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-092",
+      "title": "User and developer handover",
+      "feature": "AVE-FEAT-018",
+      "milestone": "M7",
+      "origins": [
+        "U24",
+        "D02"
+      ],
+      "dependencies": [
+        "AVE-REQ-082",
+        "AVE-REQ-083"
+      ],
+      "statement": "Deliver complete instructions for operating, extending, testing, and deploying the implemented editor.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Include a quick start, example split/full/split project, provider setup, CPU/GPU configuration, subtitle/section/short export, and recovery guide."
+        },
+        {
+          "id": "AC-2",
+          "text": "Document the project schema, typed editing API, MCP setup, model registry, renderer assumptions, and known limitations."
+        },
+        {
+          "id": "AC-3",
+          "text": "Provide screenshots or a recorded walkthrough from the actual running application and generated test media, not a mock design."
+        },
+        {
+          "id": "AC-4",
+          "text": "List exact verified commands and distinguish tested features from implemented but externally unverified integrations."
+        }
+      ],
+      "scenarios": [
+        "AT-21",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-08"
+    },
+    {
+      "id": "AVE-REQ-093",
+      "title": "Adopt and preserve the supplied requirements baseline",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M0",
+      "origins": [
+        "U27",
+        "D05"
+      ],
+      "dependencies": [],
+      "statement": "The implementing agent shall integrate this specification into the existing bootstrapped repository without re-running or replacing the bootstrap.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Preserve this input package as an immutable baseline and map every AVE-REQ ID to its canonical working requirement file."
+        },
+        {
+          "id": "AC-2",
+          "text": "Populate the existing PRODUCT, ARCHITECTURE, ROADMAP, PROGRESS, ASSUMPTIONS, and TRACEABILITY documents without losing meaningful existing content."
+        },
+        {
+          "id": "AC-3",
+          "text": "Explicit user requirements and exclusions cannot be demoted or rewritten merely to fit an easier implementation."
+        },
+        {
+          "id": "AC-4",
+          "text": "Requirement implementation status starts unverified; package validation is not product verification."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-094",
+      "title": "Capability-aware native dynamic workflows",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M0",
+      "origins": [
+        "U27"
+      ],
+      "dependencies": [
+        "AVE-REQ-093"
+      ],
+      "statement": "Claude Code shall use task-specific native dynamic workflows where actually available, with a documented bounded fallback to subagents or sequential execution.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Probe the current environment for workflow tools, available models, subagents, worktree isolation, permissions, hooks, network, browser tools, CPU/RAM, and accelerator access."
+        },
+        {
+          "id": "AC-2",
+          "text": "When native workflows are available, compose requirement-specific investigation, implementation, testing, and independent review with structured handoffs and dependency-aware parallelism."
+        },
+        {
+          "id": "AC-3",
+          "text": "Validate native workflow syntax against the installed runtime; do not invent APIs or assume a published feature is enabled in this cloud session."
+        },
+        {
+          "id": "AC-4",
+          "text": "When unavailable, perform the same lifecycle through bounded subagent/sequential tasks; do not build a custom orchestration platform instead of the editor."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-095",
+      "title": "Evidence-driven workflow self-improvement",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M7",
+      "origins": [
+        "U27",
+        "D05"
+      ],
+      "dependencies": [
+        "AVE-REQ-094"
+      ],
+      "statement": "The coding workflow shall improve its repository-local procedures based on observed failures and measured outcomes, without weakening product or verification constraints.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Record repeated failure, proposed improvement, affected workflow, measurement, and rollback plan in a concise workflow log."
+        },
+        {
+          "id": "AC-2",
+          "text": "Apply small reviewed changes to skills, task decomposition, context retrieval, or test scheduling and verify them against fixed regression fixtures."
+        },
+        {
+          "id": "AC-3",
+          "text": "Do not loosen acceptance criteria, skip tests, raise tolerances, remove security gates, or rewrite expected results to make an implementation pass."
+        },
+        {
+          "id": "AC-4",
+          "text": "Keep improvements only when they show useful evidence; avoid permanent agent proliferation and recurring harness rewrites."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-096",
+      "title": "Isolated bounded tasks and independent review",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M0",
+      "origins": [
+        "U27",
+        "D05"
+      ],
+      "dependencies": [
+        "AVE-REQ-094"
+      ],
+      "statement": "Delegate bounded tasks with explicit context and deliverables, using verified worktree isolation for concurrent writers and a fresh review context for acceptance.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Task briefs include requirement IDs, acceptance criteria, allowed paths, dependencies, input revision, test commands, and handback schema."
+        },
+        {
+          "id": "AC-2",
+          "text": "Initialize isolated tasks from the intended integration commit; do not assume the native worktree default matches the current branch."
+        },
+        {
+          "id": "AC-3",
+          "text": "A reviewer receives requirements and the diff rather than relying on the implementer claim of success; media-critical tests inspect real rendered outputs."
+        },
+        {
+          "id": "AC-4",
+          "text": "Respect actual concurrency and resource limits; never recursively multiply coding agents or bypass a cloud limit."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-097",
+      "title": "Verification gates that cannot pass as placeholders",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M0",
+      "origins": [
+        "U27",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-093"
+      ],
+      "statement": "Replace bootstrap-only verification with staged real checks and independently verifiable release gates as implementation begins.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Keep a fast feedback tier, real-media integration tier, and full release tier behind documented repository commands."
+        },
+        {
+          "id": "AC-2",
+          "text": "Tie verification evidence to a commit/tree fingerprint, configuration, requirement IDs, and test results; stale evidence cannot certify changed code."
+        },
+        {
+          "id": "AC-3",
+          "text": "Use supported hooks only after a small smoke test; avoid recursive Stop-hook loops and repeated full renders on every conversational response."
+        },
+        {
+          "id": "AC-4",
+          "text": "No-op scripts, skipped integration tests, caught exceptions returning success, or provider mocks cannot establish completed product requirements."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-098",
+      "title": "Persistent progress and bounded autonomous continuation",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M0",
+      "origins": [
+        "U27",
+        "D05"
+      ],
+      "dependencies": [
+        "AVE-REQ-093",
+        "AVE-REQ-094"
+      ],
+      "statement": "Claude Code shall persist actionable progress and continue unblocked work within actual session limits, then leave an exact resumable state.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Update the current objective, requirement statuses, blockers, failed checks, changed files, and next command after coherent work units."
+        },
+        {
+          "id": "AC-2",
+          "text": "Reconstruct state from repository files and Git after compaction or a new session rather than relying on conversational memory."
+        },
+        {
+          "id": "AC-3",
+          "text": "At a genuine permission, resource, credential, or session limit, preserve partial results and report the exact unblock action without claiming ongoing execution."
+        },
+        {
+          "id": "AC-4",
+          "text": "Do not use infinite loops, arbitrary sleep daemons, or permission bypass flags to simulate unlimited autonomy."
+        }
+      ],
+      "scenarios": [
+        "AT-30",
+        "AT-29"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-099",
+      "title": "Honest completion and conditional verification",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M7",
+      "origins": [
+        "U27",
+        "D03"
+      ],
+      "dependencies": [
+        "AVE-REQ-097"
+      ],
+      "statement": "Requirements shall be marked complete only with applicable acceptance evidence; missing external resources shall remain visible verification gaps.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Distinguish planned, in progress, implemented, verified, blocked, and deferred states in the working project tracker."
+        },
+        {
+          "id": "AC-2",
+          "text": "A real credentialed provider smoke test is required to claim that provider path verified; an actual device encode is required to claim a hardware path verified."
+        },
+        {
+          "id": "AC-3",
+          "text": "Absence of optional hardware can yield a documented conditional capability, not a claim that it was tested or a silent scope reduction."
+        },
+        {
+          "id": "AC-4",
+          "text": "Release reporting enumerates all remaining unverified criteria and never describes a mock interface or partial milestone as the whole requested product."
+        }
+      ],
+      "scenarios": [
+        "AT-29",
+        "AT-30"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-100",
+      "title": "Milestone-level product validation",
+      "feature": "AVE-FEAT-019",
+      "milestone": "M7",
+      "origins": [
+        "U27",
+        "U24"
+      ],
+      "dependencies": [
+        "AVE-REQ-093",
+        "AVE-REQ-097"
+      ],
+      "statement": "At every meaningful milestone, compare the running product with the original brief and the complete version-one requirement set.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Run integrated import -> draft -> manual/AI revision -> mixed-layout preview -> section/short/full export journeys."
+        },
+        {
+          "id": "AC-2",
+          "text": "Check that synchronization, final audio, captions, color profiles, and metadata still agree after integration."
+        },
+        {
+          "id": "AC-3",
+          "text": "Do not stop at the first playable MVP or a backend-only renderer while remaining version-one requirements are unimplemented."
+        },
+        {
+          "id": "AC-4",
+          "text": "Keep future tracking and advanced temporal understanding excluded; further scope additions require an explicit rationale and must not displace requested work."
+        }
+      ],
+      "scenarios": [
+        "AT-30",
+        "AT-31"
+      ],
+      "priority": "must",
+      "scope": "v1",
+      "status": "ready",
+      "epic": "AVE-EPIC-09"
+    },
+    {
+      "id": "AVE-REQ-101",
+      "title": "Object and motion tracking",
+      "feature": "AVE-FEAT-020",
+      "milestone": "FUTURE",
+      "origins": [
+        "U06"
+      ],
+      "dependencies": [
+        "AVE-REQ-019",
+        "AVE-REQ-034",
+        "AVE-REQ-065"
+      ],
+      "statement": "A future release may add motion/object tracking and automatically moving overlays or crops; version one explicitly excludes these capabilities.",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Version one supports static crop/position controls and manual keyframes without a tracking dependency."
+        },
+        {
+          "id": "AC-2",
+          "text": "No tracking models, moving-object identity system, or subject-following feature is required for any version-one acceptance gate."
+        },
+        {
+          "id": "AC-3",
+          "text": "Keep this capability in the future roadmap and do not claim it is implemented by static keyframe extraction or shared-event synchronization."
+        }
+      ],
+      "scenarios": [
+        "AT-31"
+      ],
+      "priority": "future",
+      "scope": "future",
+      "status": "deferred",
+      "epic": "AVE-EPIC-10"
+    }
+  ]
+}

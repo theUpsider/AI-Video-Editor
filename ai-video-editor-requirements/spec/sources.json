@@ -1,0 +1,163 @@
+[
+  {
+    "id": "SRC-01",
+    "title": "Anthropic - Claude Code best practices",
+    "url": "https://code.claude.com/docs/en/best-practices",
+    "note": "Verification, context management, targeted delegation, and effective repository instructions. Recommendations in this package adapt these principles to media editing; they are not performance guarantees.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-02",
+    "title": "Anthropic - A harness for every task: dynamic workflows in Claude Code",
+    "url": "https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code",
+    "note": "Official explanation of task-specific native workflows and agent coordination. Publication: 2026-06-02. Check installed availability before use; avoid unnecessary orchestration overhead.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-03",
+    "title": "Anthropic - Custom subagents",
+    "url": "https://code.claude.com/docs/en/sub-agents",
+    "note": "Subagent context, configuration and worktree isolation. Explicitly verify the intended base revision and installed-version behavior.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-04",
+    "title": "Anthropic - Extend Claude with skills",
+    "url": "https://code.claude.com/docs/en/skills",
+    "note": "Repository-local skill conventions and progressive procedure loading.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-05",
+    "title": "Anthropic - Hooks reference",
+    "url": "https://code.claude.com/docs/en/hooks",
+    "note": "Lifecycle events, blocking feedback, stop-hook reentry and supported configuration. A hook is not an unlimited autonomous-session guarantee.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-06",
+    "title": "Anthropic - Agent SDK overview",
+    "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+    "note": "Agent runtime versus direct client SDK; supported integrations, authentication and branding guidance. The documentation restricts unapproved third-party use of claude.ai login/rate limits.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-07",
+    "title": "Anthropic - Claude Code cloud",
+    "url": "https://code.claude.com/docs/en/claude-code-on-the-web",
+    "note": "Cloud environments, isolation, network and session limitations. Published capability does not establish access in a specific session.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-08",
+    "title": "OpenAI - Codex SDK",
+    "url": "https://developers.openai.com/codex/sdk/",
+    "note": "Programmatic Codex integrations and current SDK/app-server guidance. At review the page states that legacy codex mcp-server commands have been removed; recheck before implementation.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-09",
+    "title": "OpenAI - Codex MCP",
+    "url": "https://developers.openai.com/codex/mcp/",
+    "note": "Connecting Codex clients to external stdio or Streamable HTTP MCP servers and authentication/configuration distinctions.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-10",
+    "title": "Model Context Protocol - Tools",
+    "url": "https://modelcontextprotocol.io/specification/latest/server/tools",
+    "note": "Tool discovery, schemas, structured output and error semantics. Negotiate actual supported versions and capabilities.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-11",
+    "title": "Model Context Protocol - Authorization",
+    "url": "https://modelcontextprotocol.io/specification/latest/basic/authorization",
+    "note": "Authorization requirements for supported network transports and client/server boundaries; local stdio has a different trust setup.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-12",
+    "title": "FFmpeg - Filters documentation",
+    "url": "https://ffmpeg.org/ffmpeg-filters.html",
+    "note": "Building blocks for scaling/cropping/composition, overlays, timed filters, transitions, audio processing and subtitles. Availability depends on the actual build.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-13",
+    "title": "FFmpeg - ffprobe documentation",
+    "url": "https://ffmpeg.org/ffprobe.html",
+    "note": "Machine-readable stream/container probing, metadata and timecode inspection.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-14",
+    "title": "FFmpeg - Command-line documentation",
+    "url": "https://ffmpeg.org/ffmpeg.html",
+    "note": "Input/output streams, mapping, transcoding, timing and hardware-related options. Probe actual host support rather than infer it from an option name.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-15",
+    "title": "SYSTRAN - faster-whisper repository",
+    "url": "https://github.com/SYSTRAN/faster-whisper",
+    "note": "Primary project documentation for Whisper inference with CTranslate2, CPU/GPU profiles, int8 execution and timestamps. This package does not adopt repository benchmark claims as guaranteed performance.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-16",
+    "title": "SYSTRAN - faster-whisper-small model card",
+    "url": "https://huggingface.co/Systran/faster-whisper-small",
+    "note": "Multilingual converted small-model candidate and its license/configuration. Pin a tested revision and check real language/accuracy behavior.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-17",
+    "title": "Qwen - Qwen3-VL-4B-Instruct model card",
+    "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct",
+    "note": "Primary candidate model card documenting image/video input support and license. No claim that it is the latest, universally best, or feasible on every CPU/GPU.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-18",
+    "title": "YouTube Help - Supported subtitle and closed-caption files",
+    "url": "https://support.google.com/youtube/answer/2734698?hl=en",
+    "note": "Supported caption-file types and limitations. Separate sidecar captions from burned text and container streams; verify current upload behavior when documenting platform instructions.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-19",
+    "title": "SciPy - scipy.signal.correlate",
+    "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.correlate.html",
+    "note": "Cross-correlation and lag estimation primitives. Camera sync accuracy still requires evidence, ambiguity handling and real output tests.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-20",
+    "title": "DJI - DJI GO",
+    "url": "https://www.dji.com/jp/goapp",
+    "note": "Official DJI GO application description; does not identify the user's camera or prove its recording metadata/features.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-21",
+    "title": "Vite - Getting started",
+    "url": "https://vite.dev/guide/",
+    "note": "Current frontend starter/build documentation, including React/TypeScript templates. Pin compatible versions after environment inspection.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-22",
+    "title": "FastAPI - Background tasks",
+    "url": "https://fastapi.tiangolo.com/tutorial/background-tasks/",
+    "note": "Distinction between lightweight response-associated work and heavier processing. A separate durable worker is this package's chosen architecture.",
+    "checked": "2026-10-02"
+  },
+  {
+    "id": "SRC-23",
+    "title": "SQLite - Write-ahead logging",
+    "url": "https://sqlite.org/wal.html",
+    "note": "WAL concurrency/operational behavior and local-host/network-filesystem constraints relevant to the default persistence choice.",
+    "checked": "2026-10-02"
+  }
+]
