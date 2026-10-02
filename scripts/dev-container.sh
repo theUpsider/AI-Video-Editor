@@ -14,9 +14,12 @@
 # Layout: the main checkout is mounted at /workspace, so every worktree under .claude/worktrees/
 # is visible, and the command runs in the directory that corresponds to the caller's. Each
 # worktree gets its own backend environment (UV_PROJECT_ENVIRONMENT) on the state volume, beside
-# the shared uv cache. One container serves every agent of a checkout, so /tmp and lock files
-# are shared across them. The container name carries a checksum of the Dockerfile and the
-# checkout path: a changed Dockerfile gets a new image and container.
+# the shared uv cache. One container serves every agent of a checkout; a private clone (a
+# reviewer's copy with its own .git directory) gets its own container. The state volume is
+# shared by all of them, and so is the heavy-media lock file on it (AVE_HEAVY_LOCK), which keeps
+# one media or release tier running at a time across every checkout of the host. The container
+# name carries a checksum of the Dockerfile and the checkout path: a changed Dockerfile gets a
+# new image and container.
 # Requires: a reachable Docker daemon; worktrees created with relative links
 # (`git config worktree.useRelativePaths true`), which Git inside the container resolves.
 # Exit:   the command's exit status · 2 usage error · 3 container unavailable
@@ -82,7 +85,7 @@ TAG="$(cksum <"$TOP/.devcontainer/Dockerfile" | cut -d ' ' -f 1)"
 IMAGE="$IMAGE_NAME:$TAG"
 CONTAINER="$IMAGE_NAME-$TAG-$(printf '%s' "$MAIN_ROOT" | cksum | cut -d ' ' -f 1)"
 TREE="${TOP#"$MAIN_ROOT"}"
-VENV="/state/venvs/$(printf '%s' "${TREE:-/}" | cksum | cut -d ' ' -f 1)"
+VENV="/state/venvs/$(printf '%s' "$MAIN_ROOT$TREE" | cksum | cut -d ' ' -f 1)"
 
 case "$1" in
   --status)
@@ -98,6 +101,6 @@ case "$1" in
 esac
 
 ensure_container
-ENV_ARGS=(-e "UV_PROJECT_ENVIRONMENT=$VENV")
+ENV_ARGS=(-e "UV_PROJECT_ENVIRONMENT=$VENV" -e "AVE_HEAVY_LOCK=/state/ave-heavy-media.lock")
 [ -n "${VERIFY_TIER:-}" ] && ENV_ARGS+=(-e "VERIFY_TIER=$VERIFY_TIER")
 docker_cli exec -i "${ENV_ARGS[@]}" -w "/workspace${HERE#"$MAIN_ROOT"}" "$CONTAINER" "$@"
