@@ -33,8 +33,11 @@ Replace bootstrap-only verification with staged real checks and independently ve
 - [ ] AC-4 No-op scripts, skipped integration tests, caught exceptions returning success, or provider mocks cannot establish completed product requirements.
 
 ## Edge cases
-- A skipped, expected-to-fail or never-collected test → fails verification or gives no evidence (AC-4).
-- A test tagged with a criterion that does not exist → stops the test run (AC-2).
+- A skipped, expected-to-fail or never-collected test → fails verification or gives no evidence (AC-4); this holds for a module skipped at collection (`pytest.skip(allow_module_level=True)`, `pytest.importorskip`) and for the tooling unit tests (`scripts/evidence.py unittest` also fails a file without tests).
+- A tooling suite that `scripts/tests/run.sh` never runs → gives no evidence; a tooling suite or unit-test file that fails → counts against every criterion it tags (AC-4).
+- A test tagged with a criterion that does not exist → stops the test run; a tooling test comment tag of that kind fails the "Evidence manifest" step of every tier and `check-done`, naming the file and line (AC-2).
+- A manifest that names a requirement without a working file → `evidence.py show` reports the unknown ID as an error (AC-2).
+- A run with a failed step → certifies no requirement complete: `evidence.py show --require-complete` exits 1 (AC-4).
 - Evidence recorded for an older tree → reported stale and refused where freshness is required (AC-2).
 - A provider test that runs on a fake → never evidences a criterion alone (AC-4).
 - The Stop gate asked for a heavier tier by the environment → still runs the fast tier (AC-3).
@@ -45,16 +48,17 @@ Replace bootstrap-only verification with staged real checks and independently ve
 
 ## Verification strategy
 - AC-1 — integration — `scripts/tests/test-verify-tiers.sh`: fast ⊂ media ⊂ release membership, `--tier`/`VERIFY_TIER` selection, usage errors; CI runs the release tier.
-- AC-2 — unit and integration — `scripts/tests/test_evidence.py` (criterion states, manifest ties results to commit, fingerprint and configuration, stale evidence refused with `--require-fresh`), `backend/tests/unit/test_evidence_plugin.py` (tags validated against requirement files, per-test report), `scripts/tests/test-stop-hook.sh` (a real run leaves a manifest with the tree fingerprint).
+- AC-2 — unit and integration — `scripts/tests/test_evidence.py` (criterion states, manifest ties results to commit, fingerprint, configuration and suite results, stale evidence refused with `--require-fresh`, tooling tags naming no criterion stop `record` and `check-done` with file and line, unknown requirement IDs reported by `show`), `backend/tests/unit/test_evidence_plugin.py` (tags validated against requirement files, per-test report), `scripts/tests/test-stop-hook.sh` (a real run leaves a manifest with the tree fingerprint).
 - AC-3 — integration and inspection — `scripts/tests/test-stop-hook.sh`: the gate runs the fast tier even when the environment asks for release, stays bounded without `stop_hook_active`, releases after its attempt limit; hooks were smoke-tested before use (ASM-001, ASM-003).
-- AC-4 — unit and integration — `backend/tests/unit/test_evidence_plugin.py` (`--forbid-skips` fails sessions with skipped or expected-to-fail tests; contract flag recorded), `scripts/tests/test_evidence.py` (contract-only and skipped evidence never satisfy a done requirement), `scripts/tests/test-verify-tiers.sh` and `test-stop-hook.sh` (failing steps fail the tier and the gate).
+- AC-4 — unit and integration — `backend/tests/unit/test_evidence_plugin.py` (`--forbid-skips` fails a session holding one skipped, expected-to-fail or unexpectedly passing test, one module per category, or a module skipped at collection; contract flag recorded), `scripts/tests/test_evidence.py` (contract-only and skipped evidence never satisfy a done requirement; tooling tags count only through suite results of the run: a suite `run.sh` never runs gives no evidence, a failing suite counts against its criteria, `evidence.py unittest` fails on a skipped, failing, erroring, expected-to-fail or unexpectedly passing test and on a file without tests; a failed run never satisfies `show --require-complete`), `scripts/tests/test-verify-tiers.sh` and `test-stop-hook.sh` (failing steps fail the tier and the gate).
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
 - `scripts/verify.sh`, `scripts/verify.d/*.sh` — fast, media and release tiers behind one command (AC-1)
-- `scripts/evidence.py`, `backend/tests/evidence_plugin.py`, `backend/tests/conftest.py` — per-run evidence manifests tied to commit, tree fingerprint, toolchain, configuration and criterion tags; freshness check (AC-2)
+- `scripts/evidence.py`, `backend/tests/evidence_plugin.py`, `backend/tests/conftest.py` — per-run evidence manifests tied to commit, tree fingerprint, toolchain, configuration, suite results and criterion tags; freshness check; tooling tags validated with file and line; unknown requirement IDs reported by `show` (AC-2)
 - `.claude/hooks/stop-verify.sh` — Stop gate pinned to the fast tier, bounded attempts (AC-3)
-- `scripts/verify.d/20-backend.sh` (`--forbid-skips`), `scripts/verify.d/95-evidence.sh` (`check-done`) — skipped tests and contract-only evidence never establish completion (AC-4)
+- `scripts/verify.d/20-backend.sh` (`--forbid-skips`, including modules skipped at collection), `scripts/verify.d/95-evidence.sh` (`check-done`) — skipped tests and contract-only evidence never establish completion (AC-4)
+- `scripts/tests/run.sh` and `scripts/evidence.py` (`record-suite`, `unittest`; `scripts/verify.d/15-evidence-tooling.sh`) — one suite result (file, exit status, tags) per tooling test file that ran, the only source of tooling evidence; the unit-test step fails on skipped, expected-to-fail and unexpectedly passing tests and on a file without tests; `show --require-complete` exits 1 for a failed run (AC-4)
 - Tests: `scripts/tests/test-verify-tiers.sh` — AVE-REQ-097 AC-1, AVE-REQ-097 AC-4; `scripts/tests/test_evidence.py` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-4; `backend/tests/unit/test_evidence_plugin.py` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-4; `scripts/tests/test-stop-hook.sh` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-3, AVE-REQ-097 AC-4
 - Decisions: [ADR-001](../decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](../decisions/ADR-003-requirements-baseline-import.md), [WF-004](../WORKFLOW_LOG.md)
 

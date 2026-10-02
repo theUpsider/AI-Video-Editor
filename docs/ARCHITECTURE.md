@@ -231,8 +231,14 @@ In effect:
    `@pytest.mark.scenario("AT-NN")`; tooling tests in `scripts/tests/` use `# AVE-REQ-NNN AC-n` comment lines.
    The evidence plugin ([backend/tests/evidence_plugin.py](../backend/tests/evidence_plugin.py)) rejects a tag
    that names no existing criterion or scenario before any test runs; see [TRACEABILITY.md](TRACEABILITY.md).
+   A tooling tag counts only through a suite result of the run (file, exit status, tags), which
+   [scripts/tests/run.sh](../scripts/tests/run.sh) writes for each shell suite it runs and
+   `scripts/evidence.py unittest` for each unit-test file; a tooling tag that names no existing criterion
+   fails the "Evidence manifest" step with its file and line.
 3. Tests are deterministic and run non-interactively. verify.sh runs pytest with `--forbid-skips`: a skipped,
-   expected-to-fail or unexpectedly passing test fails the run. Fix flaky tests at the root.
+   expected-to-fail or unexpectedly passing test, or a module skipped at collection, fails the run; the
+   tooling unit tests run under `scripts/evidence.py unittest`, which applies the same rule and also fails a
+   file without tests. Fix flaky tests at the root.
 4. `./scripts/verify.sh` runs every test level; core user journeys run as end-to-end or smoke
    tests.
 5. `./scripts/verify.sh` never needs credentials or paid services. External services run on
@@ -242,8 +248,10 @@ In effect:
 Commands: `cd backend && uv run pytest -m "not media and not slow"` (fast),
 `uv run pytest -m "media or slow"` (media and population), `uv run pytest tests/path::name` (one test),
 `uv run pytest -m req -k …` or `python3 scripts/evidence.py show AVE-REQ-NNN` after a verify.sh run (the
-criteria of one requirement with their tests and outcomes), `./scripts/probe-environment.sh` (re-measure the
-environment, [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md)).
+criteria of one requirement with their tests and outcomes), `python3 -B scripts/evidence.py unittest` (the
+evidence tooling unit tests), `scripts/tests/run.sh` (the tooling regression suites),
+`./scripts/probe-environment.sh` (re-measure the environment,
+[ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md)).
 
 ## Verification pipeline
 

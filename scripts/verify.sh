@@ -26,8 +26,9 @@
 #
 # Evidence (AVE-REQ-097): every run gets a directory var/verify/runs/<run-id>/, exported to the
 # steps as AVE_EVIDENCE_DIR. run_step logs each step there (steps.tsv), test runners write their
-# per-test reports there, and the last step writes manifest.json: results tied to the commit, the
-# tree fingerprint, the toolchain, the configuration and every requirement tag. Inspect it with
+# per-test reports and per-suite results there, and the last step writes manifest.json: results
+# tied to the commit, the tree fingerprint, the toolchain, the configuration and every requirement
+# tag. Inspect it with
 # `python3 scripts/evidence.py show [AVE-REQ-NNN ...]`.
 # ==================================================================================================
 # shellcheck source-path=SCRIPTDIR
