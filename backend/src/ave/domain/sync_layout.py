@@ -2,10 +2,12 @@
 
 A synchronized segment shows the reference interval ``[G0, G1)`` starting at project time ``P0``.
 For member ``i`` with ``T_ref = a_i + b_i * t_i`` the clip reads source time
-``t_i = (G0 - a_i) / b_i`` onward with ``source_speed = 1 / b_i``, so its project duration is
-``G1 - G0`` for every member. Final audio is an explicit, per-segment choice: every member gets an
-audio clip, and only the selected member's clip is enabled (the others stay on the timeline,
-disabled, and remain available for analysis).
+``t_i = (G0 - a_i) / b_i`` onward with the drift correction ``source_speed = 1 / b_i`` and the
+segment's ``editorial_speed`` ``e`` (default 1), so its project duration is ``(G1 - G0) / e`` for
+every member and all perspectives stay on the same reference instant at every project time.
+Final audio is an explicit, per-segment choice: every member gets an audio clip, and only the
+selected member's clip is enabled (the others stay on the timeline, disabled, and remain available
+for analysis).
 """
 
 from __future__ import annotations
@@ -78,8 +80,13 @@ def synced_clip(
     enabled: bool = True,
     link_group: str | None = None,
     source_duration: Fraction | None = None,
+    editorial_speed: Fraction = Fraction(1),
 ) -> Clip:
-    """A clip showing reference interval ``reference`` of ``member`` from ``project_start``."""
+    """A clip showing reference interval ``reference`` of ``member`` from ``project_start``.
+
+    ``source_speed`` carries only the member's drift correction ``1 / b``; ``editorial_speed`` is
+    the intentional speed change of the segment.
+    """
     source = member.clock_map.source_interval(reference)
     if source.start < 0 or (source_duration is not None and source.end > source_duration):
         raise SourceBoundsError(
@@ -96,6 +103,7 @@ def synced_clip(
         source_in=source.start,
         source_out=source.end,
         source_speed=1 / member.b,
+        editorial_speed=editorial_speed,
         region=region,
         fit=fit,
         enabled=enabled,
@@ -116,6 +124,7 @@ def split_screen_clips(
     divider: Fraction = Fraction(1, 2),
     gap: Fraction = Fraction(0),
     source_durations: Mapping[str, Fraction] | None = None,
+    editorial_speed: Fraction = Fraction(1),
 ) -> tuple[Clip, ...]:
     """Left/right split-screen clips for one synchronized segment, plus explicit audio routing.
 
@@ -141,6 +150,7 @@ def split_screen_clips(
                 fit=fit,
                 link_group=id_prefix,
                 source_duration=durations.get(source.asset_id),
+                editorial_speed=editorial_speed,
             )
         )
         if source.audio_track_id is not None:
@@ -155,6 +165,7 @@ def split_screen_clips(
                     enabled=source.asset_id == audio_asset_id,
                     link_group=id_prefix,
                     source_duration=durations.get(source.asset_id),
+                    editorial_speed=editorial_speed,
                 )
             )
     return tuple(clips)
@@ -168,6 +179,7 @@ def full_frame_clips(
     id_prefix: str,
     fit: Fit = "contain",
     use_audio: bool = True,
+    editorial_speed: Fraction = Fraction(1),
 ) -> tuple[Clip, ...]:
     """A single full-canvas perspective (and its audio) for an unsynchronized segment."""
     clips = [
@@ -179,6 +191,7 @@ def full_frame_clips(
             timeline_start=project_start,
             source_in=source_interval.start,
             source_out=source_interval.end,
+            editorial_speed=editorial_speed,
             region=FULL_FRAME,
             fit=fit,
             link_group=id_prefix,
@@ -194,6 +207,7 @@ def full_frame_clips(
                 timeline_start=project_start,
                 source_in=source_interval.start,
                 source_out=source_interval.end,
+                editorial_speed=editorial_speed,
                 enabled=use_audio,
                 link_group=id_prefix,
             )

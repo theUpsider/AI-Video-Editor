@@ -125,17 +125,23 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Impact:** Sensitivity cost, measured by the independent review: music-like scenes with a strong shared
   rhythm become ambiguous (9 of 100 music-like positives right with the gate, 100 without), so such footage needs
   visual or manual anchors (AVE-REQ-025, AVE-REQ-030) until the M2 synchronization work adds a waveform-level
-  discriminator. Known open weakness: unrelated recordings whose notes sit on a sparse shared 16th-note grid with
-  identical transients still return a wrong offset in 2 of 60 synthetic pairs; the M2 synchronization task owns
-  the fix.
+  discriminator. Known open weakness, measured by the round-3 review of `dc89da2`: unrelated recordings whose
+  notes sit on a shared rhythmic grid still return a confident wrong offset in 0.3 to 0.9 % of synthetic pairs
+  (22 of 6,720 over grid steps 1/8 to 1/2 s, densities 0.05 to 0.4 and four transient families; none at
+  densities 0.3 and above; the worst family is step 1/2 s at densities 0.1 to 0.2; the population test's own
+  family, step 1/4 s at density 0.15, gives 5 of 1,000 outside its seed slice). The wrong results match 3 to 6
+  onsets with chance probabilities from 8e-4 down to 1e-9, and the rival gate never fires on them. The M2
+  synchronization task owns the fix (a lattice-aware null model or the waveform-level discriminator).
 - **Status:** open
 - **Links:** [AVE-REQ-024](requirements/AVE-REQ-024-audio-based-offset-estimation.md), [WORKFLOW_LOG WF-001](WORKFLOW_LOG.md)
 
 ### ASM-008 — Audio timestamp deviations up to 10 ms are jitter
 - **Date:** 2026-10-02
-- **Assumption:** Decoded audio is placed by its timestamps; deviations from a contiguous stream up to 10 ms are
-  treated as container rounding or muxer jitter (samples stay contiguous), larger ones as real gaps or overlaps
-  (filled with silence or dropped in full).
+- **Assumption:** Decoded audio is placed by its timestamps; deviations from a contiguous stream below 10 ms are
+  treated as container rounding or muxer jitter (samples stay contiguous), deviations of 10 ms or more as real
+  gaps or overlaps (filled with silence or dropped in full; FFmpeg's threshold is a float option, so exactly
+  10 ms is corrected). A rendered clip of a jittered source sits up to the jitter of its seek packet (below
+  the threshold) from the analysis placement of the same source.
 - **Reason:** A 1 ms threshold inserted hundreds of dropouts into a stream with 2 ms jitter; one lost AAC frame is
   21.3 ms at 48 kHz, so real gaps stay above the threshold.
 - **Impact:** A genuine gap shorter than 10 ms stays uncorrected (an error below one frame at 60 fps).

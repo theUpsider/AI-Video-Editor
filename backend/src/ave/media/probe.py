@@ -12,7 +12,21 @@ rate, unequal deltas mean variable frame rate.
 
 Source time convention: ``t_source = pts * time_base - container_start_time``. Normalizing by the
 container (format) start time keeps the relative offset between the audio and video streams of one
-file, exactly as FFmpeg does when it reads an input.
+file. The container start time is exact: FFmpeg reports it rounded to microseconds, so the probe
+uses the exact start (``start_pts * time_base``) of the stream that defines it (see
+:func:`parse_probe_json`).
+
+Keyframe index: demuxers of containers without a keyframe index (MPEG-TS, MPEG-PS and others
+outside :data:`INDEXED_SEEK_FORMATS`) cannot seek to a keyframe at or before a target time; their
+seek lands on any packet and decoding resumes at the next keyframe, which may lie after the target.
+For video streams of such containers the probe reads every packet once and records the keyframe
+presentation timestamps, so the renderer can seek to a point that provably precedes a keyframe
+(:mod:`ave.render.compiler`).
+
+File names are untrusted (AVE-REQ-004): every FFprobe call passes :data:`LITERAL_INPUT_ARGS`, so the
+image2 demuxer reads a name such as ``photo%d.png`` as that one file instead of expanding it as an
+image-sequence pattern (``photo1.png``, ``photo2.png``...). FFprobe skips the option for every other
+demuxer.
 """
 
 from __future__ import annotations
@@ -39,6 +53,8 @@ from ave.timebase import (
 
 __all__ = [
     "DEFAULT_PTS_PACKETS",
+    "INDEXED_SEEK_FORMATS",
+    "LITERAL_INPUT_ARGS",
     "AudioStreamInfo",
     "FrameTiming",
     "OtherStreamInfo",
@@ -48,6 +64,7 @@ __all__ = [
     "parse_probe_json",
     "probe",
     "read_packet_pts",
+    "read_video_packets",
 ]
 
 DEFAULT_PTS_PACKETS = 1200
@@ -55,7 +72,18 @@ DEFAULT_PTS_PACKETS = 1200
 
 FrameTiming = Literal["cfr", "vfr", "unknown"]
 
+LITERAL_INPUT_ARGS = ("-pattern_type", "none")
+"""Input options that make the image2 demuxer read the named file itself, never a numbered
+sequence derived from ``%`` patterns in the name (FFprobe ignores them for other demuxers; FFmpeg
+needs them together with ``-f image2``, see :mod:`ave.render.ffmpeg`)."""
+
+INDEXED_SEEK_FORMATS = frozenset(
+    {"mov", "mp4", "m4a", "3gp", "3g2", "mj2", "matroska", "webm", "avi", "mxf"}
+)
+"""Demuxers that seek with a keyframe index to a keyframe at or before the target time."""
+
 _PROBE_TIMEOUT_S = 60.0
+_INDEX_TIMEOUT_S = 1800.0
 
 
 class _Frozen(BaseModel):
@@ -107,6 +135,9 @@ class VideoStreamInfo(_StreamBase):
     """Smallest PTS delta (seconds) among inspected packets."""
     max_frame_interval: PositiveRational | None
     """Largest PTS delta (seconds) among inspected packets."""
+    keyframe_pts: tuple[int, ...] | None = None
+    """PTS (time-base ticks, ascending) of every keyframe, recorded only for containers outside
+    :data:`INDEXED_SEEK_FORMATS`; ``None`` when the demuxer's own keyframe index is used."""
 
     @property
     def is_vfr(self) -> bool:
@@ -152,6 +183,8 @@ class ProbeInfo(_Frozen):
     size_bytes: int | None
     bit_rate: int | None
     streams: tuple[StreamInfo, ...]
+    warnings: tuple[str, ...] = ()
+    """Probe findings a user may need to know (for example an origin that is only approximate)."""
 
     @property
     def video_streams(self) -> tuple[VideoStreamInfo, ...]:
@@ -291,7 +324,9 @@ def _classify_timing(
     return "unknown", 0, None, None
 
 
-def _video_stream(raw: dict[str, Any], pts: list[int] | None) -> VideoStreamInfo:
+def _video_stream(
+    raw: dict[str, Any], pts: list[int] | None, keyframes: list[int] | None
+) -> VideoStreamInfo:
     common = _common_fields(raw)
     width, height = int(raw.get("width") or 0), int(raw.get("height") or 0)
     if width <= 0 or height <= 0:
@@ -329,6 +364,7 @@ def _video_stream(raw: dict[str, Any], pts: list[int] | None) -> VideoStreamInfo
         pts_packets_inspected=inspected,
         min_frame_interval=min_dt,
         max_frame_interval=max_dt,
+        keyframe_pts=tuple(sorted(keyframes)) if keyframes is not None else None,
     )
 
 
@@ -343,13 +379,57 @@ def _audio_stream(raw: dict[str, Any]) -> AudioStreamInfo:
     )
 
 
+def _microseconds(value: Fraction) -> int:
+    """``value`` in microseconds rounded half away from zero (FFmpeg's ``av_rescale_q``)."""
+    scaled = value * 1_000_000
+    magnitude = int(abs(scaled) + Fraction(1, 2))
+    return magnitude if scaled >= 0 else -magnitude
+
+
+APPROXIMATE_ORIGIN_WARNING = (
+    "approximate source-time origin: the container start time matches no stream start, so the "
+    "printed microsecond value is used and source times may be off by up to one microsecond"
+)
+
+
+def _exact_container_start(
+    printed: Fraction | None, streams: list[StreamInfo]
+) -> tuple[Fraction, str | None]:
+    """The exact origin of source time, and a warning when it is only approximate.
+
+    FFmpeg's container start time is the earliest stream start, kept (and printed by FFprobe) in
+    microseconds: an MPEG-TS start of 129000/90000 s prints as 1.433333. The exact value is the
+    start (``start_pts * time_base``) of the stream whose microsecond rounding equals the printed
+    value (the earliest one when several do); without such a stream the printed value is used and
+    the fallback is reported. A file without a start time starts at 0.
+    """
+    if printed is None:
+        return Fraction(0), None
+    target = printed * 1_000_000
+    exact = [
+        stream.start_time
+        for stream in streams
+        if stream.start_pts is not None
+        and stream.time_base is not None
+        and stream.start_time is not None
+        and _microseconds(stream.start_time) == target
+    ]
+    if exact:
+        return min(exact), None
+    return printed, APPROXIMATE_ORIGIN_WARNING
+
+
 def parse_probe_json(
-    data: dict[str, Any], packet_pts: dict[int, list[int]] | None = None
+    data: dict[str, Any],
+    packet_pts: dict[int, list[int]] | None = None,
+    keyframe_pts: dict[int, list[int]] | None = None,
 ) -> ProbeInfo:
     """Builds :class:`ProbeInfo` from ``ffprobe -show_format -show_streams`` JSON.
 
     ``packet_pts`` maps a video stream index to the inspected packet PTS values (stream time-base
     ticks); without it, CFR/VFR classification falls back to comparing the rate metadata.
+    ``keyframe_pts`` maps a video stream index to the PTS of all its keyframes (containers outside
+    :data:`INDEXED_SEEK_FORMATS`).
     """
     fmt = data.get("format")
     if not isinstance(fmt, dict):
@@ -358,7 +438,10 @@ def parse_probe_json(
     for raw in data.get("streams") or ():
         codec_type = raw.get("codec_type")
         if codec_type == "video":
-            streams.append(_video_stream(raw, (packet_pts or {}).get(int(raw["index"]))))
+            index = int(raw["index"])
+            streams.append(
+                _video_stream(raw, (packet_pts or {}).get(index), (keyframe_pts or {}).get(index))
+            )
         elif codec_type == "audio":
             streams.append(_audio_stream(raw))
         else:
@@ -366,15 +449,19 @@ def parse_probe_json(
                 OtherStreamInfo(**_common_fields(raw), codec_type=str(codec_type or "unknown"))
             )
     duration = _decimal_or_none(fmt.get("duration"))
-    start = _decimal_or_none(fmt.get("start_time"))
+    # FFprobe prints the format start time (AVFormatContext.start_time, kept by FFmpeg in
+    # microseconds) with six decimals, i.e. rounded: 129000/90000 s prints as 1.433333. The exact
+    # origin is recovered from the stream start that FFmpeg rounded (_exact_container_start).
+    start, warning = _exact_container_start(_decimal_or_none(fmt.get("start_time")), streams)
     return ProbeInfo(
         format_name=str(fmt.get("format_name") or "unknown"),
         format_long_name=_str_or_none(fmt.get("format_long_name")),
         duration=duration if duration is not None and duration >= 0 else None,
-        container_start_time=start if start is not None else Fraction(0),
+        container_start_time=start,
         size_bytes=_int_or_none(fmt.get("size")),
         bit_rate=_int_or_none(fmt.get("bit_rate")),
         streams=tuple(streams),
+        warnings=(warning,) if warning else (),
     )
 
 
@@ -390,6 +477,7 @@ def read_packet_pts(
     args = [
         "-v",
         "error",
+        *LITERAL_INPUT_ARGS,
         "-select_streams",
         str(stream_index),
         "-show_entries",
@@ -409,6 +497,37 @@ def read_packet_pts(
     return values
 
 
+def read_video_packets(
+    path: Path, stream_index: int, *, max_packets: int | None = None
+) -> list[tuple[int, bool]]:
+    """``(pts, is_keyframe)`` of a stream's packets in file order (all packets by default)."""
+    args = [
+        "-v",
+        "error",
+        *LITERAL_INPUT_ARGS,
+        "-select_streams",
+        str(stream_index),
+        "-show_entries",
+        "packet=pts,flags",
+        "-of",
+        "csv=p=0",
+    ]
+    if max_packets is not None:
+        args += ["-read_intervals", f"%+#{max_packets}"]
+    args.append(media_url(path))
+    completed = run_tool("ffprobe", args, timeout=_INDEX_TIMEOUT_S)
+    packets: list[tuple[int, bool]] = []
+    for line in completed.stdout.decode("ascii", errors="replace").splitlines():
+        fields = line.strip().split(",")
+        if fields and fields[0] not in {"", "N/A"}:
+            packets.append((int(fields[0]), len(fields) > 1 and fields[1].startswith("K")))
+    return packets
+
+
+def _needs_keyframe_index(format_name: object) -> bool:
+    return not set(str(format_name or "").split(",")) & INDEXED_SEEK_FORMATS
+
+
 def probe(
     path: Path | str, *, inspect_pts: bool = True, max_pts_packets: int = DEFAULT_PTS_PACKETS
 ) -> ProbeInfo:
@@ -422,6 +541,7 @@ def probe(
     args = [
         "-v",
         "error",
+        *LITERAL_INPUT_ARGS,
         "-print_format",
         "json",
         "-show_format",
@@ -438,13 +558,25 @@ def probe(
     except json.JSONDecodeError as exc:
         raise ProbeError("ffprobe returned malformed JSON", path=file_path.name) from exc
     packet_pts: dict[int, list[int]] = {}
+    keyframe_pts: dict[int, list[int]] = {}
+    index_keyframes = _needs_keyframe_index((data.get("format") or {}).get("format_name"))
     if inspect_pts:
         for raw in data.get("streams") or ():
             disposition = raw.get("disposition") or {}
             if raw.get("codec_type") == "video" and not disposition.get("attached_pic"):
                 index = int(raw["index"])
-                packet_pts[index] = read_packet_pts(file_path, index, max_packets=max_pts_packets)
-    info = parse_probe_json(data, packet_pts)
+                if index_keyframes:
+                    packets = read_video_packets(file_path, index)
+                    packet_pts[index] = [pts for pts, _ in packets[:max_pts_packets]]
+                    keys = [pts for pts, key in packets if key]
+                    # Intra-only video needs no index: any packet a seek lands on is a keyframe.
+                    if len(keys) < len(packets):
+                        keyframe_pts[index] = keys
+                else:
+                    packet_pts[index] = read_packet_pts(
+                        file_path, index, max_packets=max_pts_packets
+                    )
+    info = parse_probe_json(data, packet_pts, keyframe_pts)
     if not info.video_streams and not info.audio_streams:
         raise ProbeError("file holds no audio or video stream", path=file_path.name)
     return info

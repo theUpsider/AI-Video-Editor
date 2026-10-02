@@ -17,10 +17,14 @@ full):
 - AVE-REQ-024 AC-3 hardening ([ASM-007](../ASSUMPTIONS.md)): the onset-timing gates cannot separate sparse genuine
   evidence from unrelated recordings on a shared rhythmic grid. Add a waveform-level discriminator between the
   chosen and the competing alignments (the same scene shares the whole waveform; unrelated music shares at most
-  transient shapes). Targets on seeded populations: 0 wrong offsets on unrelated grid music, including sparse
-  16th-note grids with identical transients (`step 0.125 s, density 0.1`: 2 of 60 wrong today); at least 90 of 100
-  right on music-like positives with a shared rhythm and unique events (9 of 100 today); no regression on the
-  existing populations in `tests/unit/test_sync_populations.py`.
+  transient shapes). Targets on seeded populations: 0 wrong offsets on unrelated grid music over grid steps
+  1/8, 1/6, 3/16, 1/4, 1/3, 3/8 and 1/2 s, densities 0.05 to 0.2, with identical, random-level, mixed (chirp,
+  noise burst, pluck, click) and shared-kit transients, a few hundred seeds per family (today 22 of 6,720 wrong;
+  worst step 1/2 s at density 0.1 to 0.2; step 1/4 s at density 0.15 gives 5 of 1,000 on seeds 7200–8199); at
+  least 90 of 100 right on music-like positives with a shared rhythm and unique events (9 of 100 today); no
+  regression on the existing populations in `tests/unit/test_sync_populations.py`. Rename
+  `test_unrelated_music_on_a_shared_grid_never_yields_an_offset` to the property it shows until the estimator
+  meets the 0-wrong target on the larger population.
 Scenarios AT-04 to AT-08 in `ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md`; timing convention in
 `spec/DATA_AND_TIMING_MODEL.md` (§ Synchronization) and ADR-004: `T_reference = a + b * t_source`, reference member
 `a = 0, b = 1`, drift applied as `source_speed = 1 / b`, editorial speed separate (`Clip.editorial_speed`).

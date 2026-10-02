@@ -48,7 +48,8 @@ Not an improvement entry: the measured starting point that later entries compare
   and to mutation-check at least two new tests; each fix round gets its own brief quoting the evidence.
 - Expected metric and fixed evaluation set (plus held-out cases): blocking findings per review round on the
   media core; held-out: the reviewer's constructions are unknown to the implementer.
-- Independent review result: round 1 FAIL (4 blocking), round 2 FAIL (4 blocking), round 3 pending.
+- Independent review result: round 1 FAIL (4 blocking), round 2 FAIL (4 blocking), round 3 PASS (0 blocking,
+  12 non-blocking items in the [follow-up brief](briefs/2026-10-02-m0-media-core-round-3-follow-ups.md)).
 - Measured before/after result: 8 real defects found that the implementer's suite passed; each fix now has a
   real-media test confirmed to fail without it (mutation runs recorded in the commits' handbacks).
 - Keep or revert, with reason: keep; the cost (about 40 min of reviewer time per round) is far below the cost

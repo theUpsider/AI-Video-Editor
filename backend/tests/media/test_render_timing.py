@@ -65,7 +65,7 @@ def _sequence(
         "timeline_start": Fraction(0),
         "source_in": source_in,
         "source_out": source_in + duration * speed,
-        "source_speed": speed,
+        "editorial_speed": speed,
     }
     clips = [Clip.model_validate({"id": "pic", "track_id": "v", "kind": kind, **common})]
     if with_audio:
@@ -138,8 +138,9 @@ def test_output_rate_conversion_keeps_playback_speed(
 def test_speed_change_retimes_video_and_audio_with_pitch_kept(
     std: StandardFixtures, artifacts_dir: Path
 ) -> None:
-    """AVE-REQ-012 AC-4 / AVE-REQ-075 AC-2: a 5/4 source speed maps frames by t = 2 + 1.25 T and
-    moves audio events to (t - 2) / 1.25 with the 1 kHz pilot still at 1 kHz (pitch kept)."""
+    """AVE-REQ-012 AC-4, AVE-REQ-075 AC-2: an editorial speed of 5/4 (no drift correction) maps
+    frames by t = 2 + 1.25 T and moves audio events to (t - 2) / 1.25 with the 1 kHz pilot still
+    at 1 kHz (pitch kept)."""
     asset = describe_asset(std.a.path, asset_id="A")
     speed = Fraction(5, 4)
     sequence = _sequence(asset, canvas=Canvas(width=640, height=360), fps=Fraction(60),

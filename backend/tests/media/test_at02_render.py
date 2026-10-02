@@ -245,27 +245,31 @@ def _quiet_windows(events: list[float]) -> list[tuple[str, float, float]]:
 
 
 def test_audio_events_and_routing(rendered: Rendered) -> None:
-    """AVE-REQ-031 AC-1/AC-3, AVE-REQ-021 AC-2, AVE-REQ-024 AC-1: A in split segments, C in the
-    full segment, B never audible although B's audio produced the synchronization."""
-    left = rendered.audio[:, 0]
+    """AVE-REQ-031 AC-1, AVE-REQ-031 AC-3, AVE-REQ-021 AC-2, AVE-REQ-024 AC-1: on every output
+    channel, A in the split segments and C in the full segment, B never audible although B's
+    audio produced the synchronization."""
     expected = sorted(
         [(e - 120) / FPS for e in REFERENCE_EVENT_FRAMES if 0 <= e - 120 < 480]
         + [(480 + c) / FPS for c in C_EVENT_FRAMES]
         + [(e + 120) / FPS for e in REFERENCE_EVENT_FRAMES if 840 <= e + 120 < 1320]
     )
-    pairs, missing, unexpected = match_events(detect_chirps(left, 48000), expected, ONE_FRAME)
-    assert not missing
-    assert not unexpected
-    assert max(abs(d - e) for e, d in pairs) < ONE_FRAME
     windows = _quiet_windows(expected)
     assert len(windows) >= 25
-    for kind, start, end in windows:
-        chunk = left[int(start * 48000) : int(end * 48000)]
-        amplitudes = {k: tone_amplitude(chunk, 48000, hz) for k, hz in PILOT_HZ.items()}
-        audible = "a" if kind == "split" else "c"
-        assert amplitudes[audible] > 0.04, (kind, start, amplitudes)
-        for other in {"a", "b", "c"} - {audible}:
-            assert amplitudes[other] < 0.002, (kind, start, amplitudes)
+    assert rendered.audio.shape[1] == 2
+    for channel in range(rendered.audio.shape[1]):
+        samples = rendered.audio[:, channel]
+        detected = detect_chirps(samples, 48000)
+        pairs, missing, unexpected = match_events(detected, expected, ONE_FRAME)
+        assert not missing, channel
+        assert not unexpected, channel
+        assert max(abs(d - e) for e, d in pairs) < ONE_FRAME
+        for kind, start, end in windows:
+            chunk = samples[int(start * 48000) : int(end * 48000)]
+            amplitudes = {k: tone_amplitude(chunk, 48000, hz) for k, hz in PILOT_HZ.items()}
+            audible = "a" if kind == "split" else "c"
+            assert amplitudes[audible] > 0.04, (channel, kind, start, amplitudes)
+            for other in {"a", "b", "c"} - {audible}:
+                assert amplitudes[other] < 0.002, (channel, kind, start, amplitudes)
     assert rendered.estimate_offset_s == pytest.approx(2.0, abs=1e-4)
 
 

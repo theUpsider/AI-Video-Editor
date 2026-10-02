@@ -121,3 +121,62 @@ def test_invalid_probe_output_is_rejected() -> None:
         _parse(_video(width=0))
     with pytest.raises(ProbeError):
         parse_probe_json({"streams": []})
+
+
+def _with_start(printed: str | None, *streams: dict[str, Any]) -> Any:
+    fmt: dict[str, Any] = {"format_name": "mpegts", "duration": "10.000000"}
+    if printed is not None:
+        fmt["start_time"] = printed
+    return parse_probe_json({"format": fmt, "streams": list(streams)})
+
+
+def _audio(**overrides: Any) -> dict[str, Any]:
+    stream: dict[str, Any] = {
+        "index": 1,
+        "codec_type": "audio",
+        "codec_name": "aac",
+        "sample_rate": "48000",
+        "channels": 2,
+        "time_base": "1/90000",
+        "start_pts": 199080,
+    }
+    stream.update(overrides)
+    return stream
+
+
+def test_container_start_is_recovered_exactly_from_the_rounded_print() -> None:
+    """AVE-REQ-012 AC-4: FFprobe prints the TS start 129000/90000 s as 1.433333; the origin of
+    source time is the exact stream start, never the rounded print (which would put every frame
+    1/3 microsecond late and select the previous frame on ties)."""
+    info = _with_start("1.433333", _video(time_base="1/90000", start_pts=129000), _audio())
+    assert info.container_start_time == Fraction(43, 30)
+    assert info.warnings == ()
+
+
+def test_container_start_takes_the_earliest_matching_stream() -> None:
+    """AVE-REQ-012 AC-4: two streams whose starts both round to the printed microsecond (here
+    0.3333331 s and 1/3 s) - the container start is the earlier one, as in FFmpeg, in either
+    stream order."""
+    video = _video(time_base="1/90000", start_pts=30000)
+    audio = _audio(time_base="1/10000000", start_pts=3333331)
+    for streams in ((video, audio), (audio, video)):
+        info = _with_start("0.333333", *streams)
+        assert info.container_start_time == Fraction(3333331, 10000000)
+        assert info.warnings == ()
+
+
+def test_unmatched_container_start_falls_back_with_a_warning() -> None:
+    """AVE-REQ-012 AC-4, AVE-REQ-004 AC-4: when no stream start rounds to the printed value
+    (129001/90000 s prints as 1.433344, not 1.433333) the printed value is used and the probe
+    says that the origin is approximate; nothing is invented silently."""
+    info = _with_start("1.433333", _video(time_base="1/90000", start_pts=129001))
+    assert info.container_start_time == Fraction(1433333, 1000000)
+    assert len(info.warnings) == 1
+    assert "approximate" in info.warnings[0]
+
+
+def test_missing_container_start_is_zero_without_a_warning() -> None:
+    """AVE-REQ-004 AC-4: a container without a start time starts source time at 0."""
+    info = _with_start(None, _video())
+    assert info.container_start_time == 0
+    assert info.warnings == ()

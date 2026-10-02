@@ -19,9 +19,15 @@ def fake_asset(
     time_base: Fraction = Fraction(1, 15360),
     audio: tuple[int, int] | None = (48000, 1),
     start_time: str = "0.000000",
+    video_start_pts: int = 0,
     rotation: int | None = None,
 ) -> MediaAsset:
-    """An asset whose probe data looks like an FFmpeg-written MP4."""
+    """An asset whose probe data looks like an FFmpeg-written MP4.
+
+    ``start_time`` is the format start time as FFprobe prints it; ``video_start_pts`` is the video
+    stream's first timestamp in ``time_base`` ticks. Keep them consistent the way FFmpeg does: the
+    printed value is the earliest stream start rounded to microseconds.
+    """
     streams: list[dict[str, Any]] = [
         {
             "index": 0,
@@ -33,7 +39,7 @@ def fake_asset(
             "r_frame_rate": f"{fps.numerator}/{fps.denominator}",
             "avg_frame_rate": f"{fps.numerator}/{fps.denominator}",
             "time_base": f"{time_base.numerator}/{time_base.denominator}",
-            "start_pts": 0,
+            "start_pts": video_start_pts,
             "duration_ts": int(duration / time_base),
             "pix_fmt": "yuv420p",
             "color_space": "bt709",

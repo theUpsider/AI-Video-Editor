@@ -8,9 +8,12 @@ revision snapshots immutable. Times are exact rationals in explicitly named doma
 * ``SyncMember.a`` is **reference time** (seconds on the group's reference clock).
 
 Clip mapping: project time ``T`` in ``[timeline_start, timeline_start + d)`` shows source time
-``t = source_in + (T - timeline_start) * source_speed`` with ``d = (source_out - source_in) /
-source_speed``. ``source_speed`` is source seconds per project second; synchronization drift
-correction uses ``1 / b``.
+``t = source_in + (T - timeline_start) * source_speed * editorial_speed`` with
+``d = (source_out - source_in) / (source_speed * editorial_speed)`` (ADR-004, decision 4). The two
+factors are separate fields: ``source_speed`` is the clock-drift correction ``1 / b`` of a
+synchronized source, ``editorial_speed`` an intentional speed change (default 1). Their product,
+:attr:`Clip.speed`, is the source seconds shown per project second; audio follows it with pitch
+preserved. Documents serialized before ``editorial_speed`` existed load with the default 1.
 
 Track semantics: video tracks stack by ``index`` (higher index on top); ``hidden`` video tracks are
 not rendered. An audio track is audible when it is not ``muted`` and, if any audio track is
@@ -130,7 +133,9 @@ class Clip(_Frozen):
     source_out: NonNegativeRational
     """Source time where the clip ends (exclusive)."""
     source_speed: PositiveRational = Fraction(1)
-    """Source seconds per project second (``1 / b`` for drift correction)."""
+    """Clock-drift correction ``1 / b`` of the source's synchronization member (1 without drift)."""
+    editorial_speed: PositiveRational = Fraction(1)
+    """Intentional speed change (2 = twice as fast); applied on top of ``source_speed``."""
     stream_index: int | None = Field(default=None, ge=0)
     """Absolute container stream index; ``None`` selects the first stream of the clip's kind."""
     region: NormRect = FULL_FRAME
@@ -173,9 +178,14 @@ class Clip(_Frozen):
         return Interval(start=self.source_in, end=self.source_out)
 
     @property
+    def speed(self) -> Fraction:
+        """Source seconds shown per project second: ``source_speed * editorial_speed``."""
+        return self.source_speed * self.editorial_speed
+
+    @property
     def duration(self) -> Fraction:
-        """Project-time duration ``(source_out - source_in) / source_speed``."""
-        return (self.source_out - self.source_in) / self.source_speed
+        """Project-time duration ``(source_out - source_in) / speed``."""
+        return (self.source_out - self.source_in) / self.speed
 
     @property
     def timeline_end(self) -> Fraction:
@@ -191,13 +201,13 @@ class Clip(_Frozen):
         """Source time shown at project time ``t`` (``t`` must lie inside the clip)."""
         if not self.timeline_interval.contains(t):
             raise TimeValueError(f"project time {t} lies outside clip {self.id}")
-        return SourceTime(self.source_in + (t - self.timeline_start) * self.source_speed)
+        return SourceTime(self.source_in + (t - self.timeline_start) * self.speed)
 
     def project_time_of(self, t: SourceTime) -> ProjectTime:
         """Project time at which source time ``t`` is shown (``t`` must lie inside the clip)."""
         if not self.source_interval.contains(t):
             raise TimeValueError(f"source time {t} lies outside clip {self.id}")
-        return ProjectTime(self.timeline_start + (t - self.source_in) / self.source_speed)
+        return ProjectTime(self.timeline_start + (t - self.source_in) / self.speed)
 
 
 class SyncAnchor(_Frozen):

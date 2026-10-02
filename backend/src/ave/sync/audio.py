@@ -2,9 +2,13 @@
 
 Method (interpretable, NumPy/SciPy only):
 
-1. **Analysis audio** - each stream is decoded to mono float PCM at :data:`ANALYSIS_RATE`
+1. **Analysis audio** - each stream is decoded to mono float32 PCM at :data:`ANALYSIS_RATE`
    (48 kHz, SoX resampler), whatever its original rate and whether or not it is audible in the
-   final edit. A zero-phase 150 Hz high-pass removes rumble and DC.
+   final edit. Sample ``k`` is source time ``k / ANALYSIS_RATE``: samples are placed by their
+   presentation timestamps relative to the container start, so a stream that starts after the
+   container start is preceded by silence. FFmpeg delivers the samples straight into one float32
+   array (about 4 bytes per sample, no other full-length copy); all later full-length processing
+   works in place on that array. A zero-phase 150 Hz high-pass removes rumble and DC.
 2. **Coarse search** - a sparse 1 kHz onset function is computed for both signals: the rise of the
    log RMS energy (4 ms window, 1 ms hop) above a robust noise threshold. It is gain invariant and
    ignores steady tones and stationary noise. The onset functions are cross-correlated with FFTs
@@ -16,13 +20,32 @@ Method (interpretable, NumPy/SciPy only):
    through the peak gives a sub-sample offset. When the waveforms do not correlate, the coarse
    result is kept with millisecond resolution.
 4. **Evidence** - the number of target onsets that coincide with reference onsets at the chosen
-   lag; the normalized onset correlation inside the overlap (confidence); the ratio of the best
-   correlation peak to the strongest peak outside a +-50 ms guard window; local refinements in up
-   to three parts of the overlap (anchors) and their largest deviation from the global offset
-   (residual); the aligned reference and target intervals.
-5. **Decision** - silence, transient-free audio, fewer than two coinciding onsets or weak
-   correlation yield ``INSUFFICIENT_EVIDENCE``; a competing peak (for example periodic sound)
-   yields ``AMBIGUOUS`` with the alternatives; otherwise ``OK``.
+   lag; the chance probability of that many coincidences (step 5); the normalized onset
+   correlation inside the overlap (confidence); the ratio of the best correlation peak to the
+   strongest peak outside a +-50 ms guard window; local refinements in up to three parts of the
+   overlap (anchors) and their largest deviation from the global offset (residual); the aligned
+   reference and target intervals.
+5. **Chance coincidences** - unrelated recordings still line up a few onsets at some lag when every
+   lag is searched. Under the null hypothesis of independent onset trains, a target onset inside
+   the overlap lands within the match tolerance of a reference onset with probability
+   ``p = n_ref * (2 * tolerance + 1) / overlap_hops``; the probability of at least ``m`` matches
+   among ``n_tgt`` target onsets is the binomial tail, multiplied by the number of independent lag
+   positions searched (admissible lags / (2 * tolerance + 1), a Bonferroni bound). The result is
+   reported as ``chance_probability``.
+6. **Competing alignments** - the binomial null of step 5 assumes independent onset positions.
+   Structured sound (periodic clicks, noise whose level changes on a fixed block lattice) violates
+   it: many onsets coincide at every lattice-aligned lag. The number of coinciding onsets is
+   therefore computed at every admissible lag (FFT correlation of the onset trains), and the
+   largest count outside +-:data:`RIVAL_EXCLUSION_HOPS` of the chosen lag is reported as
+   ``rival_matched_onsets`` with its offset and its own chance probability (step 5). A rival that
+   chance explains is no competitor; a rival that chance does not explain means two alignments
+   are both supported.
+7. **Decision** - silence, transient-free audio, fewer than two coinciding onsets, coincidences
+   that chance explains (``chance_probability > MAX_CHANCE_PROBABILITY``) or weak correlation yield
+   ``INSUFFICIENT_EVIDENCE``; a competing correlation peak (ratio below :data:`MIN_PEAK_RATIO`) or
+   a competing alignment that chance does not explain and that has at least
+   :data:`MAX_RIVAL_FRACTION` of the coinciding onsets yields ``AMBIGUOUS`` with the alternatives;
+   otherwise ``OK``.
 
 Sign convention: the result is ``a`` in ``T_reference = a + b * t_target`` with ``b = 1``; a target
 that starts two seconds after the reference has ``a = +2``. The thresholds are initial values
@@ -42,15 +65,19 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict
 from scipy import signal as sps
+from scipy import special
 
 from ave.domain.model import SyncAnchor, SyncMember
 from ave.errors import AveError
+from ave.media.audio_timing import audio_placement_filter
 from ave.media.probe import probe
-from ave.proc import media_url, run_tool
+from ave.proc import media_url, stream_tool
 from ave.timebase import Interval, Rational, rational_from_float
 
 __all__ = [
     "ANALYSIS_RATE",
+    "MAX_CHANCE_PROBABILITY",
+    "MAX_RIVAL_FRACTION",
     "METHOD",
     "AnchorEstimate",
     "OffsetCandidate",
@@ -72,6 +99,14 @@ MIN_PEAK_RATIO = 1.5
 MIN_REFINED_CORRELATION = 0.05
 MIN_MATCHED_ONSETS = 2
 """Fewer coinciding onsets than this at the best lag is insufficient evidence."""
+MAX_CHANCE_PROBABILITY = 1e-3
+"""Largest accepted probability that unrelated onset trains coincide as often as observed."""
+MAX_RIVAL_FRACTION = 0.5
+"""Another alignment that chance does not explain, with at least this fraction of the coinciding
+onsets, makes the result ambiguous."""
+RIVAL_EXCLUSION_HOPS = 14
+"""Lags within this many hops of the chosen lag belong to the same alignment (twice the match
+window of +-:data:`ONSET_TOLERANCE_HOPS`)."""
 ENERGY_WINDOW_HOPS = 4
 MIN_ONSET_RISE = 0.05
 """Smallest log-RMS rise per hop (nats) treated as an onset."""
@@ -85,8 +120,15 @@ SILENCE_RMS = 10 ** (-60 / 20)
 """High-passed RMS below -60 dBFS counts as silent."""
 _LOG_FLOOR = 1e-4
 _EXTRACT_TIMEOUT_S = 900.0
+_CHUNK = 1 << 18
+"""Samples per block of the in-place full-length processing (bounded temporary memory)."""
+_DRAIN_BYTES = 1 << 18
+"""Bytes per pipe read while decoding (the only temporary buffer of the extraction)."""
+_INITIAL_SAMPLES = 1 << 20
+"""Initial analysis buffer when the stream length is unknown."""
 
 FloatArray = npt.NDArray[np.float64]
+Float32Array = npt.NDArray[np.float32]
 
 
 class SyncStatus(StrEnum):
@@ -146,6 +188,16 @@ class OffsetEstimate(_Frozen):
     """Target source interval that covers the overlap."""
     matched_onsets: int = 0
     """Target onsets that coincide with reference onsets at the chosen lag."""
+    chance_probability: float | None = None
+    """Bound on the probability that unrelated onset trains give ``matched_onsets`` coincidences at
+    some searched lag (module doc, step 5); above :data:`MAX_CHANCE_PROBABILITY` the coincidences
+    are no evidence."""
+    rival_matched_onsets: int | None = None
+    """Most coinciding onsets at any admissible lag outside the chosen alignment (step 6)."""
+    rival_offset_s: float | None = None
+    """Offset of that competing alignment."""
+    rival_chance_probability: float | None = None
+    """Chance probability (step 5) of the competing alignment's coincidences."""
     reference_onsets: int = 0
     target_onsets: int = 0
     reference_duration_s: float
@@ -189,15 +241,53 @@ class OffsetEstimate(_Frozen):
 # --------------------------------------------------------------------------------------------
 
 
+def _read_float32(args: list[str], capacity: int | None) -> Float32Array:
+    """Runs FFmpeg and reads its little-endian float32 stdout into one float32 array.
+
+    The bytes go straight into that array. With a known ``capacity`` (samples) it is allocated
+    once and output beyond it is read and discarded; with an unknown length it grows in place by a
+    quarter at a time (no second copy). Either way it is trimmed to the samples delivered.
+    """
+    samples = np.zeros(capacity if capacity is not None else _INITIAL_SAMPLES, dtype=np.float32)
+    filled = 0  # bytes
+    with stream_tool("ffmpeg", args, timeout=_EXTRACT_TIMEOUT_S) as pipe:
+        while True:
+            room = 4 * len(samples) - filled
+            if room == 0:
+                if capacity is not None:
+                    break
+                samples.resize(len(samples) + max(len(samples) // 4, 1), refcheck=False)
+                continue
+            chunk = pipe.read(min(_DRAIN_BYTES, room))
+            if not chunk:
+                break
+            view = samples.data.cast("B")
+            view[filled : filled + len(chunk)] = chunk
+            view.release()
+            filled += len(chunk)
+        while pipe.read(_DRAIN_BYTES):
+            pass
+    if filled < 4 * len(samples):
+        samples.resize(filled // 4, refcheck=False)
+    return samples
+
+
 def extract_analysis_audio(
     path: Path | str, *, stream_index: int | None = None, rate: int = ANALYSIS_RATE
-) -> npt.NDArray[np.float32]:
+) -> Float32Array:
     """Decodes one audio stream to mono float32 PCM at ``rate`` (SoX resampler).
+
+    Sample ``k`` presents source time ``k / rate`` (time relative to the exact container start,
+    the origin of every source time): the input is read with raw timestamps (``-copyts``) and the
+    decoded samples are placed by them (:func:`ave.media.audio_timing.audio_placement_filter`),
+    so a stream that starts after the container start begins with silence and a timestamp gap
+    inside the stream stays a gap, in every container (MPEG-TS included).
 
     ``stream_index`` is the absolute container index; the default is the first audio stream.
     The stream is read from the original file regardless of its mute state in any edit. Samples
-    beyond the stream's container duration (codec end padding) are dropped, so aligned intervals
-    match the real recording length.
+    beyond the stream's end (codec end padding) are dropped, so aligned intervals match the real
+    recording length. FFmpeg delivers mono float32 at ``rate``, read directly into the returned
+    array: memory is about ``4 * rate * duration`` bytes.
     """
     info = probe(path, inspect_pts=False)
     streams = info.audio_streams
@@ -208,40 +298,73 @@ def extract_analysis_audio(
     )
     if stream is None:
         raise AveError("the file has no such audio stream", code="MISSING_STREAM")
-    completed = run_tool(
-        "ffmpeg",
-        [
-            "-hide_banner", "-nostdin", "-v", "error", "-i", media_url(path),
-            "-map", f"0:{stream.index}",
-            "-af", f"aresample={rate}:resampler=soxr", "-ac", "1", "-f", "f32le", "-",
-        ],
-        timeout=_EXTRACT_TIMEOUT_S,
-    )  # fmt: skip
-    samples = np.frombuffer(completed.stdout, dtype="<f4").astype(np.float32)
     end = info.source_duration(stream)
-    if end is not None:
-        samples = samples[: math.ceil(end * rate)]
-    return samples
+    placement = audio_placement_filter(info.container_start_time, rate)
+    return _read_float32(
+        [
+            "-hide_banner", "-nostdin", "-v", "error", "-copyts", "-i", media_url(path),
+            "-map", f"0:{stream.index}", "-af", placement, "-ac", "1", "-f", "f32le", "-",
+        ],
+        math.ceil(end * rate) if end is not None else None,
+    )  # fmt: skip
 
 
-def _resample(samples: npt.ArrayLike, from_rate: int, to_rate: int) -> FloatArray:
-    data = np.asarray(samples, dtype=np.float64)
+def _resample(samples: npt.ArrayLike, from_rate: int, to_rate: int) -> Float32Array:
+    """A float32 copy of mono ``samples`` at ``to_rate`` (the caller's array is never modified)."""
+    data = np.asarray(samples)
     if data.ndim != 1:
         raise ValueError("analysis audio must be mono")
-    if from_rate == to_rate:
-        return data
-    gcd = np.gcd(from_rate, to_rate)
-    return np.asarray(sps.resample_poly(data, to_rate // gcd, from_rate // gcd), dtype=np.float64)
+    if from_rate != to_rate:
+        gcd = np.gcd(from_rate, to_rate)
+        data = sps.resample_poly(data, to_rate // gcd, from_rate // gcd)
+    return np.array(data, dtype=np.float32)
 
 
-def _highpass(samples: FloatArray, rate: int) -> FloatArray:
-    if len(samples) < 64:
-        return np.asarray(samples - samples.mean(), dtype=np.float64)
+def _blocks(length: int, *, reverse: bool = False) -> list[tuple[int, int]]:
+    """``[start, stop)`` blocks of at most :data:`_CHUNK` samples covering ``range(length)``."""
+    blocks = [(start, min(length, start + _CHUNK)) for start in range(0, length, _CHUNK)]
+    return blocks[::-1] if reverse else blocks
+
+
+def _highpass(samples: Float32Array, rate: int) -> None:
+    """Zero-phase 150 Hz high-pass of ``samples`` in place (float64 arithmetic per block).
+
+    Equivalent to ``scipy.signal.sosfiltfilt`` with its default odd extension of ``3 * ntaps``
+    samples and steady-state initial conditions, computed block by block so that no full-length
+    temporary array exists.
+    """
+    count = len(samples)
+    if count < 64:
+        samples -= samples.mean(dtype=np.float64)
+        return
     sos = sps.butter(4, HIGHPASS_HZ, btype="highpass", fs=rate, output="sos")
-    return np.asarray(sps.sosfiltfilt(sos, samples), dtype=np.float64)
+    taps = 2 * len(sos) + 1 - min(int((sos[:, 2] == 0).sum()), int((sos[:, 5] == 0).sum()))
+    edge = 3 * taps
+    steady = sps.sosfilt_zi(sos)
+    first, last = float(samples[0]), float(samples[-1])
+    left = 2 * first - samples[edge:0:-1].astype(np.float64)
+    right = 2 * last - samples[-2 : -(edge + 2) : -1].astype(np.float64)
+    _, state = sps.sosfilt(sos, left, zi=steady * left[0])
+    for start, stop in _blocks(count):
+        block, state = sps.sosfilt(sos, samples[start:stop].astype(np.float64), zi=state)
+        samples[start:stop] = block
+    tail, state = sps.sosfilt(sos, right, zi=state)
+    _, state = sps.sosfilt(sos, tail[::-1], zi=steady * tail[-1])
+    for start, stop in _blocks(count, reverse=True):
+        block, state = sps.sosfilt(sos, samples[start:stop][::-1].astype(np.float64), zi=state)
+        samples[start:stop] = block[::-1]
 
 
-def _onset_envelope(samples: FloatArray, hop: int) -> FloatArray:
+def _rms(samples: Float32Array) -> float:
+    """Root mean square accumulated in float64, block by block."""
+    total = 0.0
+    for start, stop in _blocks(len(samples)):
+        block = samples[start:stop].astype(np.float64)
+        total += float(np.dot(block, block))
+    return math.sqrt(total / max(1, len(samples)))
+
+
+def _onset_envelope(samples: Float32Array, hop: int) -> FloatArray:
     """Sparse onset strength per hop: log-energy rises above a robust noise threshold.
 
     Energy is averaged over :data:`ENERGY_WINDOW_HOPS` hops; the rise of the log RMS from one hop to
@@ -251,8 +374,12 @@ def _onset_envelope(samples: FloatArray, hop: int) -> FloatArray:
     frames = len(samples) // hop
     if frames < ENERGY_WINDOW_HOPS + 2:
         return np.zeros(max(frames, 0))
-    blocks = samples[: frames * hop].reshape(frames, hop)
-    energy = np.mean(blocks * blocks, axis=1)
+    hops = samples[: frames * hop].reshape(frames, hop)
+    energy = np.empty(frames, dtype=np.float64)
+    step = max(1, _CHUNK // hop)
+    for start in range(0, frames, step):
+        block = hops[start : start + step].astype(np.float64)
+        energy[start : start + step] = np.mean(block * block, axis=1)
     kernel = np.ones(ENERGY_WINDOW_HOPS) / ENERGY_WINDOW_HOPS
     # Edge padding: the recording start must not look like a rise from silence.
     padded = np.concatenate((np.full(ENERGY_WINDOW_HOPS - 1, energy[0]), energy))
@@ -345,7 +472,7 @@ def _event_windows(
 
 
 def _windowed_correlation(
-    ref: FloatArray, tgt: FloatArray, lag: int, windows: list[tuple[int, int]]
+    ref: Float32Array, tgt: Float32Array, lag: int, windows: list[tuple[int, int]]
 ) -> float:
     """Normalized correlation of ``tgt[n]`` and ``ref[n + lag]`` over reference windows."""
     dot = ref_energy = tgt_energy = 0.0
@@ -353,7 +480,8 @@ def _windowed_correlation(
         lo, hi = max(start, lag, 0), min(stop, len(tgt) + lag, len(ref))
         if hi - lo < 16:
             continue
-        a, b = ref[lo:hi], tgt[lo - lag : hi - lag]
+        a = ref[lo:hi].astype(np.float64)
+        b = tgt[lo - lag : hi - lag].astype(np.float64)
         dot += float(np.dot(a, b))
         ref_energy += float(np.dot(a, a))
         tgt_energy += float(np.dot(b, b))
@@ -362,7 +490,11 @@ def _windowed_correlation(
 
 
 def _refine(
-    ref: FloatArray, tgt: FloatArray, center: int, radius: int, windows: list[tuple[int, int]]
+    ref: Float32Array,
+    tgt: Float32Array,
+    center: int,
+    radius: int,
+    windows: list[tuple[int, int]],
 ) -> tuple[float, float] | None:
     """Sub-sample lag maximizing windowed waveform correlation within ``center +- radius``."""
     if not windows:
@@ -394,6 +526,10 @@ def _estimate(
             "peak_ratio": coarse.peak_ratio,
             "alternatives": coarse.alternatives,
             "matched_onsets": coarse.matched,
+            "chance_probability": coarse.chance,
+            "rival_matched_onsets": coarse.rival_matched,
+            "rival_offset_s": coarse.rival_offset_s,
+            "rival_chance_probability": coarse.rival_chance,
             "reference_onsets": coarse.reference_onsets,
             "target_onsets": coarse.target_onsets,
         }
@@ -419,8 +555,55 @@ class _Coarse:
     peak_ratio: float | None
     alternatives: tuple[OffsetCandidate, ...]
     matched: int
+    chance: float
+    """Bound on the probability of ``matched`` coincidences between unrelated onset trains."""
+    rival_matched: int
+    """Most coinciding onsets at an admissible lag outside the chosen alignment."""
+    rival_offset_s: float | None
+    rival_chance: float
+    """Chance probability of ``rival_matched`` coincidences (1 without a rival)."""
     reference_onsets: int
     target_onsets: int
+
+
+def _chance_probability(
+    ref_peaks: npt.NDArray[np.int64],
+    tgt_peaks: npt.NDArray[np.int64],
+    lag: int,
+    overlap: tuple[int, int],
+    matched: int,
+    searched_lags: int,
+) -> float:
+    """Probability bound that ``matched`` coincidences arise by chance (module doc, step 5).
+
+    ``overlap`` is the reference hop interval ``[lo, hi)`` covered by both signals at ``lag``;
+    ``searched_lags`` is the number of admissible lags of the coarse search.
+    """
+    if matched <= 0:
+        return 1.0
+    lo, hi = overlap
+    window = 2 * ONSET_TOLERANCE_HOPS + 1
+    n_ref = int(np.count_nonzero((ref_peaks >= lo) & (ref_peaks < hi)))
+    shifted = tgt_peaks + lag
+    n_tgt = max(matched, int(np.count_nonzero((shifted >= lo) & (shifted < hi))))
+    p = min(1.0, n_ref * window / max(1, hi - lo))
+    tail = float(special.bdtrc(matched - 1, n_tgt, p))  # P(X >= matched), X ~ Bin(n_tgt, p)
+    trials = max(1.0, searched_lags / window)
+    return min(1.0, trials * tail)
+
+
+def _coincidences_per_lag(
+    ref_peaks: npt.NDArray[np.int64], tgt_peaks: npt.NDArray[np.int64], n_ref: int, n_tgt: int
+) -> npt.NDArray[np.int64]:
+    """Coinciding onsets (``_matched_onsets``) at every lag ``-(n_tgt - 1) .. n_ref - 1``."""
+    reference = np.zeros(n_ref)
+    reference[ref_peaks] = 1.0
+    window = np.ones(2 * ONSET_TOLERANCE_HOPS + 1)
+    reference = np.convolve(reference, window, mode="same")
+    target = np.zeros(n_tgt)
+    target[tgt_peaks] = 1.0
+    counts = sps.correlate(reference, target, mode="full", method="fft")
+    return np.asarray(np.rint(counts), dtype=np.int64)
 
 
 def _coarse_search(
@@ -440,9 +623,20 @@ def _coarse_search(
     separation = int(ONSET_SEPARATION_S / hop_s)
     ref_peaks = _onset_peaks(ref_env, separation)
     tgt_peaks = _onset_peaks(tgt_env, separation)
+    lag = int(lags[best])
+    matched = _matched_onsets(ref_peaks, tgt_peaks, lag, ONSET_TOLERANCE_HOPS)
+    overlap = (max(0, lag), min(len(ref_env), len(tgt_env) + lag))
+    admissible = np.isfinite(raw)
+    searched = int(np.count_nonzero(admissible))
+    per_lag = _coincidences_per_lag(ref_peaks, tgt_peaks, len(ref_env), len(tgt_env))
+    elsewhere = admissible & (np.abs(np.arange(len(per_lag)) - best) > RIVAL_EXCLUSION_HOPS)
+    rival = int(np.argmax(np.where(elsewhere, per_lag, -1))) if elsewhere.any() else None
+    rival_matched = int(per_lag[rival]) if rival is not None else 0
+    rival_lag = int(lags[rival]) if rival is not None else 0
+    rival_overlap = (max(0, rival_lag), min(len(ref_env), len(tgt_env) + rival_lag))
     return _Coarse(
-        lag=int(lags[best]),
-        offset_s=float(lags[best]) * hop_s,
+        lag=lag,
+        offset_s=float(lag) * hop_s,
         raw=best_raw,
         confidence=float(normalized[best]),
         peak_ratio=ratio,
@@ -451,15 +645,21 @@ def _coarse_search(
             for i in rivals[:5]
             if best_raw > 0 and raw[i] >= 0.5 * best_raw
         ),
-        matched=_matched_onsets(ref_peaks, tgt_peaks, int(lags[best]), ONSET_TOLERANCE_HOPS),
+        matched=matched,
+        chance=_chance_probability(ref_peaks, tgt_peaks, lag, overlap, matched, searched),
+        rival_matched=rival_matched,
+        rival_offset_s=float(rival_lag) * hop_s if rival is not None else None,
+        rival_chance=_chance_probability(
+            ref_peaks, tgt_peaks, rival_lag, rival_overlap, rival_matched, searched
+        ),
         reference_onsets=len(ref_peaks),
         target_onsets=len(tgt_peaks),
     )
 
 
 def _anchors(
-    ref: FloatArray,
-    tgt: FloatArray,
+    ref: Float32Array,
+    tgt: Float32Array,
     lag: float,
     windows: list[tuple[int, int]],
     overlap: tuple[int, int],
@@ -502,17 +702,34 @@ def estimate_offset_from_signals(
 ) -> OffsetEstimate:
     """Estimates ``a`` such that the target's time ``t`` shows reference time ``a + t``.
 
-    Inputs are mono PCM arrays at their own sample rates; both are resampled to
-    :data:`ANALYSIS_RATE`.
+    Inputs are mono PCM arrays at their own sample rates; both are copied to float32 at
+    :data:`ANALYSIS_RATE` (the caller's arrays are not modified).
     """
     rate = ANALYSIS_RATE
-    ref = _highpass(_resample(reference, reference_rate, rate), rate)
-    tgt = _highpass(_resample(target, target_rate, rate), rate)
+    return _estimate_analysis(
+        _resample(reference, reference_rate, rate),
+        _resample(target, target_rate, rate),
+        max_offset_s=max_offset_s,
+        min_overlap_s=min_overlap_s,
+    )
+
+
+def _estimate_analysis(
+    ref: Float32Array,
+    tgt: Float32Array,
+    *,
+    max_offset_s: float | None,
+    min_overlap_s: float | None,
+) -> OffsetEstimate:
+    """The estimation on float32 analysis signals at :data:`ANALYSIS_RATE` (filtered in place)."""
+    rate = ANALYSIS_RATE
+    _highpass(ref, rate)
+    _highpass(tgt, rate)
     ref_s, tgt_s = len(ref) / rate, len(tgt) / rate
     if min(len(ref), len(tgt)) < rate // 2:
         return _estimate(INSUFFICIENT, ref_s, tgt_s, reason="audio shorter than 0.5 s")
     for label, data in (("reference", ref), ("target", tgt)):
-        if float(np.sqrt(np.mean(data * data))) < SILENCE_RMS:
+        if _rms(data) < SILENCE_RMS:
             return _estimate(
                 INSUFFICIENT, ref_s, tgt_s, reason=f"{label} audio is silent (below -60 dBFS)"
             )
@@ -532,6 +749,12 @@ def estimate_offset_from_signals(
             INSUFFICIENT, ref_s, tgt_s, coarse,
             reason=f"only {coarse.matched} coinciding onset(s) at the best alignment",
         )  # fmt: skip
+    if coarse.chance > MAX_CHANCE_PROBABILITY:
+        return _estimate(
+            INSUFFICIENT, ref_s, tgt_s, coarse,
+            reason=f"{coarse.matched} coinciding onsets are explained by chance (probability "
+            f"{coarse.chance:.2g} > {MAX_CHANCE_PROBABILITY:g})",
+        )  # fmt: skip
     if coarse.raw <= 0 or coarse.confidence < MIN_CONFIDENCE:
         return _estimate(
             INSUFFICIENT, ref_s, tgt_s, coarse,
@@ -542,6 +765,15 @@ def estimate_offset_from_signals(
             SyncStatus.AMBIGUOUS, ref_s, tgt_s, coarse,
             reason=f"competing correlation peaks (ratio {coarse.peak_ratio:.2f} < "
             f"{MIN_PEAK_RATIO})",
+        )  # fmt: skip
+    if (
+        coarse.rival_chance <= MAX_CHANCE_PROBABILITY
+        and coarse.rival_matched >= MAX_RIVAL_FRACTION * coarse.matched
+    ):
+        return _estimate(
+            SyncStatus.AMBIGUOUS, ref_s, tgt_s, coarse,
+            reason=f"a competing alignment ({coarse.rival_offset_s} s) has "
+            f"{coarse.rival_matched} of the {coarse.matched} coinciding onsets",
         )  # fmt: skip
 
     lo = max(0, coarse.lag * hop)
@@ -579,14 +811,14 @@ def estimate_offset(
     max_offset_s: float | None = None,
     min_overlap_s: float | None = None,
 ) -> OffsetEstimate:
-    """Estimates the target recording's offset ``a`` against the reference from their audio."""
-    reference = extract_analysis_audio(reference_path, stream_index=reference_stream)
-    target = extract_analysis_audio(target_path, stream_index=target_stream)
-    return estimate_offset_from_signals(
-        reference,
-        ANALYSIS_RATE,
-        target,
-        ANALYSIS_RATE,
+    """Estimates the target recording's offset ``a`` against the reference from their audio.
+
+    Each stream is decoded once into a float32 array that the estimation then filters in place,
+    so the full-length memory is about ``4 * ANALYSIS_RATE`` bytes per second of each recording.
+    """
+    return _estimate_analysis(
+        extract_analysis_audio(reference_path, stream_index=reference_stream),
+        extract_analysis_audio(target_path, stream_index=target_stream),
         max_offset_s=max_offset_s,
         min_overlap_s=min_overlap_s,
     )

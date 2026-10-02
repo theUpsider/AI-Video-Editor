@@ -8,9 +8,31 @@ Video timing rule
 The range ``[R0, R1)`` is presented on output frames ``n = 0 .. ceil((R1 - R0) * fps) - 1``; frame
 ``n`` presents project time ``T_n = R0 + n / fps``. For each active clip, frame ``n`` shows the
 **latest source frame whose presentation timestamp is ``<= t_n``**, where
-``t_n = source_in + (T_n - timeline_start) * source_speed`` and a frame's source time is
-``pts * time_base - container_start_time``. The rule holds for constant- and variable-frame-rate
-sources alike because it is evaluated on actual PTS, never on ``frame_number / average_rate``.
+``t_n = source_in + (T_n - timeline_start) * source_speed * editorial_speed`` (:attr:`Clip.speed`)
+and a frame's source time is ``pts * time_base - container_start_time``. The rule holds for
+constant- and variable-frame-rate sources alike because it is evaluated on actual PTS, never on
+``frame_number / average_rate``.
+
+Before a source's first video frame (``t_n`` earlier than the first frame's PTS, for example when
+the video stream starts after the container start) no frame satisfies ``PTS <= t_n``; such output
+frames show the source's **first frame** (clamped), so a clip never flashes the background at the
+source's start.
+
+Seeking: video is read with FFmpeg ``-noaccurate_seek`` from a seek point ``S0``, so every decoded
+frame reaches the timestamp mapping (nothing before ``S0`` is discarded); decoding stops when the
+segment's last output frame is complete. ``S0`` must lie before a keyframe at or before ``t_first``:
+
+* containers with a keyframe index (:data:`ave.media.probe.INDEXED_SEEK_FORMATS`: MP4/MOV,
+  Matroska, AVI, MXF) seek to a keyframe whose timestamp is ``<= S0``, so
+  ``S0 = max(0, floor(t_first - 1 s))``;
+* other containers (MPEG-TS/PS...) seek to any packet with a timestamp ``<= S0`` and decoding
+  resumes at the next keyframe, which may lie after ``t_first``. With the probe's keyframe index,
+  ``S0 = max(0, floor(K - 1 s))`` where ``K`` is the latest keyframe at or before ``t_first`` (0
+  when there is none): the next keyframe after the landing point is then ``K`` or an earlier one.
+
+Either way the latest frame with ``PTS <= t`` is among the decoded frames, however long a
+variable-frame-rate gap or a group of pictures before ``t`` is; the one-second margin absorbs
+decode-order versus presentation-order (B-frame) differences of the seek.
 
 Exact evaluation in FFmpeg: a source frame with PTS ``p`` becomes due at segment-relative output
 time ``y(p) = p * (time_base / speed) + c`` (all rational). The plan chooses an integer tick rate
@@ -32,12 +54,22 @@ Audio
 Audio is planned once for the whole range at 48 kHz: output sample ``k`` presents ``R0 + k/48000``.
 Each audible clip contributes the samples ``k`` whose time lies in its project interval, read from
 source time ``t_k`` (rounded to the nearest 48 kHz sample after resampling, an error of at most
-10.4 microseconds), time-scaled with pitch preservation when ``source_speed != 1``, gained and
-delayed to its exact sample position; clips are summed without normalization.
+10.4 microseconds), time-scaled with pitch preservation when the clip's speed (drift correction
+times editorial speed) is not 1, gained and delayed to its exact sample position; clips are summed
+without normalization.
+
+Audio sample positions follow presentation timestamps: the input is read with raw timestamps and
+the decoded samples are placed relative to ``origin + S0`` (the exact container start plus the seek
+point, :mod:`ave.media.audio_timing`), not by counting samples from the first one delivered. A
+stream that starts after ``S0`` is preceded by silence up to its first timestamp, and timestamp
+gaps or overlaps above :data:`ave.media.audio_timing.AUDIO_TIMESTAMP_TOLERANCE_S` (10 ms) inside the
+stream are filled with silence or dropped, to the input sample, whatever the container (MPEG-TS
+included); smaller deviations are jitter and leave the samples contiguous.
 """
 
 from __future__ import annotations
 
+import bisect
 import itertools
 import math
 from collections.abc import Mapping
@@ -75,10 +107,11 @@ __all__ = [
 ]
 
 SEEK_MARGIN_S = 1
-"""Seconds decoded before the first needed source instant (covers frame gaps and resampler
-warm-up)."""
+"""Seconds between the seek point and the first needed source instant (covers B-frame reordering at
+the seek and resampler warm-up; variable-frame-rate gaps need no margin, see the module doc)."""
 READ_MARGIN_S = 2
-"""Seconds read after the last needed source instant."""
+"""Seconds of audio read after the last needed source instant; also the timestamp headroom checked
+for exact evaluation of video PTS beyond the last needed instant."""
 MAX_TICK_RATE = 2**31 - 1
 """FFmpeg time bases are 32-bit rationals."""
 _MAX_EXACT = 2**53
@@ -113,10 +146,14 @@ class VideoLayerPlan(_Frozen):
     input_path: str
     stream_index: int
     z: int
+    input_format: Literal["image2"] | None = None
+    """``image2`` when the asset was probed through FFmpeg's image2 demuxer: the renderer then
+    forces that demuxer with sequence patterns disabled, so the file is read as itself."""
     seek: NonNegativeRational | None
     """Input seek point ``S0`` in source seconds (``None`` for still images)."""
-    read_duration: PositiveRational
-    """Seconds of input read from ``S0``."""
+    read_duration: PositiveRational | None
+    """Seconds of a still image's looped input; ``None`` for video, which is decoded from the
+    keyframe at or before ``S0`` until the segment's frames are complete."""
     timestamps: TimestampMap | None
     first_source_time: Rational
     """``t`` shown on the segment's first frame."""
@@ -153,6 +190,9 @@ class AudioClipPlan(_Frozen):
     input_path: str
     stream_index: int
     channels: int
+    origin: Rational = Fraction(0)
+    """Exact container start time of the input: raw input timestamps minus ``origin`` are source
+    time (the renderer reads audio with ``-copyts``)."""
     seek: int
     """Input seek point ``S0`` (whole seconds of source time)."""
     read_duration: int
@@ -162,6 +202,7 @@ class AudioClipPlan(_Frozen):
     source_sample_count: int
     """Source samples read (at the output rate) before time scaling."""
     speed: PositiveRational
+    """Source seconds per output second (``Clip.speed``); audio is time-scaled with pitch kept."""
     gain_db: float
     output_offset: int
     """First output sample index of the clip."""
@@ -369,8 +410,8 @@ def _plan_layer(
     fps = sequence.fps
     segment_start = range_start + frame_start(frames.start, fps)
     last_time = range_start + frame_start(frames.stop - 1, fps)
-    t_first = clip.source_in + (segment_start - clip.timeline_start) * clip.source_speed
-    t_last = clip.source_in + (last_time - clip.timeline_start) * clip.source_speed
+    t_first = clip.source_in + (segment_start - clip.timeline_start) * clip.speed
+    t_last = clip.source_in + (last_time - clip.timeline_start) * clip.speed
     geometry = compute_layer_geometry(
         sequence.canvas,
         clip.region,
@@ -380,19 +421,20 @@ def _plan_layer(
         clip.focus_x,
         clip.focus_y,
     )
+    read_duration: Fraction | None = None
     if clip.kind == "image":
         seek: Fraction | None = None
         read_duration = frame_start(len(frames), fps) + 1
         timestamps = None
     else:
-        seek = Fraction(max(0, math.floor(t_first - SEEK_MARGIN_S)))
-        read_duration = Fraction(math.ceil(t_last - seek) + READ_MARGIN_S)
+        seek = _seek_point(asset, stream, t_first)
         timestamps = _timestamp_map(clip, asset, stream, segment_start, fps, t_last, warnings)
     return VideoLayerPlan(
         clip_id=clip.id,
         asset_id=asset.id,
         kind=clip.kind if clip.kind == "image" else "video",
         input_path=asset.path,
+        input_format="image2" if asset.probe.format_name == "image2" else None,
         stream_index=stream.index,
         z=z,
         seek=seek,
@@ -411,6 +453,21 @@ def _plan_layer(
     )
 
 
+def _seek_point(asset: MediaAsset, stream: VideoStreamInfo, t_first: Fraction) -> Fraction:
+    """Seek point ``S0`` that precedes a keyframe at or before ``t_first`` (module doc)."""
+    anchor = t_first
+    if stream.keyframe_pts is not None and stream.time_base is not None:
+        # Latest keyframe with source time <= t_first (pts * time_base - origin <= t_first).
+        limit = math.floor((t_first + asset.probe.container_start_time) / stream.time_base)
+        position = bisect.bisect_right(stream.keyframe_pts, limit) - 1
+        anchor = (
+            stream.keyframe_pts[position] * stream.time_base - asset.probe.container_start_time
+            if position >= 0
+            else Fraction(0)
+        )
+    return Fraction(max(0, math.floor(anchor - SEEK_MARGIN_S)))
+
+
 def _timestamp_map(
     clip: Clip,
     asset: MediaAsset,
@@ -425,12 +482,12 @@ def _timestamp_map(
     if time_base is None:  # pragma: no cover - checked by _video_stream
         raise RenderPlanningError("video stream has no time base", code="UNSUPPORTED_CAPABILITY")
     origin = asset.probe.container_start_time
-    alpha = time_base / clip.source_speed
-    constant = clip.timeline_start - segment_start - (origin + clip.source_in) / clip.source_speed
+    alpha = time_base / clip.speed
+    constant = clip.timeline_start - segment_start - (origin + clip.source_in) / clip.speed
     base = math.lcm(time_base.denominator, alpha.denominator)
     if base > MAX_TICK_RATE:
         raise RenderPlanningError(
-            f"clip {clip.id}: time base {time_base} with speed {clip.source_speed} needs a tick "
+            f"clip {clip.id}: time base {time_base} with speed {clip.speed} needs a tick "
             "rate beyond FFmpeg's 32-bit limit",
             code="UNSUPPORTED_CAPABILITY",
             clip_id=clip.id,
@@ -485,8 +542,8 @@ def _plan_audio(
         stream = _audio_stream(clip, asset)
         first_time = project_range.start + Fraction(samples.start, rate)
         end_time = project_range.start + Fraction(samples.stop, rate)
-        t_start = clip.source_in + (first_time - clip.timeline_start) * clip.source_speed
-        t_end = clip.source_in + (end_time - clip.timeline_start) * clip.source_speed
+        t_start = clip.source_in + (first_time - clip.timeline_start) * clip.speed
+        t_end = clip.source_in + (end_time - clip.timeline_start) * clip.speed
         seek = max(0, math.floor(t_start - SEEK_MARGIN_S))
         source_start = round_half_up((t_start - seek) * rate)
         source_count = round_half_up((t_end - t_start) * rate)
@@ -497,11 +554,12 @@ def _plan_audio(
                 input_path=asset.path,
                 stream_index=stream.index,
                 channels=stream.channels or 1,
+                origin=asset.probe.container_start_time,
                 seek=seek,
                 read_duration=math.ceil(t_end - seek) + READ_MARGIN_S,
                 source_start_sample=source_start,
                 source_sample_count=max(source_count, 1),
-                speed=clip.source_speed,
+                speed=clip.speed,
                 gain_db=clip.gain_db,
                 output_offset=samples.start,
                 output_samples=len(samples),

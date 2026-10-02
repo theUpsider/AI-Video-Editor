@@ -13,6 +13,7 @@ import pytest
 from ave.domain.model import Canvas, Clip, Sequence, SyncMember, Track
 from ave.errors import RenderPlanningError, SourceBoundsError
 from ave.media.asset import MediaAsset
+from ave.media.probe import parse_probe_json
 from ave.render.compiler import compile_render_plan
 from ave.render.ffmpeg import build_audio_command, build_segment_command, video_timescale
 from ave.render.profile import OutputProfile
@@ -32,7 +33,13 @@ def _assets() -> dict[str, MediaAsset]:
 
 
 def _single_clip_sequence(
-    asset: MediaAsset, *, source_in: Fraction, source_out: Fraction, speed: Fraction, fps: Fraction
+    asset: MediaAsset,
+    *,
+    source_in: Fraction,
+    source_out: Fraction,
+    speed: Fraction,
+    fps: Fraction,
+    editorial_speed: Fraction = Fraction(1),
 ) -> Sequence:
     clip = Clip(
         id="clip",
@@ -43,6 +50,7 @@ def _single_clip_sequence(
         source_in=source_in,
         source_out=source_out,
         source_speed=speed,
+        editorial_speed=editorial_speed,
     )
     return Sequence(
         id="s",
@@ -145,11 +153,13 @@ def _simulate_ffmpeg_selection(
 
 def _rule(pts: list[int], time_base: Fraction, origin: Fraction, clip: Clip, start: Fraction,
           fps: Fraction, count: int) -> list[int]:  # fmt: skip
-    """Specification rule: latest frame with source time <= t_k."""
+    """Specification rule (ADR-004): latest frame with source time <= t_k, where
+    t_k = source_in + (T_k - timeline_start) * source_speed * editorial_speed."""
     times = [p * time_base - origin for p in pts]
+    speed = clip.source_speed * clip.editorial_speed
     shown = []
     for k in range(count):
-        t = clip.source_in + (start + Fraction(k) / fps - clip.timeline_start) * clip.source_speed
+        t = clip.source_in + (start + Fraction(k) / fps - clip.timeline_start) * speed
         shown.append(bisect.bisect_right(times, t) - 1)
     return shown
 
@@ -164,7 +174,11 @@ class TimingCase:
     fps: Fraction = Fraction(60)
     source_in: Fraction = Fraction(0)
     speed: Fraction = Fraction(1)
-    origin: str = "0"
+    """Drift correction (``source_speed``)."""
+    editorial: Fraction = Fraction(1)
+    """Editorial speed change (``editorial_speed``)."""
+    origin: Fraction = Fraction(0)
+    """Exact start of the video stream (the container start); FFprobe prints it rounded."""
     range_start: Fraction = Fraction(0)
 
 
@@ -176,8 +190,18 @@ TIMING_CASES = [
     TimingCase("ntsc-output", TB60, (256,), fps=NTSC60, source_in=Fraction(5)),
     TimingCase("30-to-60", TB60, (512,), source_in=Fraction(3)),
     TimingCase("drift", TB60, (256,), source_in=Fraction(3), speed=Fraction(1000, 1001)),
-    TimingCase("speed", TB60, (256,), source_in=Fraction(3), speed=Fraction(3, 2)),
-    TimingCase("origin", Fraction(1, 90000), (1500,), source_in=Fraction(1, 7), origin="0.333333"),
+    TimingCase("editorial-speed", TB60, (256,), source_in=Fraction(3), editorial=Fraction(3, 2)),
+    TimingCase(
+        "drift-and-editorial",
+        TB60,
+        (256,),
+        source_in=Fraction(3),
+        speed=Fraction(1000, 1001),
+        editorial=Fraction(2),
+    ),
+    TimingCase(
+        "origin", Fraction(1, 90000), (1500,), source_in=Fraction(1, 7), origin=Fraction(1, 3)
+    ),
     TimingCase("vfr", Fraction(1, 120), (2, 1, 3, 2, 4, 1, 5), source_in=Fraction(1, 3)),
     TimingCase("vfr-ntsc", Fraction(1, 120), (3, 1, 4, 1, 5), fps=NTSC60),
     TimingCase("mid-range", TB60, (256,), source_in=Fraction(2), range_start=Fraction(3, 2)),
@@ -190,24 +214,33 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
 
     The integer coefficients of the plan, evaluated the way FFmpeg evaluates them, select exactly
     the frames the rule selects - for CFR ties, fractional offsets, 60000/1001 output, rate
-    conversion, drift/speed factors, a non-zero container start and variable frame rates.
+    conversion, drift correction, editorial speed and both combined, a non-zero container start
+    and variable frame rates.
     """
-    origin = Fraction(case.origin)
+    origin = case.origin  # exact; the probe sees only its six-decimal print and the stream start
+    start_pts = origin / case.time_base
+    assert start_pts.denominator == 1
     pts: list[int] = []
-    tick = round(origin / case.time_base)
+    tick = int(start_pts)
     while len(pts) < 2000:
         pts.append(tick)
         tick += case.pts_steps[len(pts) % len(case.pts_steps)]
     duration = pts[-1] * case.time_base - origin
     asset = fake_asset(
-        "X", time_base=case.time_base, duration=duration, start_time=case.origin, audio=None
+        "X",
+        time_base=case.time_base,
+        duration=duration,
+        start_time=f"{float(origin):.6f}",
+        video_start_pts=int(start_pts),
+        audio=None,
     )
     sequence = _single_clip_sequence(
         asset,
         source_in=case.source_in,
-        source_out=case.source_in + 4 * case.speed,
+        source_out=case.source_in + 4 * case.speed * case.editorial,
         speed=case.speed,
         fps=case.fps,
+        editorial_speed=case.editorial,
     )
     window = Interval(start=case.range_start, end=Fraction(4))
     plan = compile_render_plan(sequence, {"X": asset}, project_range=window)
@@ -220,8 +253,7 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
     start = window.start + Fraction(segment.first_frame) / case.fps
     simulated = _simulate_ffmpeg_selection(pts, ts.pts_divisor, ts.multiplier, ts.offset,
                                            ts.tick_rate, case.fps, count)  # fmt: skip
-    expected = _rule(pts, case.time_base, asset.probe.container_start_time, sequence.clips[0],
-                     start, case.fps, count)  # fmt: skip
+    expected = _rule(pts, case.time_base, origin, sequence.clips[0], start, case.fps, count)
     assert simulated == expected
     if case.name == "cfr-tie":
         assert expected[:3] == [120, 121, 122]  # exact ties pick the frame at exactly t
@@ -254,3 +286,87 @@ def test_segment_commands_use_identical_encoder_settings_and_no_shell() -> None:
     assert "-i" in audio_args
     with pytest.raises(ValueError, match="video_bitrate_kbps"):
         OutputProfile(rate_control="bitrate")
+
+
+def test_editorial_speed_retimes_audio_with_pitch_kept_on_top_of_drift() -> None:
+    """AVE-REQ-012 AC-4: an audio clip with drift correction 1000/1001 and editorial speed 2
+    reads source seconds at 2000/1001 per output second, fills exactly its project duration and
+    is time-scaled with pitch preserved (Rubber Band tempo = combined speed, pitch 1)."""
+    asset = fake_asset("A", duration=Fraction(30))
+    clip = Clip(
+        id="snd", track_id="a", asset_id="A", kind="audio", timeline_start=Fraction(1),
+        source_in=Fraction(4), source_out=Fraction(12), source_speed=Fraction(1000, 1001),
+        editorial_speed=Fraction(2),
+    )  # fmt: skip
+    sequence = Sequence(
+        id="s", fps=Fraction(60), tracks=(Track(id="a", kind="audio", index=0),), clips=(clip,)
+    )
+    plan = compile_render_plan(sequence, {"A": asset}, project_range=Interval.of(0, 6))
+    (audio,) = plan.audio
+    speed = Fraction(2000, 1001)
+    assert audio.speed == speed
+    duration = 8 / speed  # project seconds: (source_out - source_in) / (drift * editorial)
+    assert audio.output_offset == 48000
+    assert audio.output_samples == math.ceil((1 + duration) * 48000) - 48000
+    assert audio.source_sample_count == round(audio.output_samples * speed)
+    _, script = build_audio_command(plan, Path("/w/a.wav"), Path("/w/a.filter"))
+    assert f"rubberband=tempo={float(speed)!r}:pitch=1" in script
+
+
+def _image2_asset() -> MediaAsset:
+    probe = parse_probe_json(
+        {
+            "format": {"format_name": "image2", "start_time": "0.000000"},
+            "streams": [
+                {
+                    "index": 0, "codec_type": "video", "codec_name": "png", "width": 640,
+                    "height": 360, "time_base": "1/25", "r_frame_rate": "25/1",
+                    "avg_frame_rate": "25/1",
+                }
+            ],
+        }
+    )  # fmt: skip
+    return MediaAsset(id="img", path="/media/photo%d.png", sha256="0" * 64, probe=probe)
+
+
+def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() -> None:
+    """AVE-REQ-072 AC-3, AVE-REQ-012 AC-4: an image2 still is opened with sequence patterns
+    disabled (``%d`` in its name is literal); video inputs seek to a keyframe without discarding
+    frames before the seek point and are not cut by a read duration; audio is placed by its
+    timestamps relative to the exact container start plus the seek point (raw timestamps via
+    ``-copyts``, ``first_pts=0``, gaps above the 10 ms jitter tolerance compensated)."""
+    still = Clip(
+        id="still", track_id="v", asset_id="img", kind="image", timeline_start=Fraction(0),
+        source_in=Fraction(0), source_out=Fraction(1),
+    )  # fmt: skip
+    sequence = Sequence(
+        id="s", fps=Fraction(30), canvas=Canvas(width=640, height=360),
+        tracks=(Track(id="v", kind="video", index=0),), clips=(still,),
+    )  # fmt: skip
+    plan = compile_render_plan(sequence, {"img": _image2_asset()})
+    (layer,) = plan.segments[0].layers
+    assert layer.input_format == "image2"
+    args, _ = build_segment_command(plan, plan.segments[0], Path("/w/o.mp4"), Path("/w/s"))
+    position = args.index("file:/media/photo%d.png")
+    assert args[position - 5 : position] == ["-f", "image2", "-pattern_type", "none", "-i"]
+
+    video_plan = compile_render_plan(standard_sequence(sync_group(B_TRUE)), _assets())
+    first = video_plan.segments[0]
+    args, _ = build_segment_command(video_plan, first, Path("/w/o.mp4"), Path("/w/s"))
+    position = args.index("file:/media/A.mp4")
+    assert args[position - 4 : position] == ["-noaccurate_seek", "-ss", "1", "-i"]
+    assert "-t" not in args
+    assert all(layer.input_format is None for layer in first.layers)
+    audio_args, audio_script = build_audio_command(
+        video_plan, Path("/w/a.wav"), Path("/w/a.filter")
+    )
+    assert audio_args.index("-copyts") < audio_args.index("-i")
+    # Seek points from the specification table: A[2,10) -> 1, C[0,6) -> 0, A[12,20) -> 11; the
+    # fake assets start at container time 0.
+    placement = (
+        "asetpts=PTS-round(({seek}/1)/TB),"
+        "aresample=48000:resampler=soxr:min_comp=0:min_hard_comp=0.01:first_pts=0,"
+    )
+    chains = audio_script.splitlines()[: len(video_plan.audio)]
+    for chain, seek in zip(chains, (1, 0, 11), strict=True):
+        assert chain.split("]", 1)[1].startswith(placement.format(seek=seek))
