@@ -24,11 +24,19 @@ M1 backend core ‖ M2 synchronization from the persisted briefs.
 ## In progress
 
 - Media-core follow-ups (AVE-REQ-012 AC-4, AVE-REQ-024 AC-3): 12 non-blocking items from the round-3 review in
-  [the follow-up brief](briefs/2026-10-02-m0-media-core-round-3-follow-ups.md); not started.
+  [the follow-up brief](briefs/2026-10-02-m0-media-core-round-3-follow-ups.md) plus the background color matrix
+  (item 13) in [the execution brief](briefs/2026-10-02-m0-media-core-follow-ups-execution.md); worktree
+  `.claude/worktrees/m0-media-follow-ups`, branch `m0-media-follow-ups`.
 - AVE-REQ-093/094/096/097/098 `in-progress`: verify-requirement FAIL at `4d9ef9a` (`wf_b0c34bba-a20`); 9 blocking
   and 17 non-blocking findings with required fixes in
-  [the fix brief](briefs/2026-10-02-m0-process-verification-fixes.md). Next: implement the brief, release tier,
-  re-verify in dependency order 093 → 094 → 096/097/098.
+  [the fix brief](briefs/2026-10-02-m0-process-verification-fixes.md), executed in four parts per
+  [the execution brief](briefs/2026-10-02-m0-process-fixes-execution.md); worktree
+  `.claude/worktrees/m0-process-fixes`, branch `m0-process-fixes`. Next: release tier, re-verify in dependency
+  order 093 → 094 → 096/097/098.
+- Delegated run for both briefs: launched 2026-10-02; verdict not recorded. On resume without a recorded
+  verdict nothing is running: inspect `git log ccr-af7078da-q8r8mf..m0-process-fixes` and
+  `git log ccr-af7078da-q8r8mf..m0-media-follow-ups` plus `docs/briefs/handbacks/`, then re-run the unfinished
+  parts from the execution briefs.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Next delegated tasks, briefs persisted: [M1 backend core](briefs/2026-10-02-m1-backend-core.md) ‖
   [M2 synchronization](briefs/2026-10-02-m2-synchronization.md); both start from the commit that closes M0.
