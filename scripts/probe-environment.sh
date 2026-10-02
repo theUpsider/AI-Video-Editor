@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 # scripts/probe-environment.sh — re-measures the shell-observable capabilities recorded in
-# docs/ENVIRONMENT_CAPABILITIES.md (AVE-REQ-094 AC-1): CPU, memory, disk, accelerators, media
-# tools and hardware codecs, language toolchains, browsers, containers, Git worktrees, network
+# docs/ENVIRONMENT_CAPABILITIES.md (AVE-REQ-094 AC-1): CPU, memory, disk, accelerators with a
+# device verdict, media tools and hardware codecs, language toolchains, browsers, containers, Git
+# worktrees, the session's Claude Code version, OS user and repository writability, network
 # reachability of the hosts the project uses, and which product credential variables are set.
 #
 # Usage:  ./scripts/probe-environment.sh [--offline]     (--offline skips the network probes)
 # Read-only: prints a report and changes nothing. Never prints a credential value, only whether a
-# variable is set. Claude Code runtime capabilities (workflow tool, subagents, models, hooks) are
-# not visible to a shell; the lead records them in docs/ENVIRONMENT_CAPABILITIES.md.
+# variable is set. The other Claude Code capabilities (workflow tool, subagents, models, hooks,
+# permission mode) are not visible to a shell; docs/ENVIRONMENT_CAPABILITIES.md records them.
+# AVE_PROBE_DEV_DIR replaces /dev as the directory searched for device nodes (tests).
 # Not part of verify.sh: network results depend on the environment's policy.
 set -uo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV_DIR="${AVE_PROBE_DEV_DIR:-/dev}"
 OFFLINE=0
 case "${1:-}" in
   "") ;;
   --offline) OFFLINE=1 ;;
-  -h | --help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: ./scripts/probe-environment.sh [--offline]\n' >&2; exit 2 ;;
 esac
 
@@ -36,13 +40,24 @@ item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' /proc/memi
 item "disk (repository)" "$(df -h . 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
 
 section "Accelerators"
+gpu=""
 if have nvidia-smi; then
-  item "nvidia-smi" "$(first nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
+  gpu="$(first nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
+  item "nvidia-smi" "${gpu:-no GPU reported}"
 else
   item "nvidia-smi" "not installed"
 fi
-item "/dev/nvidia* devices" "$(find /dev -maxdepth 1 -name 'nvidia*' 2>/dev/null | tr '\n' ' ')"
-item "/dev/dri devices" "$(find /dev/dri -mindepth 1 -maxdepth 1 2>/dev/null | tr '\n' ' ')"
+nvidia_nodes="$(find "$DEV_DIR" -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
+dri_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 2>/dev/null | sort | tr '\n' ' ')"
+item "/dev/nvidia* devices" "${nvidia_nodes:-none}"
+item "/dev/dri devices" "${dri_nodes:-none}"
+# The verdict counts devices only: FFmpeg's built-in hardware encoders (Media tools) need one.
+evidence="$(printf '%s' "${gpu:+$gpu }$nvidia_nodes$dri_nodes" | sed 's/ *$//')"
+if [ -n "$evidence" ]; then
+  printf 'accelerator: present (%s)\n' "$evidence"
+else
+  printf 'accelerator: none (no device)\n'
+fi
 
 section "Media tools"
 version ffmpeg -hide_banner -version
@@ -82,6 +97,12 @@ done
 section "Git"
 item "worktrees" "$(git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
 item "branch" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
+
+section "Claude Code and session"
+# The development container holds no `claude` command: there the version comes from the host.
+version claude --version
+item "os user" "$(id -un 2>/dev/null || echo unknown) (uid $(id -u 2>/dev/null || echo unknown))"
+if [ -w "$ROOT" ]; then item "repository writable" "yes ($ROOT)"; else item "repository writable" "no ($ROOT)"; fi
 
 section "Product credential variables (set or unset; values are never printed)"
 # Only the product's own variables: the developer session's credentials are never product

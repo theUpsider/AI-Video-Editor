@@ -33,7 +33,7 @@ printf '# Task briefs\n\nTemplate and rules for task briefs (stand-in).\n' > doc
 # verify.sh records every run with the real evidence tool (standard library only).
 cp "$REPO/scripts/evidence.py" scripts/
 cp "$REPO/.claude/settings.json" .claude/
-cp "$REPO/.gitignore" "$REPO/.gitattributes" .
+cp "$REPO/.gitignore" "$REPO/.gitattributes" "$REPO/.env.example" .
 cp "$REPO/.github/workflows/verify.yml" .github/workflows/
 chmod +x scripts/*.sh scripts/check_baseline.py scripts/requirements/import_baseline.py .claude/hooks/*.sh
 

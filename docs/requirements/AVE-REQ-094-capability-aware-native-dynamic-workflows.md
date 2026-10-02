@@ -36,21 +36,27 @@ Claude Code shall use task-specific native dynamic workflows where actually avai
 - A capability that changes between sessions (network policy, credentials, tools) → re-probed with
   `scripts/probe-environment.sh` and recorded (AC-1).
 - Workflow syntax or a feature not present in the installed runtime → never assumed (AC-3).
-- Built-in FFmpeg hardware encoders without a device → reported as no accelerator (AC-1).
+- Built-in FFmpeg hardware encoders without a device → reported as no accelerator (AC-1): the probe prints
+  `accelerator: none (no device)` whenever no device node exists and `nvidia-smi` reports no GPU.
+- No `claude` command where the probe runs (the development container) → reported as not installed; the
+  version row comes from `claude --version` on the host (AC-1).
+- A deny rule of the project settings → recorded as enforced only after an attempted denied command was
+  refused (AC-1).
 
 ## Dependencies
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
 
 ## Verification strategy
-- AC-1 — integration and inspection — `scripts/tests/test-probe-environment.sh` runs `scripts/probe-environment.sh` (resources, accelerators, media tools, toolchains, browsers, credential variables by name only, network); the Claude Code rows of `docs/ENVIRONMENT_CAPABILITIES.md` (workflow tool, subagents, worktrees, hooks, models, limits) are observations a shell cannot make: inspection of the document against the session.
-- AC-2 — inspection — workflow runs with structured handbacks and dependency-aware parallelism: M0 build workflow `wf_5493b930-f7c` (two writers), review workflow `wf_1a23bf0d-2a0` (three lenses, adversarial refutation), persisted briefs in `docs/briefs/`; only a run of the real runtime can show this.
+- AC-1 — integration and inspection — `scripts/tests/test-probe-environment.sh` runs `scripts/probe-environment.sh` and checks its measurements: CPUs equal `getconf _NPROCESSORS_ONLN`, memory in GiB, disk, the accelerator verdict (`accelerator: none (no device)` without a device node and `nvidia-smi`; present with a device node), the Claude Code version (reported when `claude` is on PATH, "not installed" otherwise), the OS user and repository writability, credential variables by name only, offline network handling. The Claude Code rows of `docs/ENVIRONMENT_CAPABILITIES.md` are observations a shell cannot make, inspected against the session: workflow tool, subagents, worktrees, hooks, permissions (permission mode, project allow and deny rules with a denied rule checked by an attempted command, launcher-level settings, OS user and writability, sandbox and network) and models (how the session's model and the default model of subagent and workflow runs are observed, which overrides the Agent and Workflow tools accept, checked by a run).
+- AC-2 — inspection — completed workflow runs with structured handbacks and dependency-aware parallelism: M0 build workflow `wf_5493b930-f7c` (two writers; integrated as `486b3a0`, `24499a6`), review workflow `wf_1a23bf0d-2a0` (three lenses, adversarial refutation; PASS), persisted briefs in `docs/briefs/`; only a run of the real runtime can show this.
 - AC-3 — inspection — every workflow script used here ran on the installed runtime (run IDs above); no API outside the runtime's documented hooks.
 - AC-4 — inspection — CLAUDE.md § Delegation and `.claude/skills/ai-video-editor-delivery/SKILL.md` describe the subagent and sequential fallback; WF-002 records a real fallback (the lead finished an interrupted task sequentially).
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-- `docs/ENVIRONMENT_CAPABILITIES.md` — measured capabilities and limits of the cloud environment (AC-1)
-- `scripts/probe-environment.sh` — repeatable probe of the shell-observable environment, never printing credential values (AC-1)
+- `docs/ENVIRONMENT_CAPABILITIES.md` — measured capabilities and limits of the environment, including the Permissions and Models rows and the external gaps with their unblock actions (AC-1)
+- `scripts/probe-environment.sh` — repeatable probe of the shell-observable environment: resources, accelerator verdict from device nodes, Claude Code version, OS user and repository writability; never prints credential values (AC-1)
+- `.claude/skills/resume-project/SKILL.md` step 6 — re-probes at every resume and updates ENVIRONMENT_CAPABILITIES.md when a value differs (AC-1)
 - `docs/WORKFLOW_LOG.md` (operating baseline, WF-001–WF-004), `docs/briefs/` — workflow composition, handoffs and measured behavior (AC-2, AC-3)
 - `CLAUDE.md` § Delegation, `.claude/skills/ai-video-editor-delivery/SKILL.md` — bounded subagent/sequential fallback (AC-4)
 - Tests: `scripts/tests/test-probe-environment.sh` — AVE-REQ-094 AC-1

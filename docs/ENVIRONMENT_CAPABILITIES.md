@@ -6,10 +6,12 @@ Verification and tests run inside the Linux development container of
 every entry below is a measured observation or an executed test on this host or in that container. The
 container is a build and test environment; it is no production host. Re-check after a session restart: tools,
 network policy and credentials can change. `./scripts/dev-container.sh ./scripts/probe-environment.sh`
-re-measures the shell-observable part (resources, accelerators, media tools, toolchains, browsers, credential
-variables by name, network); its run on 2026-10-02 produced the container observations below. The Claude Code
-rows are observed by the lead. The work before `bd12fe8` ran in a Linux x86_64 cloud container (4 vCPU, 15 GiB,
-egress proxy); Git history holds its record.
+re-measures the shell-observable part (resources, accelerators with a device verdict, media tools, toolchains,
+browsers, the Claude Code version, OS user and repository writability, credential variables by name, network);
+its runs on 2026-10-02 produced the container observations below. The Claude Code rows record what a session
+observed (the lead's session, or a workflow agent where the row says so); the container has no `claude` command,
+so the version comes from `claude --version` on the host. The work before `bd12fe8` ran in a Linux x86_64 cloud
+container (4 vCPU, 15 GiB, egress proxy); Git history holds its record.
 
 ## Platform and resources
 
@@ -21,8 +23,8 @@ egress proxy); Git history holds its record.
 | Native verification on the host | Unsupported: the fast tier failed 5 of 9 steps (no `python3`; backend unit tests reject Windows paths) | `./scripts/verify.sh` before ADR-009 |
 | Container OS / kernel | Ubuntu 24.04.5 LTS, Linux 6.18 (WSL 2) aarch64 | probe |
 | Container CPU / memory | 8 CPUs, 7.5 GiB plus 2 GiB swap | probe, `free -h` |
-| Container limits | 1 048 576 open files; runs as root; the checkout is a bind mount at `/workspace` | `ulimit -n`, `whoami` |
-| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`), so no GPU path is verifiable | device and command checks |
+| Container limits | 1 048 576 open files; runs as root (uid 0); the checkout is a writable bind mount at `/workspace` | `ulimit -n`; probe § Claude Code and session |
+| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`; probe verdict `accelerator: none (no device)`), so no GPU path is verifiable | probe § Accelerators |
 | CI | GitHub Actions `ubuntu-24.04` x86_64 runner, release tier on every push | `.github/workflows/verify.yml` |
 
 ## Tooling
@@ -89,16 +91,17 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Claude Code version | 2.1.282 (desktop app session) | `claude --version` |
-| Native dynamic workflows (Workflow tool) | Available and exercised | Bootstrap ran five workflows (up to 69 agents); M0 runs a two-writer workflow |
+| Claude Code version | 2.1.282 (desktop app session on the host); the development container has no `claude` command | `claude --version` on the host, 2026-10-02; the probe reports it wherever `claude` is on PATH |
+| Native dynamic workflows (Workflow tool) | Available; completed runs: `wf_5493b930-f7c` (2 writers; integrated as `486b3a0` and `24499a6`), `wf_1a23bf0d-2a0` (3 review lenses; PASS, 0 blocking findings), `wf_b0c34bba-a20` (5 reviewers; all five FAIL with findings) | [docs/workflows/](workflows/README.md) |
 | Observed workflow concurrency | 2 to 4 agents ran at once on the earlier 4-vCPU host; this host has 8 cores | workflow transcripts |
 | Subagents (Agent tool) and custom agents | Available: architect, implementer, reviewer, tester, researcher load from `.claude/agents/` | session agent list |
 | Worktree isolation | Works: a smoke-test agent ran in `.claude/worktrees/agent-…` on its own branch, created from local HEAD `6160278` (confirms `worktree.baseRef: "head"`), separate git-dir | smoke test 2026-10-01 |
 | Skills | Project skills load, including forked skills bound to custom agents | session skill list |
-| Project hooks | SessionStart hook active: the "Project state" block was injected at every resume and compaction (ASM-001 confirmed); the Stop gate runs the fast tier only | session start output; `scripts/tests/test-stop-hook.sh` |
+| Project hooks | SessionStart hook active: the "Project state" block was injected at every resume and compaction (ASM-001 confirmed); the Stop gate runs the fast tier only; `scripts/check-project-control.sh` check 12 keeps the SessionStart hook on startup, resume and compact | session start output; `scripts/tests/test-stop-hook.sh`, `scripts/tests/test-checker.sh` |
+| Permissions | Mode: an automatic mode in which a classifier reviews tool calls; a classifier refusal states its reason and the session continues. Project rules: the allow and deny lists of `.claude/settings.json`; the deny rule `Bash(git push --force *)` is enforced: `git push --force --dry-run origin HEAD:refs/heads/permission-probe` was refused before it ran. Launcher-level settings: none visible to the session beyond `.claude/settings.json`; the gitignored `.claude/settings.local.json` is absent. No bypass: check 12 of `scripts/check-project-control.sh` fails on a `bypassPermissions` or `dontAsk` default mode, a skipped permission prompt, and a hook command with a loop, sleep, background job or bypass flag. OS user and writability: the host session runs as the desktop user without elevation (`id -G` holds no Administrators group); the container runs as root with the checkout writable. Sandbox and network: `.claude/settings.json` configures no sandbox; network reach as in § Network policy | Lead session (mode, one classifier refusal); workflow agent of the M0 process fixes, 2026-10-02 (the attempted denied command, a classifier refusal of a later call, `id -G` on the host); probe § Claude Code and session in the container |
+| Models | The session's model is named only in the session's system context; repository files never name one. Subagents and workflow agents inherit the session's model by default. The Agent tool accepts a `model` override from a fixed list of tier aliases; the Workflow tool's `agent()` call accepts `opts.model`. Checked by a run on 2026-10-02: in the workflow run of the M0 process fixes ([execution brief](briefs/2026-10-02-m0-process-fixes-execution.md)), an agent launched with an explicit override from the tier-alias list completed and returned its structured result. The product never uses coding-session models as product models | Session system context; Agent and Workflow tool definitions; workflow run of 2026-10-02 |
 | Background agents | `run_in_background` agents sometimes return only on completion; start them alongside independent work ([WF-003](WORKFLOW_LOG.md)) | session observation 2026-10-02 |
 | Account usage limits | A weekly account limit (HTTP 429) stopped a delegated agent on 2026-10-02; its worktree kept the partial work ([WF-002](WORKFLOW_LOG.md)) | agent error |
-| Model | The session runs on the model configured for this account; the product never names coding-session models as product models | system configuration |
 
 ## Limits that shape the plan
 
@@ -110,6 +113,20 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
    [docs/briefs/](briefs/README.md) and runs in a worktree, so the work resumes from the repository.
 4. Live provider, agent-runtime, vision and GPU tests cannot run here (no credentials, no GPU device); their
    adapters get contract tests, and the release report lists each as externally unverified with the exact
-   prerequisite.
+   prerequisite (§ External gaps).
 5. Disk: 19 GiB free on the host; the development image takes 1.3 GiB, and render outputs stay in gitignored
    or container-local paths.
+
+## External gaps
+
+Each gap with the one action that unblocks it. Variable names and purposes: [.env.example](../.env.example);
+`.env` is gitignored and Claude Code is denied reading it.
+
+| Gap | Blocks | Unblock action |
+|---|---|---|
+| No Anthropic API key | Live tests of the Anthropic Messages adapter (AVE-REQ-050) and the Claude Agent runtime adapter (AVE-REQ-051), M5 | The human sets `ANTHROPIC_API_KEY=<key>` in `.env` at the repository root |
+| No OpenAI-compatible endpoint | Live tests of the OpenAI-compatible adapter (AVE-REQ-050), M5; translation through the text provider (AVE-REQ-060), M4 | The human sets `OPENAI_API_KEY=<key>` in `.env`, plus `OPENAI_BASE_URL=<url>` for an endpoint other than the OpenAI API |
+| No Codex credential | Live tests of the Codex runtime adapter (AVE-REQ-052), M5 | The human signs the test machine in with the authentication the Codex SDK documents; the adapter's brief (M5) names the exact command |
+| No GPU device in the container | Hardware encode paths (AVE-REQ-076), M6; local vision captioning (AVE-REQ-066), M4 | Run those tests on an x86_64 Linux host with an NVIDIA GPU, its driver and the NVIDIA Container Toolkit, where `./scripts/probe-environment.sh` prints `accelerator: present (…)` |
+| No cached faster-whisper or multilingual speech model | faster-whisper transcription (AVE-REQ-057) and language detection (AVE-REQ-059), M4; the multilingual criteria of AT-13 | The human approves the download of the pinned model through the model registry (AVE-REQ-053, M4); huggingface.co is reachable from this host |
+| No vision captioning model | Local visual captions (AVE-REQ-066), M4 | A GPU host (row above) plus the approved download of the pinned vision model, or a configured remote provider (first two rows) |

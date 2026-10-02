@@ -10,7 +10,9 @@ task gets a new brief. [WORKFLOW_LOG.md](../WORKFLOW_LOG.md) records how the run
 
 ## Template
 
-Keep the headings verbatim and in order.
+Keep the headings verbatim and in order. `scripts/check-project-control.sh` (check 11) fails on a brief in
+this directory that lacks a heading, repeats one or breaks the order, leaves a section empty, or names no
+`AVE-REQ-NNN` ID under Requirements.
 
 ```markdown
 # Brief — <task title>

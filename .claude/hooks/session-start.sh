@@ -2,9 +2,10 @@
 # .claude/hooks/session-start.sh — SessionStart hook (registered in .claude/settings.json).
 #
 # Claude Code adds this script's stdout to Claude's context at startup, resume, clear and compact.
-# It prints a compact "Project state" block: branch, HEAD, uncommitted path count, the last
-# verification result and whether it matches the current tree, the last 8 commits,
-# docs/PROGRESS.md (at most 120 lines) and the instruction to follow the resume-project skill.
+# It prints a compact "Project state" block: branch, HEAD, the count and the list of uncommitted
+# paths (`git status --short`, at most 20 lines), the last verification result and whether it
+# matches the current tree, the last 8 commits, docs/PROGRESS.md (at most 120 lines) and the
+# instruction to follow the resume-project skill.
 #
 # Input:  SessionStart hook JSON on stdin; reads "source".
 # Env:    CLAUDE_PROJECT_DIR (project root; default: two directories above this script).
@@ -20,6 +21,7 @@ VSTATE_LIB="$HOOK_ROOT/scripts/lib/verify-state.sh"
 PROGRESS_FILE="docs/PROGRESS.md"
 PROGRESS_MAX_LINES=120
 RECENT_COMMITS=8
+UNCOMMITTED_MAX_LINES=20
 
 # Prints the session source from the hook JSON on stdin ("unknown" when absent).
 read_source() {
@@ -40,6 +42,15 @@ print_git_state() {
   head="$(git rev-parse --verify --quiet --short HEAD 2>/dev/null)" || head="no commits yet"
   changes="$(git status --porcelain 2>/dev/null | awk 'END { print NR }')"
   printf -- '- Branch: %s | HEAD: %s | Uncommitted paths: %s\n' "$branch" "$head" "${changes:-?}"
+  print_uncommitted_paths
+}
+
+# Lists the uncommitted paths (`git status --short`), at most UNCOMMITTED_MAX_LINES of them.
+print_uncommitted_paths() {
+  git -c color.status=false status --short 2>/dev/null | awk -v max="$UNCOMMITTED_MAX_LINES" '
+    NR == 1 { print "- Uncommitted (git status --short):" }
+    NR <= max { print "  " $0 }
+    END { if (NR > max) printf "  [%d more; run git status --short]\n", NR - max }'
 }
 
 print_verification_state() {

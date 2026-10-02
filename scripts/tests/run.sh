@@ -5,7 +5,8 @@
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
 #   test-verify-tiers.sh    tier selection and exit codes of scripts/verify.sh
-#   test-probe-environment.sh  scripts/probe-environment.sh (offline; never prints secrets)
+#   test-probe-environment.sh  scripts/probe-environment.sh (offline: measured resources, accelerator
+#                           verdict, Claude Code version, OS user, writability; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through
 # `scripts/evidence.py unittest`.)
 # Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, criterion tags)
@@ -18,7 +19,7 @@ CHECKER_ARGS=()
 case "${1:-}" in
   "") ;;
   --all-awks) CHECKER_ARGS=(--all-awks) ;;
-  -h | --help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2 ;;
 esac
 [ "$#" -le 1 ] || { printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2; }

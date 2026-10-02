@@ -7,11 +7,15 @@
 #         3 .claude/settings.json is valid JSON     8 requirement files (docs/requirements/README.md)
 #         4 agent frontmatter                       9 ADR files (docs/decisions/README.md)
 #         5 skill frontmatter                      10 requirement matrix in docs/TRACEABILITY.md
-#                                                  11 task brief headings (docs/briefs/README.md)
+#        11 task briefs (docs/briefs/README.md): every heading once and in template order, no empty
+#           section, an AVE-REQ ID under Requirements
+#        12 .claude/settings.json policy: no permission bypass, the SessionStart hook runs on
+#           startup, resume and compact, hook commands start no loop, sleep or background job
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
 # Portability: bash 3.2+, POSIX awk/grep/sed (mawk, gawk, BSD awk, busybox); CRLF tolerant.
+#              Check 12 needs python3 and warns without it.
 # Maintenance: add every file other files depend on to REQUIRED_FILES; keep the rules in sync with
 # docs/requirements/README.md, docs/decisions/README.md, docs/TRACEABILITY.md and docs/PROGRESS.md.
 # Baseline integrity (the requirements package and its import) is scripts/check_baseline.py's job.
@@ -30,6 +34,7 @@ CLAUDE.md
 README.md
 .gitignore
 .gitattributes
+.env.example
 docs/PRODUCT.md
 docs/ARCHITECTURE.md
 docs/ROADMAP.md
@@ -78,7 +83,7 @@ scripts/lib/verify-state.sh
 
 # Check 7: docs/PROGRESS.md headings (exact lines).
 PROGRESS_HEADINGS='# Current project state|## Current milestone|## Current objective|## In progress|## Recently completed|## Next recommended work|## Blockers|## Known failures|## Important recent decisions|## Verification status'
-# Check 11: task brief headings (exact lines), from the template in docs/briefs/README.md.
+# Check 11: task brief headings (exact lines) in template order, from docs/briefs/README.md.
 BRIEF_HEADINGS='## Requirements|## Input revision|## Allowed paths|## Forbidden paths|## Dependencies and constraints|## Test commands|## Handback schema'
 
 ERRORS=0
@@ -343,6 +348,142 @@ END {
     if (!(want[i] in seen)) err(path, "missing heading '" want[i] "'")
 }
 AWK
+
+# Check 11. Variables: path, headings ("|"-separated exact heading lines in template order). Each
+# heading appears once and in that order, each section holds a non-blank line, and the
+# Requirements section names an AVE-REQ ID. An H1 or another H2 ends a section.
+IFS= read -r -d '' AWK_BRIEF <<'AWK' || true
+BEGIN {
+  count = split(headings, want, "|")
+  for (i = 1; i <= count; i++) rank[want[i]] = i
+}
+{
+  sub(/\r$/, "")
+  fenced = in_fence($0)
+  t = rtrim($0)
+  if (!fenced && t ~ /^##? /) {
+    current = (t in rank) ? t : ""
+    if (current == "") next
+    if (rank[current] <= last_rank)
+      err(path, "heading '" current "' follows '" last_heading "' (keep each heading once, in the order of the template in docs/briefs/README.md)")
+    seen[current] = 1
+    last_rank = rank[current]
+    last_heading = current
+    next
+  }
+  if (current == "" || t !~ /[^ \t]/) next
+  filled[current] = 1
+  if (current == "## Requirements" && t ~ /AVE-REQ-[0-9][0-9][0-9]/) names_id = 1
+}
+END {
+  for (i = 1; i <= count; i++) {
+    if (!(want[i] in seen)) err(path, "missing heading '" want[i] "'")
+    else if (!(want[i] in filled)) err(path, "section '" want[i] "' is empty")
+  }
+  if (("## Requirements" in seen) && !names_id)
+    err(path, "section '## Requirements' names no requirement ID (AVE-REQ-NNN)")
+}
+AWK
+
+# Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4), run by python3 with the file
+# as its argument. Prints one ERROR line per violation; prints nothing for a file that is no valid
+# JSON object (check 3 reports that). Hook matchers follow Claude Code: "", "*" or none match every
+# source; letters, digits, "_", "-", spaces, "," and "|" only form a list of exact names; anything
+# else is an unanchored regular expression.
+IFS= read -r -d '' PY_SETTINGS_POLICY <<'PY' || true
+import json
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+
+
+def error(message):
+    print(f"ERROR: {path}: {message}")
+
+
+permissions = data.get("permissions")
+mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None
+if mode in ("bypassPermissions", "dontAsk"):
+    error(f"permissions.defaultMode '{mode}' runs tools without permission prompts (AVE-REQ-098 AC-4)")
+
+
+def skipped_prompts(node, where):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            here = f"{where}.{key}" if where else key
+            if re.fullmatch(r"skip\w*PermissionPrompt", key) and value not in (False, None):
+                error(f"{here} skips a permission prompt (AVE-REQ-098 AC-4)")
+            skipped_prompts(value, here)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            skipped_prompts(value, f"{where}[{index}]")
+
+
+skipped_prompts(data, "")
+
+UNBOUNDED = re.compile(
+    r"\bwhile\s+(?:true|:)(?=[\s;]|$)|\b(?:sleep|nohup|disown|setsid)\b"
+    r"|--dangerously-skip-permissions|(?<![&|<>])&(?![&>])"
+)
+SESSION_SOURCES = ("startup", "resume", "compact")
+SESSION_HOOK = ".claude/hooks/session-start.sh"
+
+
+def as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def matches(matcher, source):
+    if matcher in (None, "", "*"):
+        return True
+    if not isinstance(matcher, str):
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_\- ,|]+", matcher):
+        return source in {part.strip() for part in re.split(r"[|,]", matcher)}
+    try:
+        return re.search(matcher, source) is not None
+    except re.error:
+        return False
+
+
+hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+covered = set()
+registered = False
+for event, groups in hooks.items():
+    for number, group in enumerate(as_list(groups)):
+        if not isinstance(group, dict):
+            continue
+        for handler in as_list(group.get("hooks")):
+            if not isinstance(handler, dict) or handler.get("type") != "command":
+                continue
+            command = str(handler.get("command", ""))
+            found = UNBOUNDED.search(command)
+            if found:
+                error(
+                    f"hooks.{event}[{number}] command {command!r} starts a loop, a sleep, a background "
+                    f"job or a permission bypass ({found.group(0).strip()!r}; AVE-REQ-098 AC-4)"
+                )
+            if event == "SessionStart" and SESSION_HOOK in command:
+                registered = True
+                covered.update(s for s in SESSION_SOURCES if matches(group.get("matcher"), s))
+if not registered:
+    error(f"no SessionStart hook runs {SESSION_HOOK} (AVE-REQ-098 AC-2)")
+else:
+    missing = [s for s in SESSION_SOURCES if s not in covered]
+    if missing:
+        error(
+            f"the SessionStart hook {SESSION_HOOK} does not run on {', '.join(missing)}: "
+            "its matcher excludes them (AVE-REQ-098 AC-2)"
+        )
+PY
 
 # Checks 8 and 10. Operands: section=goals docs/PRODUCT.md, section=req <requirement files...>,
 # section=trace docs/TRACEABILITY.md.
@@ -740,9 +881,22 @@ check_briefs() {
   local file
   for file in docs/briefs/*.md; do
     [ -f "$file" ] && [ "$file" != docs/briefs/README.md ] || continue
-    run_awk "brief heading" -v path="$file" -v headings="$BRIEF_HEADINGS" \
-      "$AWK_LIB$AWK_HEADINGS" "$file"
+    run_awk "task brief" -v path="$file" -v headings="$BRIEF_HEADINGS" \
+      "$AWK_LIB$AWK_BRIEF" "$file"
   done
+}
+
+check_settings_policy() {
+  local file=".claude/settings.json" output status
+  [ -f "$file" ] || return 0
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "$file" "settings policy not checked (install python3)"
+    return 0
+  fi
+  output="$(python3 -c "$PY_SETTINGS_POLICY" "$file" 2>&1)"
+  status=$?
+  relay "$output"
+  [ "$status" -eq 0 ] || error "$SELF" "the settings policy check could not run (python3 exit $status)"
 }
 
 # Checks 8 and 10 in one awk run. Operands: section=goals [docs/PRODUCT.md] section=req
@@ -788,6 +942,7 @@ main() {
   check_required_files
   check_executables
   check_settings_json
+  check_settings_policy
   check_agents
   check_skills
   check_links

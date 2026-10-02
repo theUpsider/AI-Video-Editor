@@ -43,14 +43,14 @@ Delegate bounded tasks with explicit context and deliverables, using verified wo
 - [AVE-REQ-094 — Capability-aware native dynamic workflows](AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
 
 ## Verification strategy
-- AC-1 — integration and inspection — `scripts/check-project-control.sh` check 11 rejects a task brief that lacks any required heading (requirements, input revision, allowed and forbidden paths, dependencies, test commands, handback schema); `scripts/tests/test-checker.sh` covers it; the content of each brief in `docs/briefs/` is inspected.
+- AC-1 — integration and inspection — `scripts/check-project-control.sh` check 11 rejects a task brief that lacks any of the seven template headings (requirements, input revision, allowed and forbidden paths, dependencies and constraints, test commands, handback schema), repeats one or breaks their order, leaves a section empty, or names no AVE-REQ ID under Requirements; `scripts/tests/test-checker.sh` covers each heading's absence and emptiness, the order, a repeated heading and the requirement ID; the content of each brief in `docs/briefs/` is inspected (the input revision as a commit included).
 - AC-2 — inspection — `.claude/settings.json` sets `worktree.baseRef: "head"` (measured in ENVIRONMENT_CAPABILITIES.md); each brief names its input revision and every implementer prompt confirms `git log --oneline -1` before changing anything; the fix worktree started at `24499a6` as briefed.
 - AC-3 — inspection — reviewers start from the requirement files, the brief and `git diff` in their own scratch copies (`.claude/skills/verify-requirement/SKILL.md`, the review prompts recorded with the workflow runs); media-critical claims were checked on real rendered outputs (three review rounds, WF-001).
 - AC-4 — inspection — WORKFLOW_LOG operating baseline (at most two writers plus one heavy media job), workflow concurrency measured at 2–4 agents, no recursive agent spawning (subagents cannot spawn subagents).
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-- `docs/briefs/README.md` (template), `docs/briefs/*.md` (persisted briefs), `scripts/check-project-control.sh` check 11 (AC-1)
+- `docs/briefs/README.md` (template), `docs/briefs/*.md` (persisted briefs), `scripts/check-project-control.sh` check 11: headings present, once and in order, sections non-empty, a requirement ID under Requirements (AC-1)
 - `.claude/settings.json` (`worktree.baseRef`), brief § Input revision (AC-2)
 - `.claude/skills/verify-requirement/SKILL.md`, `.claude/agents/reviewer.md`, review rounds recorded in `docs/WORKFLOW_LOG.md` WF-001 (AC-3)
 - `docs/WORKFLOW_LOG.md` operating baseline, `docs/ENVIRONMENT_CAPABILITIES.md` § Limits (AC-4)

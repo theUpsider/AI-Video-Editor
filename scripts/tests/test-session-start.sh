@@ -29,6 +29,7 @@ ss "$R" "$START"
 check "exit 0" '[ "$CODE" = 0 ] && [ -z "$ERR" ]'
 check "header names the source" 'printf "%s\n" "$OUT" | head -1 | grep -qx "## Project state (injected by .claude/hooks/session-start.sh — source: startup)"'
 check "branch, HEAD and change count line" 'printf "%s\n" "$OUT" | grep -Eq "^- Branch: main \| HEAD: [0-9a-f]{7,} \| Uncommitted paths: 0$"'
+check "clean tree: no uncommitted list" '! printf "%s\n" "$OUT" | grep -q "^- Uncommitted"'
 check "no verification recorded" 'printf "%s\n" "$OUT" | grep -q "^- Last verification: none recorded"'
 check "exactly 8 recent commits" '[ "$(printf "%s\n" "$OUT" | grep -c "^  [0-9a-f]\{7,\} chore: commit")" = 8 ]'
 check "PROGRESS.md included between delimiters" 'printf "%s\n" "$OUT" | grep -q "^--- docs/PROGRESS.md ---$" && printf "%s\n" "$OUT" | grep -q "^## Known failures$" && printf "%s\n" "$OUT" | grep -q "^--- end of docs/PROGRESS.md ---$"'
@@ -45,6 +46,15 @@ printf 'x\n' > "$R/untracked.txt"
 ss "$R" "$START"
 check "stale after an untracked change; change counted" 'printf "%s\n" "$OUT" | grep -q "(stale: the tree changed since)" && printf "%s\n" "$OUT" | grep -q "Uncommitted paths: 1$"'
 check "fingerprinting the untracked file writes no objects ($objs_before)" '[ "$(cd "$R" && git count-objects -v | awk '"'"'$1 == "count:" || $1 == "size:" { printf "%s ", $2 }'"'"')" = "$objs_before" ]'
+# AVE-REQ-098 AC-1, AVE-REQ-098 AC-2: the changed files themselves are listed, bounded.
+printf '\nchanged\n' >> "$R/docs/ARCHITECTURE.md"
+ss "$R" "$START"
+check "uncommitted list names the modified and the untracked file" 'printf "%s\n" "$OUT" | grep -qx -- "- Uncommitted (git status --short):" && printf "%s\n" "$OUT" | grep -qx "   M docs/ARCHITECTURE.md" && printf "%s\n" "$OUT" | grep -qx "  ?? untracked.txt"'
+for i in $(seq 1 24); do : > "$R/extra-$i.txt"; done
+ss "$R" "$START"
+check "uncommitted list capped at 20 lines with the remainder counted" '[ "$(printf "%s\n" "$OUT" | grep -c "^  ?? extra-\|^   M \|^  ?? untracked")" = 20 ] && printf "%s\n" "$OUT" | grep -qx "  \[6 more; run git status --short\]" && printf "%s\n" "$OUT" | grep -q "Uncommitted paths: 26$"'
+rm -f "$R"/extra-*.txt
+(cd "$R" && git checkout -q -- docs/ARCHITECTURE.md)
 mkdir -p "$R/vendor/sub" && (cd "$R/vendor/sub" && git init -q && git config user.email t@t && git config user.name t && printf 'v\n' > f && git add f && git commit -qm s)
 ss "$R" "$START"
 check "embedded repository: match with the current tree unknown" 'printf "%s\n" "$OUT" | grep -q "(match with the current tree unknown)"'
