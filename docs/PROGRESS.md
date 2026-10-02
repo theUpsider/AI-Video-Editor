@@ -23,7 +23,8 @@ AVE-REQ-093/094/096/097/098 independently, run the M0 milestone-review. Then M1 
   [docs/briefs/](briefs/README.md); ASM-007–ASM-009 and AVE-REQ-102 record the round's decisions. On PASS:
   `git merge --no-commit --no-ff` that branch, resolve `scripts/verify.d/20-backend.sh` and
   `backend/pyproject.toml` in favor of the main tree, run the media tier, commit, push.
-- AVE-REQ-093/094/096/097/098 `in-progress`: gates and tests committed; independent verification next.
+- AVE-REQ-093/094/096/097/098 `verification`: implementation evidence and per-criterion verification levels
+  recorded; independent verification (verify-requirement, one reviewer per requirement) running as a workflow.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Drafted briefs for the next tasks (lead's scratchpad; persist into docs/briefs with the base commit at launch):
   M1 backend core (AVE-REQ-001/002/003/009/015/048 + 004 AC-1, 018 AC-3, 020 AC-3) ‖ M2 sync (023–028, 030).

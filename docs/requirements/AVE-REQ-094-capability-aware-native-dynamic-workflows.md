@@ -2,7 +2,7 @@
 id: AVE-REQ-094
 title: Capability-aware native dynamic workflows
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -42,11 +42,19 @@ Claude Code shall use task-specific native dynamic workflows where actually avai
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
 
 ## Verification strategy
-- AC-1–AC-4 — criterion-level tests tagged `AVE-REQ-094 AC-n`, one tag per criterion; the level of each (unit, integration, end-to-end, inspection) is recorded when implementation starts.
-- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — run on real rendered output and tagged `AT-NN`; a scenario counts as evidence once it passes on the current tree.
+- AC-1 — integration and inspection — `scripts/tests/test-probe-environment.sh` runs `scripts/probe-environment.sh` (resources, accelerators, media tools, toolchains, browsers, credential variables by name only, network); the Claude Code rows of `docs/ENVIRONMENT_CAPABILITIES.md` (workflow tool, subagents, worktrees, hooks, models, limits) are observations a shell cannot make: inspection of the document against the session.
+- AC-2 — inspection — workflow runs with structured handbacks and dependency-aware parallelism: M0 build workflow `wf_5493b930-f7c` (two writers), review workflow `wf_1a23bf0d-2a0` (three lenses, adversarial refutation), persisted briefs in `docs/briefs/`; only a run of the real runtime can show this.
+- AC-3 — inspection — every workflow script used here ran on the installed runtime (run IDs above); no API outside the runtime's documented hooks.
+- AC-4 — inspection — CLAUDE.md § Delegation and `.claude/skills/ai-video-editor-delivery/SKILL.md` describe the subagent and sequential fallback; WF-002 records a real fallback (the lead finished an interrupted task sequentially).
+- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-_TBD: filled by the implementer when the implementation is complete._
+- `docs/ENVIRONMENT_CAPABILITIES.md` — measured capabilities and limits of the cloud environment (AC-1)
+- `scripts/probe-environment.sh` — repeatable probe of the shell-observable environment, never printing credential values (AC-1)
+- `docs/WORKFLOW_LOG.md` (operating baseline, WF-001–WF-004), `docs/briefs/` — workflow composition, handoffs and measured behavior (AC-2, AC-3)
+- `CLAUDE.md` § Delegation, `.claude/skills/ai-video-editor-delivery/SKILL.md` — bounded subagent/sequential fallback (AC-4)
+- Tests: `scripts/tests/test-probe-environment.sh` — AVE-REQ-094 AC-1
+- Decisions: [ADR-001](../decisions/ADR-001-specification-driven-development-workflow.md), [ASM-006](../ASSUMPTIONS.md)
 
 ## Test evidence
 _TBD: filled by the lead from the verify-requirement report._
@@ -56,3 +64,5 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
 - 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
 - 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)
+- 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
+- 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)

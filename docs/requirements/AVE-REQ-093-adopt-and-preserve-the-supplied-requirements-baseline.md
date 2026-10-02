@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -45,11 +45,20 @@ The implementing agent shall integrate this specification into the existing boot
 None.
 
 ## Verification strategy
-- AC-1–AC-4 — criterion-level tests tagged `AVE-REQ-093 AC-n`, one tag per criterion; the level of each (unit, integration, end-to-end, inspection) is recorded when implementation starts.
-- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — run on real rendered output and tagged `AT-NN`; a scenario counts as evidence once it passes on the current tree.
+- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (hash and inventory checks), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
+- AC-2 — inspection — the six documents are populated from the baseline and keep their bootstrap content (Git history of each file since `f605c6c`); automation cannot judge "meaningful content".
+- AC-3 — integration — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, or rewording a criterion without a logged reason all fail.
+- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
+- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-_TBD: filled by the implementer when the implementation is complete._
+- `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; validated by its own `scripts/validate_package.py` and MANIFEST.json hashes (AC-1)
+- `scripts/check_baseline.py` — package validation plus working-file integrity (identity, criteria, statuses, mapping) (AC-1, AC-3, AC-4)
+- `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, 131 `docs/requirements/AVE-*.md` — idempotent import and the ID mapping (AC-1, AC-4)
+- `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `docs/TRACEABILITY.md` — populated from the baseline, bootstrap content kept (AC-2)
+- `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — package checks never certify completion (AC-4)
+- Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — done requirements need run evidence
+- Decisions: [ADR-003](../decisions/ADR-003-requirements-baseline-import.md), [ASM-004](../ASSUMPTIONS.md)
 
 ## Test evidence
 _TBD: filled by the lead from the verify-requirement report._
@@ -59,3 +68,5 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
 - 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
 - 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)
+- 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
+- 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)

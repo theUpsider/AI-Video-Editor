@@ -2,7 +2,7 @@
 id: AVE-REQ-096
 title: Isolated bounded tasks and independent review
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -43,11 +43,19 @@ Delegate bounded tasks with explicit context and deliverables, using verified wo
 - [AVE-REQ-094 — Capability-aware native dynamic workflows](AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
 
 ## Verification strategy
-- AC-1–AC-4 — criterion-level tests tagged `AVE-REQ-096 AC-n`, one tag per criterion; the level of each (unit, integration, end-to-end, inspection) is recorded when implementation starts.
-- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — run on real rendered output and tagged `AT-NN`; a scenario counts as evidence once it passes on the current tree.
+- AC-1 — integration and inspection — `scripts/check-project-control.sh` check 11 rejects a task brief that lacks any required heading (requirements, input revision, allowed and forbidden paths, dependencies, test commands, handback schema); `scripts/tests/test-checker.sh` covers it; the content of each brief in `docs/briefs/` is inspected.
+- AC-2 — inspection — `.claude/settings.json` sets `worktree.baseRef: "head"` (measured in ENVIRONMENT_CAPABILITIES.md); each brief names its input revision and every implementer prompt confirms `git log --oneline -1` before changing anything; the fix worktree started at `24499a6` as briefed.
+- AC-3 — inspection — reviewers start from the requirement files, the brief and `git diff` in their own scratch copies (`.claude/skills/verify-requirement/SKILL.md`, the review prompts recorded with the workflow runs); media-critical claims were checked on real rendered outputs (three review rounds, WF-001).
+- AC-4 — inspection — WORKFLOW_LOG operating baseline (at most two writers plus one heavy media job), workflow concurrency measured at 2–4 agents, no recursive agent spawning (subagents cannot spawn subagents).
+- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-_TBD: filled by the implementer when the implementation is complete._
+- `docs/briefs/README.md` (template), `docs/briefs/*.md` (persisted briefs), `scripts/check-project-control.sh` check 11 (AC-1)
+- `.claude/settings.json` (`worktree.baseRef`), brief § Input revision (AC-2)
+- `.claude/skills/verify-requirement/SKILL.md`, `.claude/agents/reviewer.md`, review rounds recorded in `docs/WORKFLOW_LOG.md` WF-001 (AC-3)
+- `docs/WORKFLOW_LOG.md` operating baseline, `docs/ENVIRONMENT_CAPABILITIES.md` § Limits (AC-4)
+- Tests: `scripts/tests/test-checker.sh` — AVE-REQ-096 AC-1
+- Decisions: [ADR-001](../decisions/ADR-001-specification-driven-development-workflow.md)
 
 ## Test evidence
 _TBD: filled by the lead from the verify-requirement report._
@@ -57,3 +65,5 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
 - 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
 - 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)
+- 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
+- 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)

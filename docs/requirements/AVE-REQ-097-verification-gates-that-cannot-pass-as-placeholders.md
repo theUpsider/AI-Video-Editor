@@ -2,7 +2,7 @@
 id: AVE-REQ-097
 title: Verification gates that cannot pass as placeholders
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -44,11 +44,19 @@ Replace bootstrap-only verification with staged real checks and independently ve
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
 
 ## Verification strategy
-- AC-1–AC-4 — criterion-level tests tagged `AVE-REQ-097 AC-n`, one tag per criterion; the level of each (unit, integration, end-to-end, inspection) is recorded when implementation starts.
-- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — run on real rendered output and tagged `AT-NN`; a scenario counts as evidence once it passes on the current tree.
+- AC-1 — integration — `scripts/tests/test-verify-tiers.sh`: fast ⊂ media ⊂ release membership, `--tier`/`VERIFY_TIER` selection, usage errors; CI runs the release tier.
+- AC-2 — unit and integration — `scripts/tests/test_evidence.py` (criterion states, manifest ties results to commit, fingerprint and configuration, stale evidence refused with `--require-fresh`), `backend/tests/unit/test_evidence_plugin.py` (tags validated against requirement files, per-test report), `scripts/tests/test-stop-hook.sh` (a real run leaves a manifest with the tree fingerprint).
+- AC-3 — integration and inspection — `scripts/tests/test-stop-hook.sh`: the gate runs the fast tier even when the environment asks for release, stays bounded without `stop_hook_active`, releases after its attempt limit; hooks were smoke-tested before use (ASM-001, ASM-003).
+- AC-4 — unit and integration — `backend/tests/unit/test_evidence_plugin.py` (`--forbid-skips` fails sessions with skipped or expected-to-fail tests; contract flag recorded), `scripts/tests/test_evidence.py` (contract-only and skipped evidence never satisfy a done requirement), `scripts/tests/test-verify-tiers.sh` and `test-stop-hook.sh` (failing steps fail the tier and the gate).
+- Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-_TBD: filled by the implementer when the implementation is complete._
+- `scripts/verify.sh`, `scripts/verify.d/*.sh` — fast, media and release tiers behind one command (AC-1)
+- `scripts/evidence.py`, `backend/tests/evidence_plugin.py`, `backend/tests/conftest.py` — per-run evidence manifests tied to commit, tree fingerprint, toolchain, configuration and criterion tags; freshness check (AC-2)
+- `.claude/hooks/stop-verify.sh` — Stop gate pinned to the fast tier, bounded attempts (AC-3)
+- `scripts/verify.d/20-backend.sh` (`--forbid-skips`), `scripts/verify.d/95-evidence.sh` (`check-done`) — skipped tests and contract-only evidence never establish completion (AC-4)
+- Tests: `scripts/tests/test-verify-tiers.sh` — AVE-REQ-097 AC-1, AVE-REQ-097 AC-4; `scripts/tests/test_evidence.py` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-4; `backend/tests/unit/test_evidence_plugin.py` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-4; `scripts/tests/test-stop-hook.sh` — AVE-REQ-097 AC-2, AVE-REQ-097 AC-3, AVE-REQ-097 AC-4
+- Decisions: [ADR-001](../decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](../decisions/ADR-003-requirements-baseline-import.md), [WF-004](../WORKFLOW_LOG.md)
 
 ## Test evidence
 _TBD: filled by the lead from the verify-requirement report._
@@ -58,3 +66,5 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
 - 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
 - 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)
+- 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
+- 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)
