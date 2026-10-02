@@ -280,14 +280,18 @@ def extract_analysis_audio(
     Sample ``k`` presents source time ``k / rate`` (time relative to the exact container start,
     the origin of every source time): the input is read with raw timestamps (``-copyts``) and the
     decoded samples are placed by them (:func:`ave.media.audio_timing.audio_placement_filter`),
-    so a stream that starts after the container start begins with silence and a timestamp gap
-    inside the stream stays a gap, in every container (MPEG-TS included).
+    so a stream that starts after the container start begins with silence and a timestamp gap of
+    10 ms or more inside the stream stays a gap (smaller deviations are jitter and leave the
+    samples contiguous), in every container (MPEG-TS included).
 
     ``stream_index`` is the absolute container index; the default is the first audio stream.
     The stream is read from the original file regardless of its mute state in any edit. Samples
     beyond the stream's end (codec end padding) are dropped, so aligned intervals match the real
-    recording length. FFmpeg delivers mono float32 at ``rate``, read directly into the returned
-    array: memory is about ``4 * rate * duration`` bytes.
+    recording length. A stream without a duration of its own (Matroska, for example) ends at the
+    container duration, which follows the last packet's timestamp: when jitter puts that
+    timestamp earlier than the sample count implies, the difference (less than the 10 ms jitter
+    tolerance) of real audio is cut at the end. FFmpeg delivers mono float32 at ``rate``, read
+    directly into the returned array: memory is about ``4 * rate * duration`` bytes.
     """
     info = probe(path, inspect_pts=False)
     streams = info.audio_streams

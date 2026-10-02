@@ -21,14 +21,22 @@ times) and the stated transformation - never from the compiler under test:
 * ``long_gop_ts`` - A's video re-encoded with one keyframe every :data:`LONG_GOP_FRAMES` frames
   (B-frames, no scene-cut keyframes) into MPEG-TS, a container without a keyframe index; frame
   ``n`` is presented ``n / 60`` after the video start.
-* ``audio_gap`` - A's audio alone as PCM in Matroska with every timestamp from
-  :data:`AUDIO_GAP_AT` on moved :data:`AUDIO_GAP` later (a timestamp gap below FFmpeg's default
-  100 ms compensation threshold): a chirp at ``e >= AUDIO_GAP_AT`` sits at ``e + AUDIO_GAP``.
-* ``intra_ts`` - the first 6 s of A's video re-encoded intra-only (every frame a keyframe) into
-  MPEG-TS; frame ``n`` is presented ``n / 60`` after the video start.
+* ``intra_ts`` - the first :data:`INTRA_SECONDS` of A's video re-encoded intra-only (every frame
+  a keyframe) into MPEG-TS; frame ``n`` is presented ``n / 60`` after the video start.
+* ``intra_ts_offset`` - the same with every timestamp moved by FFmpeg's ``-output_ts_offset``
+  :data:`INTRA_TS_OFFSET`: the video (and container) start at 129000/90000 s, which FFprobe prints
+  rounded as 1.433333.
 * ``audio_jitter`` - A's audio alone as PCM in Matroska with every audio frame's timestamp moved
   by a pseudo-random amount within +-:data:`AUDIO_JITTER` (FFmpeg's seeded ``random``): the samples
   are contiguous, only their timestamps wobble, so a chirp at ``e`` stays at ``e``.
+
+:func:`audio_gap_media` derives the timestamp-gap variants on demand: A's audio alone with every
+timestamp from :data:`AUDIO_GAP_AT` on moved a given gap later, as PCM in Matroska or re-encoded
+as AAC in MPEG-TS. In Matroska a chirp at ``e >= AUDIO_GAP_AT`` sits at ``e + gap``. In MPEG-TS
+source time 0 is the first AAC packet, which presents the encoder's :data:`AAC_PRIMING` before
+the first real sample, so every chirp sits :data:`AAC_PRIMING` later; the muxer groups several AAC
+frames into one PES packet, so the gap shows at the start of the next PES packet, a fraction of a
+second after ``AUDIO_GAP_AT`` and long before the next chirp.
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
+from typing import Literal
 
 from ave.fixtures.standard import StandardFixtures
 from ave.proc import media_url, run_tool
@@ -52,8 +61,13 @@ AAC_PRIMING = Fraction(1024, 48000)
 LONG_GOP_FRAMES = 1200
 """Keyframe interval of ``long_gop_ts`` (20 s at 60/1)."""
 AUDIO_GAP_AT = Fraction(8)
-AUDIO_GAP = Fraction(1, 20)
+"""Content time where the gap variants of :func:`audio_gap_media` move every later timestamp."""
 AUDIO_JITTER = Fraction(2, 1000)
+INTRA_SECONDS = 21
+"""Length of the intra-only variants: long enough for a cut at 19.99 s."""
+INTRA_TS_OFFSET = "0.033333"
+"""``-output_ts_offset`` of ``intra_ts_offset``: FFmpeg's MPEG-TS start of 1.4 s becomes
+129000/90000 s (the offset is rounded to the 90 kHz clock)."""
 
 _BASE = ["-hide_banner", "-nostdin", "-v", "error", "-y"]
 _TIMEOUT_S = 600.0
@@ -69,9 +83,9 @@ class DerivedMedia:
     late_aac_mp4: Path
     late_aac_ts: Path
     long_gop_ts: Path
-    audio_gap: Path
     audio_jitter: Path
     intra_ts: Path
+    intra_ts_offset: Path
 
 
 def _make(output: Path, args: list[str]) -> Path:
@@ -125,15 +139,6 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
             "-sc_threshold", "0", "-bf", "2", "-pix_fmt", "yuv420p", "-f", "mpegts",
         ],
     )  # fmt: skip
-    gap_s = float(AUDIO_GAP)
-    audio_gap = _make(
-        directory / "a-audio-gap.mkv",
-        [
-            "-i", source, "-vn",
-            "-af", f"asetpts='if(gte(T,{int(AUDIO_GAP_AT)}),PTS+{gap_s}/TB,PTS)'",
-            "-c:a", "pcm_s16le", "-f", "matroska",
-        ],
-    )  # fmt: skip
     jitter_s = float(2 * AUDIO_JITTER)
     audio_jitter = _make(
         directory / "a-audio-jitter.mkv",
@@ -142,13 +147,15 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
             "-c:a", "pcm_s16le", "-f", "matroska",
         ],
     )  # fmt: skip
-    intra_ts = _make(
-        directory / "a-intra.ts",
-        [
-            "-i", source, "-an", "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12",
-            "-g", "1", "-bf", "0", "-pix_fmt", "yuv420p", "-f", "mpegts",
-        ],
-    )  # fmt: skip
+    intra = [
+        "-i", source, "-an", "-t", str(INTRA_SECONDS), "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", "12", "-g", "1", "-bf", "0", "-pix_fmt", "yuv420p",
+    ]  # fmt: skip
+    intra_ts = _make(directory / "a-intra.ts", [*intra, "-f", "mpegts"])
+    intra_ts_offset = _make(
+        directory / "a-intra-offset.ts",
+        [*intra, "-output_ts_offset", INTRA_TS_OFFSET, "-f", "mpegts"],
+    )
     return DerivedMedia(
         late_audio=late_audio,
         late_video=late_video,
@@ -156,7 +163,27 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
         late_aac_mp4=late_aac_mp4,
         late_aac_ts=late_aac_ts,
         long_gop_ts=long_gop_ts,
-        audio_gap=audio_gap,
         audio_jitter=audio_jitter,
         intra_ts=intra_ts,
+        intra_ts_offset=intra_ts_offset,
     )
+
+
+def audio_gap_media(
+    std: StandardFixtures, directory: Path, gap: Fraction, container: Literal["mkv", "ts"]
+) -> Path:
+    """A's audio alone with every timestamp from :data:`AUDIO_GAP_AT` on moved ``gap`` later:
+    16-bit PCM in Matroska (``mkv``) or AAC in MPEG-TS (``ts``), created once per directory."""
+    directory.mkdir(parents=True, exist_ok=True)
+    codec = ["-c:a", "pcm_s16le", "-f", "matroska"]
+    if container == "ts":
+        codec = ["-c:a", "aac", "-b:a", "256k", "-f", "mpegts"]
+    shift = f"PTS+{gap.numerator}/{gap.denominator}/TB"
+    name = f"a-audio-gap-{gap.numerator}-{gap.denominator}.{container}"
+    return _make(
+        directory / name,
+        [
+            "-i", media_url(std.a.path), "-vn",
+            "-af", f"asetpts='if(gte(T,{int(AUDIO_GAP_AT)}),{shift},PTS)'", *codec,
+        ],
+    )  # fmt: skip

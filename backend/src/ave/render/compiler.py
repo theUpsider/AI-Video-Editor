@@ -29,6 +29,8 @@ segment's last output frame is complete. ``S0`` must lie before a keyframe at or
   resumes at the next keyframe, which may lie after ``t_first``. With the probe's keyframe index,
   ``S0 = max(0, floor(K - 1 s))`` where ``K`` is the latest keyframe at or before ``t_first`` (0
   when there is none): the next keyframe after the landing point is then ``K`` or an earlier one.
+  An intra-only stream stores no index (every packet is a keyframe, so decoding resumes at the
+  landing packet itself); its seek point follows the indexed-container formula.
 
 Either way the latest frame with ``PTS <= t`` is among the decoded frames, however long a
 variable-frame-rate gap or a group of pictures before ``t`` is; the one-second margin absorbs
@@ -62,9 +64,9 @@ Audio sample positions follow presentation timestamps: the input is read with ra
 the decoded samples are placed relative to ``origin + S0`` (the exact container start plus the seek
 point, :mod:`ave.media.audio_timing`), not by counting samples from the first one delivered. A
 stream that starts after ``S0`` is preceded by silence up to its first timestamp, and timestamp
-gaps or overlaps above :data:`ave.media.audio_timing.AUDIO_TIMESTAMP_TOLERANCE_S` (10 ms) inside the
-stream are filled with silence or dropped, to the input sample, whatever the container (MPEG-TS
-included); smaller deviations are jitter and leave the samples contiguous.
+gaps or overlaps of :data:`ave.media.audio_timing.AUDIO_TIMESTAMP_TOLERANCE_S` (10 ms) or more
+inside the stream are filled with silence or dropped, to the input sample, whatever the container
+(MPEG-TS included); smaller deviations are jitter and leave the samples contiguous.
 """
 
 from __future__ import annotations

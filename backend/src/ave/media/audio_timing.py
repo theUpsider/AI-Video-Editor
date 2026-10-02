@@ -10,12 +10,18 @@ chain with :func:`audio_placement_filter`:
 2. ``aresample`` with ``first_pts=0``, ``min_comp=0`` and ``min_hard_comp`` =
    :data:`AUDIO_TIMESTAMP_TOLERANCE_S` makes the samples follow those timestamps: silence before a
    stream that starts late, and silence inserted into (or samples dropped from) every timestamp gap
-   or overlap larger than the tolerance.
+   or overlap of the tolerance or more.
 
 Without ``-copyts`` FFmpeg re-bases timestamps itself - for MPEG-TS/PS on the start of the streams
 it reads rather than on the container start - so an explicit, exact origin is the only consistent
 reference. The result: output sample ``k`` presents raw time ``origin + k / rate`` within one input
 sample plus the tolerance.
+
+The first decoded packet anchors the placement. A decode from the stream start (the analysis
+extraction) is anchored on the first packet; a decode after a seek (a rendered clip) is anchored on
+the packet the seek lands on. When the timestamps carry jitter, the clip sits the difference
+between the two anchors' jitter (below the tolerance) from the analysis placement of the same
+source.
 """
 
 from __future__ import annotations
@@ -25,12 +31,15 @@ from fractions import Fraction
 __all__ = ["AUDIO_TIMESTAMP_TOLERANCE_S", "audio_placement_filter"]
 
 AUDIO_TIMESTAMP_TOLERANCE_S = Fraction(1, 100)
-"""Largest timestamp deviation treated as jitter and left uncorrected (FFmpeg's default is 0.1 s).
+"""Timestamp deviations below this value (10 ms) are jitter and stay uncorrected (FFmpeg's default
+is 0.1 s).
 
-Deviations above it are real gaps or overlaps and are corrected in full: one lost AAC frame is
-21.3 ms at 48 kHz. Below it, the sample count is trusted: container timestamp rounding (1 ms in
-Matroska) and muxer jitter of a few milliseconds never turn into inserted silence (a 1 ms
-threshold inserted hundreds of dropouts into a stream with +-2 ms jitter)."""
+Deviations of 10 ms or more are real gaps or overlaps and are corrected in full: one lost AAC frame
+is 21.3 ms at 48 kHz. Exactly 10 ms is corrected, because FFmpeg holds the option as a
+single-precision float just under 0.01 and corrects every larger deviation. Below 10 ms the sample
+count is trusted: container timestamp rounding (1 ms in Matroska) and muxer jitter of a few
+milliseconds never turn into inserted silence (a 1 ms threshold inserted hundreds of dropouts into
+a stream with +-2 ms jitter)."""
 
 
 def audio_placement_filter(origin: Fraction, rate: int, resampler: str = "soxr") -> str:

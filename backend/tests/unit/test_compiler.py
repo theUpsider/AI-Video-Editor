@@ -18,7 +18,7 @@ from ave.render.compiler import compile_render_plan
 from ave.render.ffmpeg import build_audio_command, build_segment_command, video_timescale
 from ave.render.profile import OutputProfile
 from ave.timebase import Interval
-from tests.assets import fake_asset
+from tests.assets import fake_asset, printed_start_time
 from tests.compositions import standard_sequence, sync_group
 
 B_TRUE = SyncMember(asset_id="B", a=Fraction(2), method="ground-truth", confidence=1.0)
@@ -199,9 +199,9 @@ TIMING_CASES = [
         speed=Fraction(1000, 1001),
         editorial=Fraction(2),
     ),
-    TimingCase(
-        "origin", Fraction(1, 90000), (1500,), source_in=Fraction(1, 7), origin=Fraction(1, 3)
-    ),
+    # A tie on an origin without an exact microsecond value: an origin rounded by the probe
+    # (0.333333) or by the compiler moves every frame time off the output instants.
+    TimingCase("origin", Fraction(1, 90000), (1500,), source_in=Fraction(2), origin=Fraction(1, 3)),
     TimingCase("vfr", Fraction(1, 120), (2, 1, 3, 2, 4, 1, 5), source_in=Fraction(1, 3)),
     TimingCase("vfr-ntsc", Fraction(1, 120), (3, 1, 4, 1, 5), fps=NTSC60),
     TimingCase("mid-range", TB60, (256,), source_in=Fraction(2), range_start=Fraction(3, 2)),
@@ -230,7 +230,6 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
         "X",
         time_base=case.time_base,
         duration=duration,
-        start_time=f"{float(origin):.6f}",
         video_start_pts=int(start_pts),
         audio=None,
     )
@@ -255,8 +254,29 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
                                            ts.tick_rate, case.fps, count)  # fmt: skip
     expected = _rule(pts, case.time_base, origin, sequence.clips[0], start, case.fps, count)
     assert simulated == expected
-    if case.name == "cfr-tie":
+    if case.name in {"cfr-tie", "origin"}:
         assert expected[:3] == [120, 121, 122]  # exact ties pick the frame at exactly t
+
+
+def test_fake_asset_prints_the_container_start_the_way_ffmpeg_does() -> None:
+    """AVE-REQ-012 AC-4: the planning fixture derives the printed format start time from its
+    stream starts (the earliest one, rounded half away from zero to microseconds), so the probe
+    recovers the exact origin for every combination: video alone at 129000/90000 s, audio
+    starting earlier at 0, audio starting later."""
+    ticks = Fraction(1, 90000)
+    video_only = fake_asset("X", time_base=ticks, video_start_pts=129000, audio=None)
+    assert video_only.probe.container_start_time == Fraction(43, 30)
+    assert video_only.probe.warnings == ()
+    early_audio = fake_asset("X", time_base=ticks, video_start_pts=129000)
+    assert early_audio.probe.container_start_time == 0
+    assert early_audio.probe.warnings == ()
+    late_audio = fake_asset("X", time_base=ticks, video_start_pts=129000, audio_start_pts=106176)
+    assert late_audio.probe.audio_streams[0].start_time == Fraction(2212, 1000)
+    assert late_audio.probe.container_start_time == Fraction(43, 30)
+    assert late_audio.probe.warnings == ()
+    assert printed_start_time([Fraction(43, 30)]) == "1.433333"
+    assert printed_start_time([Fraction(1, 2), Fraction(-1024, 48000)]) == "-0.021333"
+    assert printed_start_time([Fraction(5, 10_000_000)]) == "0.000001"  # half away from zero
 
 
 def test_segment_commands_use_identical_encoder_settings_and_no_shell() -> None:
@@ -334,7 +354,7 @@ def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() ->
     disabled (``%d`` in its name is literal); video inputs seek to a keyframe without discarding
     frames before the seek point and are not cut by a read duration; audio is placed by its
     timestamps relative to the exact container start plus the seek point (raw timestamps via
-    ``-copyts``, ``first_pts=0``, gaps above the 10 ms jitter tolerance compensated)."""
+    ``-copyts``, ``first_pts=0``, gaps of 10 ms or more compensated)."""
     still = Clip(
         id="still", track_id="v", asset_id="img", kind="image", timeline_start=Fraction(0),
         source_in=Fraction(0), source_out=Fraction(1),

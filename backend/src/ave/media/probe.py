@@ -21,7 +21,11 @@ outside :data:`INDEXED_SEEK_FORMATS`) cannot seek to a keyframe at or before a t
 seek lands on any packet and decoding resumes at the next keyframe, which may lie after the target.
 For video streams of such containers the probe reads every packet once and records the keyframe
 presentation timestamps, so the renderer can seek to a point that provably precedes a keyframe
-(:mod:`ave.render.compiler`).
+(:mod:`ave.render.compiler`). An intra-only stream (every packet a keyframe) stores no index:
+decoding resumes at whatever packet a seek lands on, so its seek point follows the
+indexed-container formula and the probe data stays small however long the recording is. A stream
+whose packets carry no presentation timestamp stores an empty index, and the renderer decodes it
+from the start of the file.
 
 File names are untrusted (AVE-REQ-004): every FFprobe call passes :data:`LITERAL_INPUT_ARGS`, so the
 image2 demuxer reads a name such as ``photo%d.png`` as that one file instead of expanding it as an
@@ -136,8 +140,11 @@ class VideoStreamInfo(_StreamBase):
     max_frame_interval: PositiveRational | None
     """Largest PTS delta (seconds) among inspected packets."""
     keyframe_pts: tuple[int, ...] | None = None
-    """PTS (time-base ticks, ascending) of every keyframe, recorded only for containers outside
-    :data:`INDEXED_SEEK_FORMATS`; ``None`` when the demuxer's own keyframe index is used."""
+    """PTS (time-base ticks, ascending) of every keyframe, recorded for streams with inter-coded
+    frames in containers outside :data:`INDEXED_SEEK_FORMATS` (empty when no packet carries a
+    presentation timestamp). ``None`` when the demuxer's own keyframe index is used and for an
+    intra-only stream, where every packet is a keyframe and the seek point follows the
+    indexed-container formula."""
 
     @property
     def is_vfr(self) -> bool:
@@ -570,7 +577,8 @@ def probe(
                     packet_pts[index] = [pts for pts, _ in packets[:max_pts_packets]]
                     keys = [pts for pts, key in packets if key]
                     # Intra-only video needs no index: any packet a seek lands on is a keyframe.
-                    if len(keys) < len(packets):
+                    # A stream without packet timestamps is no such stream: its index is empty.
+                    if not packets or len(keys) < len(packets):
                         keyframe_pts[index] = keys
                 else:
                     packet_pts[index] = read_packet_pts(
