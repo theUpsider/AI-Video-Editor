@@ -59,6 +59,8 @@ docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/hooks/session-start.sh
 .claude/hooks/stop-verify.sh
 scripts/verify.sh
+scripts/dev-container.sh
+.devcontainer/Dockerfile
 scripts/verify.d/10-requirements.sh
 scripts/verify.d/15-evidence-tooling.sh
 scripts/verify.d/20-backend.sh

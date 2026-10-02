@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-02 — M0: media-core fixes merged after a PASS review; process requirements failed verification (fix brief ready)._
+_Last updated: 2026-10-02 — M0: development moved to a Windows laptop with a Linux development container (ADR-009); process fixes and media-core follow-ups briefed for two worktrees._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -11,7 +11,9 @@ without a recorded verdict, re-run <exact command>"; an unrecorded verdict means
 ## Current milestone
 
 M0 — Adopt the contract and prove the environment ([ROADMAP.md](ROADMAP.md)), in progress.
-Working branch `ccr-af7078da-q8r8mf`; integration branch `main` at `4d9ef9a` (CI green); baseline package at `6160278`.
+Working branch `ccr-af7078da-q8r8mf`; integration branch `main` at `bd12fe8` (CI green); baseline package at `6160278`.
+Host: Windows 11 ARM64; every check runs in the development container (`scripts/dev-container.sh`,
+[ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md)).
 
 ## Current objective
 
@@ -33,6 +35,8 @@ M1 backend core ‖ M2 synchronization from the persisted briefs.
 
 ## Recently completed
 
+- 2026-10-02 — Development container for Windows and macOS hosts (ADR-009): `verify.sh` re-executes inside it on
+  Windows; the frame oracle decodes with the exact color conversion, so measurements agree on arm64 and x86_64.
 - 2026-10-02 — Media-core review fixes rounds 1–3 merged (`548c8ca`, `90a1f2e`, `dc89da2`): exact container
   start, 10 ms audio jitter tolerance, keyframe-index seeking, sync chance and rival gates; round-3 review PASS.
 - 2026-10-02 — M0 delivery-process gates (`31e8b84`): evidence manifests and markers, `--forbid-skips`, check-done,
@@ -41,7 +45,6 @@ M1 backend core ‖ M2 synchronization from the persisted briefs.
   (`24499a6`); CI runs `verify.sh --tier release` with FFmpeg and uv.
 - 2026-10-01 — Spec integration committed (`486b3a0`): 131 working requirement files, IMPORT_MAPPING.md,
   `check_baseline.py`, verify.sh tiers, PRODUCT/ROADMAP/ARCHITECTURE, ADR-002 to ADR-008.
-- 2026-10-01 — Environment audit: [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md).
 
 ## Next recommended work
 
@@ -55,8 +58,8 @@ M1 backend core ‖ M2 synchronization from the persisted briefs.
 
 ## Blockers
 
-None for local work. External gaps: provider credentials, Hugging Face access, GPU device — see
-[ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § Limits. An account usage limit (HTTP 429) stopped one
+None for local work. External gaps: provider credentials, a GPU device visible to the container, downloaded
+speech and vision models — see [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § Limits. An account usage limit (HTTP 429) stopped one
 delegated agent on 2026-10-02 ([WF-002](WORKFLOW_LOG.md)); work resumed from its brief and worktree.
 
 ## Known failures
@@ -65,7 +68,7 @@ None.
 
 ## Important recent decisions
 
-- [ADR-003](decisions/ADR-003-requirements-baseline-import.md) — AVE IDs as working IDs over an immutable baseline.
+- [ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md) — Windows and macOS hosts verify inside a Linux development container.
 - [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md) — exact rational time, one typed composition.
 - [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) — segmented CPU renderer with decoded validation.
 - [ADR-002](decisions/ADR-002-technology-stack.md) — Python/FastAPI, SQLite, FFmpeg, React/TypeScript.
@@ -73,5 +76,6 @@ None.
 
 ## Verification status
 
-Local `./scripts/verify.sh --tier release` PASS on the merge of `dc89da2` (12 of 12 steps; 104 unit, 62 media and
-population tests); CI green at `4d9ef9a` and runs on every push of this branch.
+`./scripts/verify.sh --tier release` PASS in the development container (arm64) on the tree of the commit that
+adds ADR-009 (12 of 12 steps; 104 unit, 62 media and population tests); CI (x86_64) green at `bd12fe8` and runs
+the release tier on every push of this branch.

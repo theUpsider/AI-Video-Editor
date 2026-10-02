@@ -10,8 +10,9 @@ case "$D" in
   / | "$REPO" | "$REPO"/*) printf 'make-fixture.sh: refusing to build a fixture in %s\n' "$D" >&2; exit 2 ;;
 esac
 rm -rf "$D"; mkdir -p "$D"; cd "$D"
-mkdir -p docs/requirements docs/decisions docs/briefs .claude/agents .claude/hooks scripts/lib scripts/requirements .github/workflows
-cp "$REPO/scripts/verify.sh" "$REPO/scripts/check-project-control.sh" scripts/
+mkdir -p docs/requirements docs/decisions docs/briefs .claude/agents .claude/hooks scripts/lib scripts/requirements .github/workflows .devcontainer
+cp "$REPO/scripts/verify.sh" "$REPO/scripts/check-project-control.sh" "$REPO/scripts/dev-container.sh" scripts/
+cp "$REPO/.devcontainer/Dockerfile" .devcontainer/
 cp "$REPO/.claude/hooks/session-start.sh" "$REPO/.claude/hooks/stop-verify.sh" .claude/hooks/
 cp "$REPO/scripts/lib/verify-state.sh" scripts/lib/
 # The baseline tools are required files; their checks need the real requirements package, so the

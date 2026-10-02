@@ -165,4 +165,12 @@ case "$TIER" in
   fast | media | release) ;;
   *) printf 'verify.sh: unknown tier: %s\n' "$TIER" >&2; usage >&2; exit 2 ;;
 esac
+# A Windows host (Git Bash) lacks the Linux toolchain the steps need, so every tier runs inside
+# the development container, which holds what CI installs (scripts/dev-container.sh).
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    cd "$ROOT" || exit 2
+    exec ./scripts/dev-container.sh ./scripts/verify.sh --tier "$TIER"
+    ;;
+esac
 main

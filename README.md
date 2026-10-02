@@ -28,6 +28,7 @@ Claude Code develops this repository autonomously. You provide product goals and
 | [docs/TRACEABILITY.md](docs/TRACEABILITY.md), [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) | Requirement → code → test → evidence; recorded assumptions |
 | `.claude/agents/`, `.claude/skills/`, `.claude/hooks/` | Subagents, workflow skills, hooks ([settings](.claude/settings.json)) |
 | [scripts/verify.sh](scripts/verify.sh) | Verification entry point |
+| [scripts/dev-container.sh](scripts/dev-container.sh) | Runs a command in the Linux development container (Windows and macOS hosts) |
 
 ## Verification
 

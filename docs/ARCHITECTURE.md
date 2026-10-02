@@ -155,6 +155,7 @@ Selection rules, applied by `technical-foundation`:
 | Frontend | React + TypeScript + Vite, Zustand, pnpm | [ADR-002](decisions/ADR-002-technology-stack.md) |
 | Tests | pytest, ruff, mypy; Playwright for browser journeys | [ADR-002](decisions/ADR-002-technology-stack.md) |
 | Requirements baseline | AVE IDs over an immutable package | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| Development on Windows/macOS | Linux development container mirroring CI | [ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md) |
 
 ## Cross-cutting concerns
 
@@ -189,11 +190,11 @@ environment (names in `.env.example`), referenced by provider profiles and never
 ## Deployment and environments
 
 - **Local development:** `backend/` via `uv`, `frontend/` via `pnpm`, system FFmpeg 6.1; the data root
-  defaults to `./var/data` (gitignored).
+  defaults to `./var/data` (gitignored). Linux is the supported platform; a Windows or macOS host works inside
+  the development container ([ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md)).
 - **CI:** GitHub Actions ([verify.yml](../.github/workflows/verify.yml), [ASM-003](ASSUMPTIONS.md)) runs
   `./scripts/verify.sh`.
-- **Self-hosted reference:** Linux CPU host; a container profile is planned (no Docker daemon in the
-  development environment to test it).
+- **Self-hosted reference:** Linux CPU host; a container profile is planned.
 
 ### Local development
 
@@ -201,6 +202,12 @@ environment (names in `.env.example`), referenced by provider profiles and never
 cd backend && uv sync && uv run pytest          # backend tests (media tests need FFmpeg)
 ./scripts/verify.sh                             # full repository verification
 ```
+
+On a Windows host `./scripts/verify.sh` runs inside the development container by itself; every other
+command takes the prefix `./scripts/dev-container.sh`, for example
+`./scripts/dev-container.sh uv run --frozen --directory backend pytest -q tests/unit`. One-time checkout
+settings there: `git config core.autocrlf false`, `git config core.eol lf`,
+`git config worktree.useRelativePaths true`.
 
 API, worker and frontend commands are added with M1.
 

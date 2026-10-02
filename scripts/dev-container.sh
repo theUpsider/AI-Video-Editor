@@ -86,8 +86,8 @@ VENV="/state/venvs/$(printf '%s' "${TREE:-/}" | cksum | cut -d ' ' -f 1)"
 
 case "$1" in
   --status)
-    printf 'image      %s\ncontainer  %s\nstate      %s\n' "$IMAGE" "$CONTAINER" \
-      "$(docker_cli inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo absent)"
+    STATE="$(docker_cli inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null)" || STATE="absent"
+    printf 'image      %s\ncontainer  %s\nstate      %s\n' "$IMAGE" "$CONTAINER" "$STATE"
     exit 0
     ;;
   --stop)

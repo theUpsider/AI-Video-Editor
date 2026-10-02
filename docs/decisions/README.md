@@ -132,3 +132,4 @@ The lead adds a row for every ADR and updates its status on each transition.
 | [ADR-006](ADR-006-sqlite-revisions-and-durable-jobs.md) | SQLite revisions and a durable job table consumed by a separate worker | Accepted — 2026-10-01 |
 | [ADR-007](ADR-007-ai-integration-boundaries.md) | Separate provider, agent-runtime, analysis and MCP integrations behind the command service | Accepted — 2026-10-01 |
 | [ADR-008](ADR-008-local-speech-recognition.md) | Pluggable local ASR: faster-whisper when cached, bundled PocketSphinx as the offline floor | Accepted — 2026-10-01 |
+| [ADR-009](ADR-009-linux-development-container-for-other-hosts.md) | Verify on Windows and macOS hosts inside a Linux development container | Accepted — 2026-10-02 |
