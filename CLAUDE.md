@@ -121,6 +121,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 - Inspect `git status` and `git diff` before every commit and before declaring a task complete.
 - Never rewrite shared history, force-push shared branches, or commit secrets.
 - Cloud sessions (`CLAUDE_CODE_REMOTE=true`) run in ephemeral containers: push the working branch after each commit.
+- `main` is the integration branch: work lands on the session's working branch first; once `./scripts/verify.sh` passes, CI is green for that commit and any required independent review passed, fast-forward `main` to it (`git push origin <commit>:main`; a merge commit when `main` moved). Never push unverified work to `main`.
 - Worktrees live under `.claude/worktrees/` (gitignored); create them only for real parallel work.
 
 ## Context and state
