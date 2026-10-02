@@ -24,9 +24,13 @@ from fractions import Fraction
 
 __all__ = ["AUDIO_TIMESTAMP_TOLERANCE_S", "audio_placement_filter"]
 
-AUDIO_TIMESTAMP_TOLERANCE_S = Fraction(1, 1000)
-"""Largest timestamp discontinuity left uncorrected (FFmpeg's default is 0.1 s): smaller deviations
-are timestamp rounding jitter, larger ones are real gaps or overlaps."""
+AUDIO_TIMESTAMP_TOLERANCE_S = Fraction(1, 100)
+"""Largest timestamp deviation treated as jitter and left uncorrected (FFmpeg's default is 0.1 s).
+
+Deviations above it are real gaps or overlaps and are corrected in full: one lost AAC frame is
+21.3 ms at 48 kHz. Below it, the sample count is trusted: container timestamp rounding (1 ms in
+Matroska) and muxer jitter of a few milliseconds never turn into inserted silence (a 1 ms
+threshold inserted hundreds of dropouts into a stream with +-2 ms jitter)."""
 
 
 def audio_placement_filter(origin: Fraction, rate: int, resampler: str = "soxr") -> str:

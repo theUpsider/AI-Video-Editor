@@ -177,7 +177,8 @@ class TimingCase:
     """Drift correction (``source_speed``)."""
     editorial: Fraction = Fraction(1)
     """Editorial speed change (``editorial_speed``)."""
-    origin: str = "0"
+    origin: Fraction = Fraction(0)
+    """Exact start of the video stream (the container start); FFprobe prints it rounded."""
     range_start: Fraction = Fraction(0)
 
 
@@ -198,7 +199,9 @@ TIMING_CASES = [
         speed=Fraction(1000, 1001),
         editorial=Fraction(2),
     ),
-    TimingCase("origin", Fraction(1, 90000), (1500,), source_in=Fraction(1, 7), origin="0.333333"),
+    TimingCase(
+        "origin", Fraction(1, 90000), (1500,), source_in=Fraction(1, 7), origin=Fraction(1, 3)
+    ),
     TimingCase("vfr", Fraction(1, 120), (2, 1, 3, 2, 4, 1, 5), source_in=Fraction(1, 3)),
     TimingCase("vfr-ntsc", Fraction(1, 120), (3, 1, 4, 1, 5), fps=NTSC60),
     TimingCase("mid-range", TB60, (256,), source_in=Fraction(2), range_start=Fraction(3, 2)),
@@ -214,15 +217,22 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
     conversion, drift correction, editorial speed and both combined, a non-zero container start
     and variable frame rates.
     """
-    origin = Fraction(case.origin)
+    origin = case.origin  # exact; the probe sees only its six-decimal print and the stream start
+    start_pts = origin / case.time_base
+    assert start_pts.denominator == 1
     pts: list[int] = []
-    tick = round(origin / case.time_base)
+    tick = int(start_pts)
     while len(pts) < 2000:
         pts.append(tick)
         tick += case.pts_steps[len(pts) % len(case.pts_steps)]
     duration = pts[-1] * case.time_base - origin
     asset = fake_asset(
-        "X", time_base=case.time_base, duration=duration, start_time=case.origin, audio=None
+        "X",
+        time_base=case.time_base,
+        duration=duration,
+        start_time=f"{float(origin):.6f}",
+        video_start_pts=int(start_pts),
+        audio=None,
     )
     sequence = _single_clip_sequence(
         asset,
@@ -243,8 +253,7 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
     start = window.start + Fraction(segment.first_frame) / case.fps
     simulated = _simulate_ffmpeg_selection(pts, ts.pts_divisor, ts.multiplier, ts.offset,
                                            ts.tick_rate, case.fps, count)  # fmt: skip
-    expected = _rule(pts, case.time_base, asset.probe.container_start_time, sequence.clips[0],
-                     start, case.fps, count)  # fmt: skip
+    expected = _rule(pts, case.time_base, origin, sequence.clips[0], start, case.fps, count)
     assert simulated == expected
     if case.name == "cfr-tie":
         assert expected[:3] == [120, 121, 122]  # exact ties pick the frame at exactly t
@@ -325,7 +334,7 @@ def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() ->
     disabled (``%d`` in its name is literal); video inputs seek to a keyframe without discarding
     frames before the seek point and are not cut by a read duration; audio is placed by its
     timestamps relative to the exact container start plus the seek point (raw timestamps via
-    ``-copyts``, ``first_pts=0``, gaps above 1 ms compensated)."""
+    ``-copyts``, ``first_pts=0``, gaps above the 10 ms jitter tolerance compensated)."""
     still = Clip(
         id="still", track_id="v", asset_id="img", kind="image", timeline_start=Fraction(0),
         source_in=Fraction(0), source_out=Fraction(1),
@@ -356,7 +365,7 @@ def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() ->
     # fake assets start at container time 0.
     placement = (
         "asetpts=PTS-round(({seek}/1)/TB),"
-        "aresample=48000:resampler=soxr:min_comp=0:min_hard_comp=0.001:first_pts=0,"
+        "aresample=48000:resampler=soxr:min_comp=0:min_hard_comp=0.01:first_pts=0,"
     )
     chains = audio_script.splitlines()[: len(video_plan.audio)]
     for chain, seek in zip(chains, (1, 0, 11), strict=True):

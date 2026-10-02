@@ -183,6 +183,8 @@ class ProbeInfo(_Frozen):
     size_bytes: int | None
     bit_rate: int | None
     streams: tuple[StreamInfo, ...]
+    warnings: tuple[str, ...] = ()
+    """Probe findings a user may need to know (for example an origin that is only approximate)."""
 
     @property
     def video_streams(self) -> tuple[VideoStreamInfo, ...]:
@@ -384,16 +386,25 @@ def _microseconds(value: Fraction) -> int:
     return magnitude if scaled >= 0 else -magnitude
 
 
-def _exact_container_start(printed: Fraction | None, streams: list[StreamInfo]) -> Fraction:
-    """The exact origin of source time.
+APPROXIMATE_ORIGIN_WARNING = (
+    "approximate source-time origin: the container start time matches no stream start, so the "
+    "printed microsecond value is used and source times may be off by up to one microsecond"
+)
+
+
+def _exact_container_start(
+    printed: Fraction | None, streams: list[StreamInfo]
+) -> tuple[Fraction, str | None]:
+    """The exact origin of source time, and a warning when it is only approximate.
 
     FFmpeg's container start time is the earliest stream start, kept (and printed by FFprobe) in
     microseconds: an MPEG-TS start of 129000/90000 s prints as 1.433333. The exact value is the
     start (``start_pts * time_base``) of the stream whose microsecond rounding equals the printed
-    value; without such a stream the printed value is used. A file without a start time starts at 0.
+    value (the earliest one when several do); without such a stream the printed value is used and
+    the fallback is reported. A file without a start time starts at 0.
     """
     if printed is None:
-        return Fraction(0)
+        return Fraction(0), None
     target = printed * 1_000_000
     exact = [
         stream.start_time
@@ -403,7 +414,9 @@ def _exact_container_start(printed: Fraction | None, streams: list[StreamInfo]) 
         and stream.start_time is not None
         and _microseconds(stream.start_time) == target
     ]
-    return min(exact) if exact else printed
+    if exact:
+        return min(exact), None
+    return printed, APPROXIMATE_ORIGIN_WARNING
 
 
 def parse_probe_json(
@@ -439,7 +452,7 @@ def parse_probe_json(
     # FFprobe prints the format start time (AVFormatContext.start_time, kept by FFmpeg in
     # microseconds) with six decimals, i.e. rounded: 129000/90000 s prints as 1.433333. The exact
     # origin is recovered from the stream start that FFmpeg rounded (_exact_container_start).
-    start = _exact_container_start(_decimal_or_none(fmt.get("start_time")), streams)
+    start, warning = _exact_container_start(_decimal_or_none(fmt.get("start_time")), streams)
     return ProbeInfo(
         format_name=str(fmt.get("format_name") or "unknown"),
         format_long_name=_str_or_none(fmt.get("format_long_name")),
@@ -448,6 +461,7 @@ def parse_probe_json(
         size_bytes=_int_or_none(fmt.get("size")),
         bit_rate=_int_or_none(fmt.get("bit_rate")),
         streams=tuple(streams),
+        warnings=(warning,) if warning else (),
     )
 
 
@@ -554,7 +568,10 @@ def probe(
                 if index_keyframes:
                     packets = read_video_packets(file_path, index)
                     packet_pts[index] = [pts for pts, _ in packets[:max_pts_packets]]
-                    keyframe_pts[index] = [pts for pts, key in packets if key]
+                    keys = [pts for pts, key in packets if key]
+                    # Intra-only video needs no index: any packet a seek lands on is a keyframe.
+                    if len(keys) < len(packets):
+                        keyframe_pts[index] = keys
                 else:
                     packet_pts[index] = read_packet_pts(
                         file_path, index, max_packets=max_pts_packets

@@ -206,3 +206,43 @@ def test_few_shared_events_give_the_true_offset_or_no_offset() -> None:
         counts["right" if abs(result.offset_s - offset) < ONE_FRAME_60 else "wrong"] += 1
     assert counts["wrong"] == 0
     assert counts["right"] >= 120
+
+
+GRID_PAIRS = 200
+
+
+def _grid_song(
+    rng: np.random.Generator, duration: float, step: float, density: float
+) -> FloatArray32:
+    """Unrelated "music": a tone plus notes (the fixture chirp at random levels) on a rhythmic grid
+    of ``step`` seconds with a random phase, each grid slot played with probability ``density``."""
+    count = int(duration * _RATE)
+    t = np.arange(count) / _RATE
+    signal = 0.03 * np.sin(2 * np.pi * float(rng.uniform(200, 800)) * t)
+    burst = 0.5 * chirp(_RATE)
+    slots = np.arange(float(rng.uniform(0, step)), duration - 0.1, step)
+    for note in slots[rng.random(len(slots)) < density]:
+        start = round(note * _RATE)
+        end = min(count, start + len(burst))
+        signal[start:end] += burst[: end - start] * float(rng.uniform(0.2, 1.0))
+    return (signal + 0.002 * rng.standard_normal(count)).astype(np.float32)
+
+
+def test_unrelated_music_on_a_shared_grid_never_yields_an_offset() -> None:
+    """AVE-REQ-024 AC-3: two unrelated recordings whose notes fall on the same eighth-note grid
+    (120 bpm, 15 % of slots played) coincide at many grid-aligned lags, against the uniform-time
+    assumption of the chance gate. On 200 seeded pairs no estimate is an offset: the competing
+    grid alignment is reported (measured: 90 ambiguous, 110 insufficient; without the rival gate
+    4 pairs returned a wrong offset)."""
+    outcomes = {"ok": 0, "ambiguous": 0}
+    for seed in range(GRID_PAIRS):
+        rng = np.random.default_rng(7000 + seed)
+        reference = _grid_song(rng, 30.0, 0.25, 0.15)
+        target = _grid_song(rng, 25.0, 0.25, 0.15)
+        result = estimate_offset_from_signals(reference, _RATE, target, _RATE)
+        if result.status == SyncStatus.OK:
+            outcomes["ok"] += 1
+        elif result.status == SyncStatus.AMBIGUOUS:
+            outcomes["ambiguous"] += 1
+    assert outcomes["ok"] == 0
+    assert outcomes["ambiguous"] >= GRID_PAIRS // 4  # the population exercises the rival check

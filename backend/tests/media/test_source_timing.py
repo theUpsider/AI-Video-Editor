@@ -36,6 +36,7 @@ from tests.media.derived import (
     AUDIO_DELAY,
     AUDIO_GAP,
     AUDIO_GAP_AT,
+    AUDIO_JITTER,
     GAP_FIRST,
     GAP_RESUME,
     LATE_AAC_DELAY,
@@ -228,6 +229,19 @@ MATROSKA_PRECISION = Fraction(1, 1000)
 """Matroska stores timestamps in milliseconds."""
 
 
+def test_intra_only_mpegts_needs_no_keyframe_index(
+    derived: DerivedMedia, artifacts_dir: Path
+) -> None:
+    """AVE-REQ-012 AC-4: an intra-only MPEG-TS source stores no keyframe index (one entry per
+    frame would grow with the recording) and still shows the frame rule's frame at a cut."""
+    asset = describe_asset(derived.intra_ts, asset_id="intra")
+    (video,) = asset.probe.video_streams
+    assert video.keyframe_pts is None
+    output = artifacts_dir / "intra-ts.mp4"
+    _render(_clips(asset, Fraction(5, 2), Fraction(1, 2), audio=False), asset, output)
+    assert _shown_frames(output) == [150 + k for k in range(30)]
+
+
 def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
     """``(time, gap)`` wherever a packet starts more than the container's timestamp precision
     after the previous packet ends (FFprobe's packet table: the fixture's own timestamps,
@@ -253,12 +267,14 @@ def test_audio_gap_below_100_ms_stays_a_gap(derived: DerivedMedia, artifacts_dir
     """AVE-REQ-012 AC-4: a 50 ms timestamp gap at 8 s inside an audio stream (below FFmpeg's
     default 100 ms compensation) keeps every later sample at its timestamp, in the analysis
     extraction and in the render: chirps after the gap sit 50 ms later. Before the gap chirps
-    are sample-exact; after it they are exact to Matroska's millisecond timestamps plus the
-    placement tolerance (ave.media.audio_timing), far from the uncompensated 50 ms error."""
+    are sample-exact; after it they are exact to Matroska's millisecond timestamps, far from the
+    uncompensated 50 ms error."""
     ((gap_time, gap),) = _packet_gaps(derived.audio_gap)
     assert abs(gap_time - (AUDIO_GAP_AT + AUDIO_GAP)) <= MATROSKA_PRECISION
     assert abs(gap - AUDIO_GAP) <= MATROSKA_PRECISION
-    after_tolerance = float(MATROSKA_PRECISION + AUDIO_TIMESTAMP_TOLERANCE_S)
+    # A compensated gap is corrected in full; what remains is the container's timestamp rounding.
+    after_tolerance = float(MATROSKA_PRECISION)
+    assert AUDIO_GAP > AUDIO_TIMESTAMP_TOLERANCE_S  # the gap is a gap, not jitter
     events = [Fraction(frame, 60) for frame in REFERENCE_EVENT_FRAMES]
     shifted = [e + AUDIO_GAP if e >= AUDIO_GAP_AT else e for e in events]
     analysis = extract_analysis_audio(derived.audio_gap)
@@ -281,6 +297,55 @@ def test_audio_gap_below_100_ms_stays_a_gap(derived: DerivedMedia, artifacts_dir
     expected = [float(e - source_in) for e in shifted if 0 <= e - source_in < duration]
     assert len(expected) == 2
     assert max(_chirp_errors(audio, expected)) <= after_tolerance
+
+
+def _packet_deviations(path: Path) -> list[Fraction]:
+    """Each 16-bit PCM audio packet's timestamp minus its position in a contiguous stream, with
+    exact packet durations from the byte sizes (FFprobe's packet table, independent of the code
+    under test; Matroska's printed durations are rounded to milliseconds)."""
+    completed = run_tool(
+        "ffprobe",
+        [
+            "-v", "error", "-select_streams", "a:0", "-show_entries",
+            "stream=sample_rate,channels:packet=pts_time,size", "-of", "json", media_url(path),
+        ],
+        timeout=60,
+    )  # fmt: skip
+    data = json.loads(completed.stdout)
+    (stream,) = data["streams"]
+    bytes_per_second = 2 * int(stream["channels"]) * int(stream["sample_rate"])
+    packets = [(Fraction(p["pts_time"]), Fraction(int(p["size"]), bytes_per_second))
+               for p in data["packets"]]  # fmt: skip
+    deviations, position = [], packets[0][0]
+    for pts, duration in packets:
+        deviations.append(pts - position)
+        position += duration
+    return deviations
+
+
+def _silence_runs(samples: np.ndarray, minimum: int) -> int:
+    """Runs of at least ``minimum`` exactly-zero samples (inserted silence; the pilot tone is
+    never zero for that long)."""
+    zero = np.concatenate(([0], (samples == 0).astype(np.int8), [0]))
+    edges = np.diff(zero)
+    lengths = np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)
+    return int(np.count_nonzero(lengths >= minimum))
+
+
+def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
+    """AVE-REQ-012 AC-4: audio packets whose timestamps wobble by up to 2 ms (with Matroska's
+    millisecond rounding) are decoded as the contiguous stream they are: no silence is inserted
+    anywhere inside it and every chirp stays sample-exact - jitter is not a gap."""
+    deviations = _packet_deviations(derived.audio_jitter)
+    largest = max(abs(d) for d in deviations)
+    # Deviations are measured from the (itself jittered) first packet: up to twice the jitter
+    # plus the millisecond rounding; at least 1.5 ms shows the jitter is really there.
+    assert Fraction(3, 2000) <= largest <= 2 * AUDIO_JITTER + MATROSKA_PRECISION
+    samples = extract_analysis_audio(derived.audio_jitter)
+    interior = samples[: len(samples) - 48000 // 10]  # the stream's end may be padded
+    assert _silence_runs(interior, 8) == 0
+    expected = [float(Fraction(frame, 60)) for frame in REFERENCE_EVENT_FRAMES]
+    assert max(_chirp_errors(samples, expected)) <= 2 / 48000
 
 
 def test_vfr_gap_longer_than_the_seek_margin_keeps_the_frame_rule(

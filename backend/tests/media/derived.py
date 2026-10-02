@@ -24,6 +24,11 @@ times) and the stated transformation - never from the compiler under test:
 * ``audio_gap`` - A's audio alone as PCM in Matroska with every timestamp from
   :data:`AUDIO_GAP_AT` on moved :data:`AUDIO_GAP` later (a timestamp gap below FFmpeg's default
   100 ms compensation threshold): a chirp at ``e >= AUDIO_GAP_AT`` sits at ``e + AUDIO_GAP``.
+* ``intra_ts`` - the first 6 s of A's video re-encoded intra-only (every frame a keyframe) into
+  MPEG-TS; frame ``n`` is presented ``n / 60`` after the video start.
+* ``audio_jitter`` - A's audio alone as PCM in Matroska with every audio frame's timestamp moved
+  by a pseudo-random amount within +-:data:`AUDIO_JITTER` (FFmpeg's seeded ``random``): the samples
+  are contiguous, only their timestamps wobble, so a chirp at ``e`` stays at ``e``.
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ LONG_GOP_FRAMES = 1200
 """Keyframe interval of ``long_gop_ts`` (20 s at 60/1)."""
 AUDIO_GAP_AT = Fraction(8)
 AUDIO_GAP = Fraction(1, 20)
+AUDIO_JITTER = Fraction(2, 1000)
 
 _BASE = ["-hide_banner", "-nostdin", "-v", "error", "-y"]
 _TIMEOUT_S = 600.0
@@ -64,6 +70,8 @@ class DerivedMedia:
     late_aac_ts: Path
     long_gop_ts: Path
     audio_gap: Path
+    audio_jitter: Path
+    intra_ts: Path
 
 
 def _make(output: Path, args: list[str]) -> Path:
@@ -126,6 +134,21 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
             "-c:a", "pcm_s16le", "-f", "matroska",
         ],
     )  # fmt: skip
+    jitter_s = float(2 * AUDIO_JITTER)
+    audio_jitter = _make(
+        directory / "a-audio-jitter.mkv",
+        [
+            "-i", source, "-vn", "-af", f"asetpts='PTS+(random(1)-0.5)*{jitter_s}/TB'",
+            "-c:a", "pcm_s16le", "-f", "matroska",
+        ],
+    )  # fmt: skip
+    intra_ts = _make(
+        directory / "a-intra.ts",
+        [
+            "-i", source, "-an", "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12",
+            "-g", "1", "-bf", "0", "-pix_fmt", "yuv420p", "-f", "mpegts",
+        ],
+    )  # fmt: skip
     return DerivedMedia(
         late_audio=late_audio,
         late_video=late_video,
@@ -134,4 +157,6 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
         late_aac_ts=late_aac_ts,
         long_gop_ts=long_gop_ts,
         audio_gap=audio_gap,
+        audio_jitter=audio_jitter,
+        intra_ts=intra_ts,
     )

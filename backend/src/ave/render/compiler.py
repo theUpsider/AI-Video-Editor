@@ -62,8 +62,9 @@ Audio sample positions follow presentation timestamps: the input is read with ra
 the decoded samples are placed relative to ``origin + S0`` (the exact container start plus the seek
 point, :mod:`ave.media.audio_timing`), not by counting samples from the first one delivered. A
 stream that starts after ``S0`` is preceded by silence up to its first timestamp, and timestamp
-gaps or overlaps above one millisecond inside the stream are filled with silence or dropped, to the
-input sample, whatever the container (MPEG-TS included).
+gaps or overlaps above :data:`ave.media.audio_timing.AUDIO_TIMESTAMP_TOLERANCE_S` (10 ms) inside the
+stream are filled with silence or dropped, to the input sample, whatever the container (MPEG-TS
+included); smaller deviations are jitter and leave the samples contiguous.
 """
 
 from __future__ import annotations
