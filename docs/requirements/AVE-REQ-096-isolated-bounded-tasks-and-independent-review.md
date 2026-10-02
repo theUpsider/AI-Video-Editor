@@ -2,7 +2,7 @@
 id: AVE-REQ-096
 title: Isolated bounded tasks and independent review
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -67,3 +67,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)
 - 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
 - 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)
+- 2026-10-02 — in-progress — verify-requirement FAIL at `4d9ef9a` (workflow `wf_b0c34bba-a20`); blocking findings and fixes in [the fix brief](../briefs/2026-10-02-m0-process-verification-fixes.md) (lead)

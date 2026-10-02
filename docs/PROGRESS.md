@@ -1,40 +1,44 @@
 # Current project state
-_Last updated: 2026-10-02 — M0: process gates committed; media-core fixes (round 3) under focused review._
+_Last updated: 2026-10-02 — M0: process requirements failed independent verification (fix brief ready); media-core round-3 review verdict pending._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
 lives in Git and requirement Status logs. When this file and the repository disagree, the
-repository wins: fix this file. scripts/check-project-control.sh checks the headings. -->
+repository wins: fix this file. scripts/check-project-control.sh checks the headings.
+In-flight delegated work is recorded stop-safe: "launched <date>; verdict not recorded; on resume
+without a recorded verdict, re-run <exact command>"; an unrecorded verdict means nothing is running. -->
 
 ## Current milestone
 
 M0 — Adopt the contract and prove the environment ([ROADMAP.md](ROADMAP.md)), in progress.
-Branch `ccr-af7078da-q8r8mf`; baseline package committed at `6160278`.
+Working branch `ccr-af7078da-q8r8mf`; integration branch `main` at `4d9ef9a` (CI green); baseline package at `6160278`.
 
 ## Current objective
 
-Finish M0: merge the reviewed media-core fixes, convert test tags to `req`/`scenario` markers, verify
-AVE-REQ-093/094/096/097/098 independently, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization.
+Finish M0: land the media-core review fixes, fix the M0 process-requirement findings and re-verify
+AVE-REQ-093/094/096/097/098, convert test tags to `req`/`scenario` markers, run the M0 milestone-review. Then
+M1 backend core ‖ M2 synchronization from the persisted briefs.
 
 ## In progress
 
-- Media-core review fixes on branch `worktree-agent-ace5eb07e8aecbfbf` (`548c8ca`, `90a1f2e`, `dc89da2`; worktree
-  `.claude/worktrees/agent-ace5eb07e8aecbfbf`): rounds 1–3 fixed; focused review of `dc89da2` running. Briefs in
-  [docs/briefs/](briefs/README.md); ASM-007–ASM-009 and AVE-REQ-102 record the round's decisions. On PASS:
-  `git merge --no-commit --no-ff` that branch, resolve `scripts/verify.d/20-backend.sh` and
-  `backend/pyproject.toml` in favor of the main tree, run the media tier, commit, push.
-- AVE-REQ-093/094/096/097/098 `verification`: implementation evidence and per-criterion verification levels
-  recorded; independent verification (verify-requirement, one reviewer per requirement) running as a workflow.
+- Media-core review fixes (AVE-REQ-012 AC-4, AVE-REQ-024 AC-3): commits `548c8ca`, `90a1f2e`, `dc89da2` on branch
+  `worktree-agent-ace5eb07e8aecbfbf` ([round-3 brief](briefs/2026-10-02-m0-media-core-review-fixes-round-3.md)).
+  Focused review `wf_1a23bf0d-2a0` ([script](workflows/review-media-core-round3-wf_1a23bf0d-2a0.js)) launched
+  2026-10-02 08:57; verdict not recorded. On resume without a recorded verdict: re-run that review against
+  `dc89da2`; on PASS `git merge --no-commit --no-ff` the branch, keep this branch's `scripts/verify.d/20-backend.sh`
+  and `backend/pyproject.toml` (marker `slow`), run `./scripts/verify.sh --tier media`, commit, push.
+- AVE-REQ-093/094/096/097/098 `in-progress`: verify-requirement FAIL at `4d9ef9a` (`wf_b0c34bba-a20`); 9 blocking
+  and 17 non-blocking findings with required fixes in
+  [the fix brief](briefs/2026-10-02-m0-process-verification-fixes.md). Next: implement the brief, release tier,
+  re-verify in dependency order 093 → 094 → 096/097/098.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
-- Drafted briefs for the next tasks (lead's scratchpad; persist into docs/briefs with the base commit at launch):
-  M1 backend core (AVE-REQ-001/002/003/009/015/048 + 004 AC-1, 018 AC-3, 020 AC-3) ‖ M2 sync (023–028, 030).
+- Next delegated tasks, briefs persisted: [M1 backend core](briefs/2026-10-02-m1-backend-core.md) ‖
+  [M2 synchronization](briefs/2026-10-02-m2-synchronization.md); both start from the commit that closes M0.
 
 ## Recently completed
 
-- 2026-10-02 — M0 delivery-process gates: per-run evidence manifests (`scripts/evidence.py`, pytest evidence
-  plugin with validated `req`/`scenario`/`contract` markers, `--forbid-skips`), done-requirement evidence check
-  (release tier), Stop gate pinned to the fast tier, tier and probe suites, task briefs with a heading check,
-  `scripts/probe-environment.sh`, WORKFLOW_LOG WF-001–WF-003.
+- 2026-10-02 — M0 delivery-process gates (`31e8b84`): evidence manifests and markers, `--forbid-skips`, check-done,
+  fast-tier Stop gate, task briefs, `scripts/probe-environment.sh`; workflow records in [docs/workflows/](workflows/README.md).
 - 2026-10-01 — First real CPU split/full/split render (1920x1080 60/1, 22 s) with audio-estimated sync a_B = 2 s
   (`24499a6`); CI runs `verify.sh --tier release` with FFmpeg and uv.
 - 2026-10-01 — Spec integration committed (`486b3a0`): 131 working requirement files, IMPORT_MAPPING.md,
@@ -44,11 +48,13 @@ AVE-REQ-093/094/096/097/098 independently, run the M0 milestone-review. Then M1 
 
 ## Next recommended work
 
-1. On the round-3 review verdict: merge (PASS) or brief round 4 (FAIL) for the media-core fixes.
-2. Convert docstring tags to markers (script ready in the lead's scratchpad), then verify-requirement for
-   AVE-REQ-093/094/096/097/098 and `milestone-review` M0.
-3. M1 backend core ‖ M2 synchronization in isolated worktrees from the committed HEAD; then M1 jobs/worker/API
-   and the M1 frontend.
+1. Record the media-core round-3 verdict (or re-run the review) and merge on PASS; on FAIL brief round 4.
+2. Implement [the M0 process fix brief](briefs/2026-10-02-m0-process-verification-fixes.md); release tier;
+   verify-requirement per requirement; record Test evidence; move each to `done` after its PASS.
+3. Convert docstring tags in `backend/tests` to `@pytest.mark.req(...)` (tags come from each test's docstring
+   prefix `AVE-REQ-NNN AC-n[, AC-m]: …` and its `# AVE-REQ-NNN AC-n` body comments) and add `scenario` markers
+   (AT-02, AT-04); then `milestone-review` M0.
+4. Launch M1 backend core ‖ M2 synchronization in isolated worktrees with the closing M0 commit as the base.
 
 ## Blockers
 
@@ -70,5 +76,5 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS on 2026-10-02 (12 of 12 steps; evidence manifest recorded in
-`var/verify/`). Fix branch `90a1f2e`: media tier PASS in its worktree (92 unit, 59 media and population tests).
+CI (`./scripts/verify.sh --tier release`, 12 of 12 steps) green at `4d9ef9a`; local fast tier PASS at `4d9ef9a`.
+Fix branch `dc89da2`: media tier PASS in its worktree (round-3 handback).
