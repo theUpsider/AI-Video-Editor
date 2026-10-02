@@ -1,6 +1,7 @@
 // Record of workflow run wf_164de68e-23b (2026-10-02), launched with args {base: '6736401'}.
-// The session trailer lines and the tier alias of the override probe are redacted: repository
-// files carry no model identifier.
+// Relaunched once after 13 minutes with explicit model and effort settings; the first agents of
+// both tracks continued from the interrupted agents' uncommitted edits. The session trailer lines
+// and the tier aliases are redacted: repository files carry no model identifier.
 export const meta = {
   name: 'm0-fix-tracks',
   description: 'M0 process fixes (4 sequential parts) in one worktree, media-core follow-ups with independent review in another',
@@ -13,6 +14,10 @@ export const meta = {
 }
 
 const ROOT = 'C:/dev/AI-Video-Editor'
+// Writing agents and reviewing agents run on the models and efforts the human chose (2026-10-02).
+const IMPL = { model: '<tier alias>', effort: 'xhigh' }
+const VERIFY = { model: '<tier alias>', effort: 'high' }
+const RESUME_NOTE = `An earlier agent on this task was interrupted before committing. The worktree holds its uncommitted edits: start with \`git status --short\` and \`git diff\`, judge every hunk against the briefs (one hunk can be a temporary mutation that the interrupted agent had yet to revert: a deliberately broken behavior or assertion), keep what is right, repair what is wrong, and complete the rest. Rerun every mutation check yourself; treat nothing as verified.`
 const BASE = args.base
 const TRAILERS = '<the session's Co-Authored-By and Claude-Session trailer lines>'
 
@@ -80,6 +85,7 @@ const PARTS = [
 
 const partPrompt = (part, modelProbe) => `Implement part ${part.n} ("${part.title}") of the M0 process fix work for AVE-REQ-093, AVE-REQ-094, AVE-REQ-096, AVE-REQ-097 and AVE-REQ-098 (all in-progress).
 Contract: docs/briefs/2026-10-02-m0-process-fixes-execution.md (execution plan, decisions, constraints) together with docs/briefs/2026-10-02-m0-process-verification-fixes.md (the findings with evidence and required fixes). Read both first. Do items ${part.items} only; every other item belongs to another part.
+${part.n === 1 ? RESUME_NOTE : ''}
 ${part.n > 1 ? `Earlier parts are committed on this branch: read their handbacks under docs/briefs/handbacks/ and \`git log ${BASE}..HEAD --stat\` before you start, and build on their changes.` : ''}
 ${worktreeRules('m0-process-fixes', 'm0-process-fixes')}
 Scope: the brief's Allowed paths override your default document boundary for this task (CLAUDE.md, .claude/**, the named docs and the named sections of the five requirement files are in scope where an item requires them). Requirement statements, acceptance criteria, statuses, Status logs, PROGRESS.md, TRACEABILITY.md, ROADMAP.md and ASSUMPTIONS.md stay the lead's: report proposed updates.
@@ -104,6 +110,7 @@ const trackA = async (modelProbe) => {
       phase: 'Process fixes',
       agentType: 'implementer',
       schema: HANDBACK,
+      ...IMPL,
     })
     out.push({ part: part.n, handback: r })
     if (!r || r.result === 'BLOCKED') {
@@ -111,13 +118,14 @@ const trackA = async (modelProbe) => {
       return { parts: out, final: null }
     }
   }
-  const fin = await agent(finalPromptA, { label: 'process:final-check', phase: 'Process fixes', agentType: 'implementer', schema: HANDBACK })
+  const fin = await agent(finalPromptA, { label: 'process:final-check', phase: 'Process fixes', agentType: 'implementer', schema: HANDBACK, ...IMPL })
   return { parts: out, final: fin }
 }
 
 // ---------------------------------------------------------------- Track B: media follow-ups
 const promptB = `Implement the media-core follow-ups for AVE-REQ-012 (AC-4), AVE-REQ-024 (AC-3), AVE-REQ-019 (AC-1) and AVE-REQ-020 (AC-3), all in-progress.
 Contract: docs/briefs/2026-10-02-m0-media-core-follow-ups-execution.md (item 13, constraints, commands) together with docs/briefs/2026-10-02-m0-media-core-round-3-follow-ups.md (items 1 to 12). Read both first. Items marked optional (5's anchor option, 9) are done when cheap and safe, else documented as the brief allows.
+${RESUME_NOTE}
 ${worktreeRules('m0-media-follow-ups', 'm0-media-follow-ups')}
 Scope: the briefs' Allowed paths; under docs/ you write only the handback file.
 Every heavy media command holds the shared lock: \`./scripts/dev-container.sh flock /tmp/ave-heavy-media.lock <command>\` (media tier, targeted media or slow pytest runs). Unit tests need no lock.
@@ -160,12 +168,13 @@ const reviewRound = async (round, lenses) => {
       phase: 'Media review',
       agentType: 'reviewer',
       schema: REVIEW,
+      ...VERIFY,
     }).then(r => ({ lens: lens.key, review: r }))))
   return results.filter(Boolean)
 }
 
 const trackB = async () => {
-  const impl = await agent(promptB, { label: 'media:follow-ups', phase: 'Media follow-ups', agentType: 'implementer', schema: HANDBACK })
+  const impl = await agent(promptB, { label: 'media:follow-ups', phase: 'Media follow-ups', agentType: 'implementer', schema: HANDBACK, ...IMPL })
   if (!impl || impl.result === 'BLOCKED') {
     log(`Media follow-ups: implementer returned ${impl ? impl.result : 'no result'}; skipping the review`)
     return { implementer: impl, rounds: [] }
@@ -182,7 +191,7 @@ const trackB = async () => {
     const findings = failed.flatMap(r => (r.review ? r.review.blocking.map(b => ({ lens: r.lens, ...b })) : [{ lens: r.lens, location: 'review', defect: 'the reviewer returned no result', evidence: 'none', fix: 'rerun the lens' }]))
     const real = findings.filter(f => f.location !== 'review')
     if (real.length > 0) {
-      entry.fix = await agent(fixPromptB(round, real), { label: `media:fix-r${round}`, phase: 'Media follow-ups', agentType: 'implementer', schema: HANDBACK })
+      entry.fix = await agent(fixPromptB(round, real), { label: `media:fix-r${round}`, phase: 'Media follow-ups', agentType: 'implementer', schema: HANDBACK, ...IMPL })
     }
     lenses = LENSES.filter(l => failed.some(f => f.lens === l.key))
   }
