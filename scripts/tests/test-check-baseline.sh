@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # scripts/tests/test-check-baseline.sh — positive and negative cases for scripts/check_baseline.py
-# and scripts/requirements/import_baseline.py. Each case copies the baseline package, the working
-# requirement files and both scripts into a temp dir, applies one mutation and checks the exit code
-# and one expected output line. Needs python3. Exit 0 when every case passes.
+# and scripts/requirements/import_baseline.py. Each case starts from the baseline package, both
+# scripts and a fresh import of the working requirement files (never the repository's working
+# files, whose statuses and logs change as the project progresses), applies one mutation and checks
+# the exit code and one expected output line. Needs python3. Exit 0 when every case passes.
 # Checks and mutations are strings run by eval, which reads the variables they name.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
@@ -16,13 +17,18 @@ C="$T/case"
 R=docs/requirements
 B=ai-video-editor-requirements
 
+# A fresh import, made once and copied into every case.
+FRESH="$T/fresh"
+mkdir -p "$FRESH/scripts/requirements" "$FRESH/$R"
+cp "$REPO/scripts/check_baseline.py" "$FRESH/scripts/"
+cp "$REPO/scripts/requirements/import_baseline.py" "$FRESH/scripts/requirements/"
+cp -R "$REPO/$B" "$FRESH/$B"
+(cd "$FRESH" && python3 -B scripts/requirements/import_baseline.py >/dev/null) ||
+  { echo "test-check-baseline.sh: the fresh import failed" >&2; exit 2; }
+
 build() {
   rm -rf "$C"
-  mkdir -p "$C/scripts/requirements" "$C/docs"
-  cp "$REPO/scripts/check_baseline.py" "$C/scripts/"
-  cp "$REPO/scripts/requirements/import_baseline.py" "$C/scripts/requirements/"
-  cp -R "$REPO/$B" "$C/$B"
-  cp -R "$REPO/docs/requirements" "$C/docs/requirements"
+  cp -R "$FRESH" "$C"
 }
 
 # sub <file glob> <old> <new> — replaces the first occurrence; fails when <old> is absent.
@@ -92,13 +98,17 @@ scenarios: []
 
 echo "### check_baseline.py"
 expect "clean import passes"                         0 "OK: baseline intact; 10 epics, 20 features and 101 requirements" true
+# AVE-REQ-093 AC-4: imported requirements start unverified; package validation reports no completion.
 expect "summary counts statuses and gates"           0 "by status: ready 99, deferred 2" true
 expect "summary counts ticked criteria"              0 "Acceptance criteria ticked: 0 of 404 (version one: 0 of 398)" true
 # (a) immutability
+# AVE-REQ-093 AC-1: the package is an immutable baseline.
 expect "edited baseline requirement fails"           1 "package validation failed" "printf 'edit\n' >> $B/spec/requirements/AVE-REQ-001.md"
 expect "edited baseline JSON fails"                  1 "Hash mismatch: spec/requirements.json" "sub $B/spec/requirements.json '\"prepared\": \"2026-10-02\"' '\"prepared\": \"2026-10-03\"'"
 expect "file added to the baseline fails"            1 "Manifest inventory mismatch" "printf 'x\n' > $B/spec/NOTES.md"
 # (b) one working file per baseline item, same identity
+# AVE-REQ-093 AC-1: every baseline ID maps to exactly one working file.
+# AVE-REQ-093 AC-3: priority, scope, type, source and exclusions cannot be demoted or rewritten.
 expect "missing working requirement"                 1 "AVE-REQ-050 must have exactly one working file" "rm $R/AVE-REQ-050-*.md"
 expect "missing working feature"                     1 "AVE-FEAT-020 must have exactly one working file" "rm $R/AVE-FEAT-020-*.md"
 expect "missing working epic"                        1 "AVE-EPIC-10 must have exactly one working file" "rm $R/AVE-EPIC-10-*.md"
@@ -125,6 +135,7 @@ expect "moved primary gate is reported"              0 "Gate change: AVE-REQ-001
 expect "FUTURE gate on a v1 requirement"             1 "primary_gate FUTURE belongs to future scope only" "sub '$R001' 'primary_gate: M1' 'primary_gate: FUTURE'"
 expect "invalid gate"                                1 "frontmatter primary_gate 'M1.5' must be M<n> or FUTURE" "sub '$R001' 'primary_gate: M1' 'primary_gate: M1.5'"
 # (c) acceptance criteria
+# AVE-REQ-093 AC-3: criteria stay verbatim unless a reasoned change is logged.
 expect "ticked criterion stays verbatim"             0 "Acceptance criteria ticked: 1 of 404" "sub '$R001' '- [ ] AC-1 A new project' '- [x] AC-1 A new project'"
 expect "altered criterion without log line"          1 "AC-2 differs from the baseline text and the Status log has no 'AC-2 changed: <reason>' line" "sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.'"
 expect "removed criterion without log line"          1 "AC-4 is missing and the Status log has no 'AC-4 changed: <reason>' line" "sub '$R001' '$AC4' ''"
@@ -151,6 +162,7 @@ expect "derived deferred needs future scope"         1 "status deferred requires
 expect "second file for a baseline feature"          1 "AVE-FEAT-015 must have exactly one working file" "cp $R/AVE-FEAT-015-*.md $R/AVE-FEAT-015-other.md"
 expect "new ID inside the baseline range"            1 "AVE-REQ-000 lies inside the baseline ID range but has no baseline entry" "printf '%s\n' '$DERIVED' | sed 's/AVE-REQ-102/AVE-REQ-000/g' > $R/AVE-REQ-000-derived-stub.md"
 expect "new epic after the baseline range accepted"  0 "OK: baseline intact" "sed 's/AVE-EPIC-10/AVE-EPIC-11/g' $R/AVE-EPIC-10-*.md > $R/AVE-EPIC-11-new-epic.md"
+# AVE-REQ-093 AC-1: IMPORT_MAPPING.md maps every ID and stays current.
 expect "stale import mapping"                        1 "IMPORT_MAPPING.md: stale" "printf 'edit\n' >> $R/IMPORT_MAPPING.md"
 expect "missing import mapping"                      1 "IMPORT_MAPPING.md: missing" "rm $R/IMPORT_MAPPING.md"
 echo "### import_baseline.py"

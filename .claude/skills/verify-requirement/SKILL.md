@@ -57,7 +57,9 @@ done
 ## 5. Run the tests
 
 1. Run the targeted tests for each AC (commands in `docs/ARCHITECTURE.md` § Testing strategy or the test runner configuration). Confirm in the runner output that each AC's tests executed and passed: none skipped, filtered out or marked expected-to-fail.
-2. Run `./scripts/verify.sh`.
+2. Run `./scripts/verify.sh` (`--tier media` when an AC depends on rendered media or population tests), then
+   `python3 scripts/evidence.py show AVE-REQ-NNN --require-fresh`: every AC's tagged tests and their outcomes
+   in that run, tied to the current tree.
 3. Record every command with its result. A check that cannot run (missing dependency, broken environment) leaves you without evidence: report a blocking finding.
 
 ## 6. Run integration and end-to-end checks

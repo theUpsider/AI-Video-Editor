@@ -3,7 +3,9 @@
 Observed in the Claude Code cloud development session on 2026-10-01 (AVE-REQ-094 AC-1). Every entry
 below is a measured observation or an executed test in this container. The container is a build and
 test environment; it is no production host. Re-check after a session restart: tools, network policy
-and credentials can change.
+and credentials can change. `./scripts/probe-environment.sh` re-measures the shell-observable part
+(resources, accelerators, media tools, toolchains, browsers, credential variables by name, network);
+its run on 2026-10-02 matched every observation below. The Claude Code rows are observed by the lead.
 
 ## Platform and resources
 
@@ -87,7 +89,9 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 | Subagents (Agent tool) and custom agents | Available: architect, implementer, reviewer, tester, researcher load from `.claude/agents/` | session agent list |
 | Worktree isolation | Works: a smoke-test agent ran in `.claude/worktrees/agent-…` on its own branch, created from local HEAD `6160278` (confirms `worktree.baseRef: "head"`), separate git-dir | smoke test 2026-10-01 |
 | Skills | Project skills load, including forked skills bound to custom agents | session skill list |
-| Project hooks | SessionStart hook active: the "Project state" block was injected at resume (ASM-001 confirmation pending in the next resume-project run) | session start output |
+| Project hooks | SessionStart hook active: the "Project state" block was injected at every resume and compaction (ASM-001 confirmed); the Stop gate runs the fast tier only | session start output; `scripts/tests/test-stop-hook.sh` |
+| Background agents | `run_in_background` agents sometimes return only on completion; start them alongside independent work ([WF-003](WORKFLOW_LOG.md)) | session observation 2026-10-02 |
+| Account usage limits | A weekly account limit (HTTP 429) stopped a delegated agent on 2026-10-02; its worktree kept the partial work ([WF-002](WORKFLOW_LOG.md)) | agent error |
 | Model | The session runs on the model configured for this account; the product never names coding-session models as product models | system configuration |
 
 ## Limits that shape the plan
@@ -95,5 +99,7 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 1. CPU-only rendering and analysis: render jobs run one heavy FFmpeg job at a time (4 vCPU).
 2. At most two concurrent writing agents plus one heavy media job, per the baseline workflow rule and the
    observed concurrency.
-3. Live provider, agent-runtime, Hugging Face, vision and GPU tests cannot run here; their adapters get
+3. Account usage limits can stop agents mid-task: every delegated task has a persisted brief in
+   [docs/briefs/](briefs/README.md) and runs in a worktree, so the work resumes from the repository.
+4. Live provider, agent-runtime, Hugging Face, vision and GPU tests cannot run here; their adapters get
    contract tests, and the release report lists each as externally unverified with the exact prerequisite.

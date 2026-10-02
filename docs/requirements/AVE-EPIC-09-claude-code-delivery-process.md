@@ -1,7 +1,7 @@
 ---
 id: AVE-EPIC-09
 title: Claude Code delivery process
-status: ready
+status: in-progress
 priority: must
 goals: [GOAL-009]
 ---
@@ -23,3 +23,4 @@ The features below and their 8 requirements (8 version one, 0 future), with prim
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-02 — in-progress — AVE-FEAT-019 entered in-progress (lead)

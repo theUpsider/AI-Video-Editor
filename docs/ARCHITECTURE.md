@@ -207,64 +207,73 @@ API, worker and frontend commands are added with M1.
 ## Testing strategy
 
 - Unit tests (pytest) for timebase, layout geometry, operations/validation, sync estimation, caption mapping.
-- Media integration tests (marker `media`) render real outputs from synthetic fixtures and validate decoded
-  frames and audio against oracles computed from the fixture manifest and spec math, never from the compiler.
+- Media integration tests (marker `media`) render real outputs from synthetic and derived fixtures (other
+  containers, late streams, timestamp gaps, VFR, long GOPs) and validate decoded frames and audio against
+  oracles computed from the fixture manifest, the files' own timestamps and spec math, never from the compiler.
+- Population tests (marker `slow`) run seeded families of synthetic signals (unrelated, lattice-structured,
+  few-event) and count outcomes: a wrong offset is never acceptable, sensitivity has a floor.
 - Browser end-to-end tests (Playwright) for the user journeys once the UI exists.
-- Contract tests for AI adapters against local fake servers; live tests only with configured credentials,
-  reported separately.
+- Contract tests for AI adapters against local fake servers, marked `contract`; live tests only with configured
+  credentials, reported separately.
 
 In effect:
 
 1. Every acceptance criterion has at least one automated test, or a documented verification
    when automation is impractical.
-2. Tests carry `AVE-REQ-NNN AC-n` (and scenario tags `AT-NN`) in their name or docstring, so
-   `git grep -n -w --untracked "AVE-REQ-NNN"` finds them; see [TRACEABILITY.md](TRACEABILITY.md).
-3. Tests are deterministic and run non-interactively. Fix flaky tests at the root; never
-   skip them to get green.
+2. Python tests carry their criteria as `@pytest.mark.req("AVE-REQ-NNN AC-n", …)` and scenarios as
+   `@pytest.mark.scenario("AT-NN")`; tooling tests in `scripts/tests/` use `# AVE-REQ-NNN AC-n` comment lines.
+   The evidence plugin ([backend/tests/evidence_plugin.py](../backend/tests/evidence_plugin.py)) rejects a tag
+   that names no existing criterion or scenario before any test runs; see [TRACEABILITY.md](TRACEABILITY.md).
+3. Tests are deterministic and run non-interactively. verify.sh runs pytest with `--forbid-skips`: a skipped,
+   expected-to-fail or unexpectedly passing test fails the run. Fix flaky tests at the root.
 4. `./scripts/verify.sh` runs every test level; core user journeys run as end-to-end or smoke
    tests.
 5. `./scripts/verify.sh` never needs credentials or paid services. External services run on
-   their fakes; live-service checks run through a separate command documented here.
+   their fakes (tests marked `contract`, which never evidence a criterion alone); live-service checks run
+   through a separate command documented here.
 
-Commands: `cd backend && uv run pytest -m "not media"` (fast), `uv run pytest -m media` (media integration),
-`uv run pytest tests/path::name` (one test), `uv run pytest -k "AVE-REQ-024"` (one requirement where test names
-carry the tag).
+Commands: `cd backend && uv run pytest -m "not media and not slow"` (fast),
+`uv run pytest -m "media or slow"` (media and population), `uv run pytest tests/path::name` (one test),
+`uv run pytest -m req -k …` or `python3 scripts/evidence.py show AVE-REQ-NNN` after a verify.sh run (the
+criteria of one requirement with their tests and outcomes), `./scripts/probe-environment.sh` (re-measure the
+environment, [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md)).
 
 ## Verification pipeline
 
 In effect since bootstrap
-([ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)).
+([ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)), tiered since M0.
 
 1. **Single entry point.** [scripts/verify.sh](../scripts/verify.sh) is the one command
-   humans, Claude, the Stop hook and CI run. It runs every step, prints a summary, and exits
-   non-zero when any step fails.
-2. **Current steps.** "Project control files" runs
-   [scripts/check-project-control.sh](../scripts/check-project-control.sh), which enforces
-   document invariants (required files, agent and skill frontmatter, relative links,
-   PROGRESS.md headings, requirement and ADR formats, traceability consistency). The final
-   step, "Working tree unchanged by verification", fails when any step changed the working
-   tree outside .gitignore-d paths, which would otherwise invalidate the Stop-gate cache.
-   Product tiers (fast, media, release) are added during M0 integration.
-3. **Target step order** once the stack exists: formatting check (read-only), lint, static
-   analysis and security scan, type checking, unit tests, integration tests, build,
-   end-to-end/smoke tests of core user journeys, other stack-specific validation.
+   humans, Claude, the Stop hook and CI run. It runs every step of its tier, prints a summary, and exits
+   1 when any step fails (2 on a usage error).
+2. **Tiers.** `--tier fast` (default): project control files, requirements baseline integrity, evidence
+   tooling tests, backend format/lint/types, unit tests. `--tier media` adds the real-media and population
+   tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
+   every installed awk) and the check that every `done` requirement is evidenced by this run. Component steps
+   live in [scripts/verify.d/](../scripts/verify.d/); each is a required file, so none can go missing silently.
+3. **Evidence.** Each run records `var/verify/runs/<run-id>/`: the step log, one pytest report per test step
+   and `manifest.json`, which ties the results to the commit, the tree fingerprint, the toolchain, the
+   configuration hashes and every criterion and scenario tag ([scripts/evidence.py](../scripts/evidence.py);
+   `var/verify/latest-<tier>.json` holds the newest of each tier). `evidence.py show` reports a manifest
+   STALE once the tree changes: stale evidence certifies nothing. The steps "Working tree unchanged by
+   verification" and "Evidence manifest" run last.
 4. **Stop gate.** [.claude/hooks/stop-verify.sh](../.claude/hooks/stop-verify.sh) runs
-   verify.sh when Claude finishes a turn and the working tree differs from the last passing
-   tree. A failure blocks stopping and feeds the log tail back to Claude; after
-   `CLAUDE_VERIFY_MAX_ATTEMPTS` (default 3) consecutive failures the gate releases with a
+   `verify.sh --tier fast` when Claude finishes a turn and the working tree differs from the last passing
+   tree, so no turn triggers media renders. A failure blocks stopping and feeds the log tail back to
+   Claude; after `CLAUDE_VERIFY_MAX_ATTEMPTS` (default 3) consecutive failures the gate releases with a
    warning. `CLAUDE_VERIFY_GATE=off` disables it for humans. Results and the full log live in
    `.git/claude-verify/` (one per worktree).
 5. **Session start.** [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh)
    reports the last verification result and whether it matches the current tree. Both hooks
    activate after workspace trust ([ASM-001](ASSUMPTIONS.md)) and are thin adapters over
    [scripts/lib/verify-state.sh](../scripts/lib/verify-state.sh), which holds the working-tree
-   fingerprint and the state records; verify.sh uses the same fingerprint.
-6. **CI.** [.github/workflows/verify.yml](../.github/workflows/verify.yml) runs
-   `./scripts/verify.sh` on push, pull request and manual dispatch.
+   fingerprint and the state records; verify.sh and the evidence manifest use the same fingerprint.
+6. **CI.** [.github/workflows/verify.yml](../.github/workflows/verify.yml) installs FFmpeg, the awk
+   implementations and the locked backend environment, then runs `./scripts/verify.sh --tier release` on
+   push, pull request and manual dispatch.
 7. **Rules.** verify.sh stays non-interactive, deterministic, read-only toward the working tree
-   (outputs go to gitignored paths) and identical locally and in CI. Add commands only for
-   selected technologies, each as a `run_step`. Never weaken, skip or suppress a check to get
-   green; fix the root cause.
+   (outputs go to gitignored paths) and identical locally and in CI. Never weaken, skip or suppress a check
+   to get green; fix the root cause.
 
 ## Risks and technical debt
 

@@ -10,7 +10,7 @@ case "$D" in
   / | "$REPO" | "$REPO"/*) printf 'make-fixture.sh: refusing to build a fixture in %s\n' "$D" >&2; exit 2 ;;
 esac
 rm -rf "$D"; mkdir -p "$D"; cd "$D"
-mkdir -p docs/requirements docs/decisions .claude/agents .claude/hooks scripts/lib scripts/requirements .github/workflows
+mkdir -p docs/requirements docs/decisions docs/briefs .claude/agents .claude/hooks scripts/lib scripts/requirements .github/workflows
 cp "$REPO/scripts/verify.sh" "$REPO/scripts/check-project-control.sh" scripts/
 cp "$REPO/.claude/hooks/session-start.sh" "$REPO/.claude/hooks/stop-verify.sh" .claude/hooks/
 cp "$REPO/scripts/lib/verify-state.sh" scripts/lib/
@@ -21,11 +21,16 @@ printf '#!/usr/bin/env python3\nprint("import stand-in for test fixtures")\n' > 
 # Component step files and backend project files are required files; the fixture holds stand-ins
 # (these suites test the verify.sh core and the hook mechanics, not the product components).
 mkdir -p scripts/verify.d backend
-for step in 10-requirements 20-backend 90-tooling; do
+for step in 10-requirements 15-evidence-tooling 20-backend 90-tooling 95-evidence; do
   printf '# stand-in component step file for test fixtures (registers no steps)\n' > "scripts/verify.d/$step.sh"
 done
 printf '[project]\nname = "fixture-stand-in"\n' > backend/pyproject.toml
 printf '# stand-in lock file for test fixtures\n' > backend/uv.lock
+mkdir -p backend/tests
+printf '"""stand-in evidence plugin for test fixtures"""\n' > backend/tests/evidence_plugin.py
+printf '# Task briefs\n\nTemplate and rules for task briefs (stand-in).\n' > docs/briefs/README.md
+# verify.sh records every run with the real evidence tool (standard library only).
+cp "$REPO/scripts/evidence.py" scripts/
 cp "$REPO/.claude/settings.json" .claude/
 cp "$REPO/.gitignore" "$REPO/.gitattributes" .
 cp "$REPO/.github/workflows/verify.yml" .github/workflows/

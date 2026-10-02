@@ -4,6 +4,9 @@
 #   test-check-baseline.sh  scripts/check_baseline.py and scripts/requirements/import_baseline.py
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
+#   test-verify-tiers.sh    tier selection and exit codes of scripts/verify.sh
+#   test-probe-environment.sh  scripts/probe-environment.sh (offline; never prints secrets)
+# (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier.)
 # Every suite builds its fixtures in a temp dir and leaves the working tree unchanged.
 # Exit: 0 every suite passed · 1 a suite failed · 2 usage error.
 set -uo pipefail
@@ -12,7 +15,7 @@ CHECKER_ARGS=()
 case "${1:-}" in
   "") ;;
   --all-awks) CHECKER_ARGS=(--all-awks) ;;
-  -h | --help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2 ;;
 esac
 [ "$#" -le 1 ] || { printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2; }
@@ -36,9 +39,11 @@ run_suite test-checker.sh ${CHECKER_ARGS[@]+"${CHECKER_ARGS[@]}"}
 run_suite test-check-baseline.sh
 run_suite test-stop-hook.sh
 run_suite test-session-start.sh
+run_suite test-verify-tiers.sh
+run_suite test-probe-environment.sh
 
 if [ -n "$FAILED" ]; then
   printf '\nscripts/tests/run.sh: FAIL:%s\n' "$FAILED"
   exit 1
 fi
-printf '\nscripts/tests/run.sh: PASS (4 suites)\n'
+printf '\nscripts/tests/run.sh: PASS (6 suites)\n'

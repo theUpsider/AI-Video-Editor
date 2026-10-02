@@ -97,5 +97,9 @@ enforced by native Claude Code mechanisms, scripts and CI.
 
 ## Related requirements
 
-None (process-level). Related assumptions: ASM-001, ASM-002, ASM-003 in
-[docs/ASSUMPTIONS.md](../ASSUMPTIONS.md).
+- [AVE-REQ-094 — Capability-aware native dynamic workflows](../requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
+- [AVE-REQ-096 — Isolated bounded tasks and independent review](../requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)
+- [AVE-REQ-097 — Verification gates that cannot pass as placeholders](../requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+- [AVE-REQ-098 — Persistent progress and bounded autonomous continuation](../requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+Related assumptions: ASM-001, ASM-002, ASM-003 in [docs/ASSUMPTIONS.md](../ASSUMPTIONS.md).

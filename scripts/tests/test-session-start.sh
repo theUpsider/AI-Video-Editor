@@ -22,6 +22,8 @@ COMPACT='{"session_id":"t","hook_event_name":"SessionStart","source":"compact"}'
 R="$T/ss repo"; "$W/make-fixture.sh" "$R" >/dev/null
 (cd "$R" && git init -q -b main && git config user.email t@t && git config user.name t && git add -A && git commit -qm "chore: first" && for i in 2 3 4 5 6 7 8 9 10; do git commit -q --allow-empty -m "chore: commit $i"; done) 2>/dev/null
 
+# AVE-REQ-098 AC-2: every session start or compaction injects the state reconstructed from the
+# repository (branch, commits, uncommitted paths, last verification, PROGRESS.md).
 echo "## repo with commits, source=startup, no verification yet"
 ss "$R" "$START"
 check "exit 0" '[ "$CODE" = 0 ] && [ -z "$ERR" ]'

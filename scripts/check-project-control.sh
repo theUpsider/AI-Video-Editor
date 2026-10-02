@@ -7,6 +7,7 @@
 #         3 .claude/settings.json is valid JSON     8 requirement files (docs/requirements/README.md)
 #         4 agent frontmatter                       9 ADR files (docs/decisions/README.md)
 #         5 skill frontmatter                      10 requirement matrix in docs/TRACEABILITY.md
+#                                                  11 task brief headings (docs/briefs/README.md)
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
@@ -38,6 +39,7 @@ docs/TRACEABILITY.md
 docs/requirements/README.md
 docs/requirements/IMPORT_MAPPING.md
 docs/decisions/README.md
+docs/briefs/README.md
 docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/settings.json
 .claude/agents/architect.md
@@ -58,10 +60,14 @@ docs/decisions/ADR-001-specification-driven-development-workflow.md
 .claude/hooks/stop-verify.sh
 scripts/verify.sh
 scripts/verify.d/10-requirements.sh
+scripts/verify.d/15-evidence-tooling.sh
 scripts/verify.d/20-backend.sh
 scripts/verify.d/90-tooling.sh
+scripts/verify.d/95-evidence.sh
+scripts/evidence.py
 backend/pyproject.toml
 backend/uv.lock
+backend/tests/evidence_plugin.py
 scripts/check-project-control.sh
 scripts/check_baseline.py
 scripts/requirements/import_baseline.py
@@ -70,6 +76,8 @@ scripts/lib/verify-state.sh
 
 # Check 7: docs/PROGRESS.md headings (exact lines).
 PROGRESS_HEADINGS='# Current project state|## Current milestone|## Current objective|## In progress|## Recently completed|## Next recommended work|## Blockers|## Known failures|## Important recent decisions|## Verification status'
+# Check 11: task brief headings (exact lines), from the template in docs/briefs/README.md.
+BRIEF_HEADINGS='## Requirements|## Input revision|## Allowed paths|## Forbidden paths|## Dependencies and constraints|## Test commands|## Handback schema'
 
 ERRORS=0
 WARNINGS=0
@@ -726,6 +734,15 @@ check_progress_headings() {
     "$AWK_LIB$AWK_HEADINGS" "$file"
 }
 
+check_briefs() {
+  local file
+  for file in docs/briefs/*.md; do
+    [ -f "$file" ] && [ "$file" != docs/briefs/README.md ] || continue
+    run_awk "brief heading" -v path="$file" -v headings="$BRIEF_HEADINGS" \
+      "$AWK_LIB$AWK_HEADINGS" "$file"
+  done
+}
+
 # Checks 8 and 10 in one awk run. Operands: section=goals [docs/PRODUCT.md] section=req
 # [requirement files...] section=trace [docs/TRACEABILITY.md]. README.md (skipped by collect_files)
 # and the generated IMPORT_MAPPING.md are no requirement files.
@@ -773,6 +790,7 @@ main() {
   check_skills
   check_links
   check_progress_headings
+  check_briefs
   check_requirements
   check_adrs
   print_summary

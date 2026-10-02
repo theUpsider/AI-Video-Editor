@@ -29,6 +29,7 @@ testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 markers = [
     "media: integration tests that generate fixtures and run real FFmpeg/FFprobe (slow; decoded-output oracles)",
+    "slow: seeded population and property tests over many synthetic signals (media tier)",
 ]
 filterwarnings = ["error"]
 

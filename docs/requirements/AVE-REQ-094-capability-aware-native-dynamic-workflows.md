@@ -2,7 +2,7 @@
 id: AVE-REQ-094
 title: Capability-aware native dynamic workflows
 type: constraint
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -32,7 +32,11 @@ Claude Code shall use task-specific native dynamic workflows where actually avai
 - [ ] AC-4 When unavailable, perform the same lifecycle through bounded subagent/sequential tasks; do not build a custom orchestration platform instead of the editor.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Workflow tool, subagents or worktrees unavailable → documented sequential or subagent fallback (AC-4).
+- A capability that changes between sessions (network policy, credentials, tools) → re-probed with
+  `scripts/probe-environment.sh` and recorded (AC-1).
+- Workflow syntax or a feature not present in the installed runtime → never assumed (AC-3).
+- Built-in FFmpeg hardware encoders without a device → reported as no accelerator (AC-1).
 
 ## Dependencies
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
@@ -50,3 +54,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)

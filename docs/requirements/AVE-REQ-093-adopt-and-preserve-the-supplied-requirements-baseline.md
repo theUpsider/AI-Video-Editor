@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -33,7 +33,13 @@ The implementing agent shall integrate this specification into the existing boot
 - [ ] AC-4 Requirement implementation status starts unverified; package validation is not product verification.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- A baseline file edited, added or removed → package validation fails (AC-1).
+- A working file missing, duplicated or with a changed identity (title, type, priority, scope, source, parent,
+  dependencies, origins, scenarios) → the baseline check fails (AC-1, AC-3).
+- A criterion reworded or removed without a logged reason → fails; with a logged reason → reported (AC-3).
+- A future requirement made ready, or a version-one requirement deferred → fails (AC-3).
+- Package validation passing while no requirement is verified → statuses stay unverified (AC-4).
+- Existing bootstrap content kept when documents are populated (AC-2, inspection).
 
 ## Dependencies
 None.
@@ -51,3 +57,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)

@@ -2,7 +2,7 @@
 id: AVE-REQ-097
 title: Verification gates that cannot pass as placeholders
 type: constraint
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -33,7 +33,12 @@ Replace bootstrap-only verification with staged real checks and independently ve
 - [ ] AC-4 No-op scripts, skipped integration tests, caught exceptions returning success, or provider mocks cannot establish completed product requirements.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- A skipped, expected-to-fail or never-collected test → fails verification or gives no evidence (AC-4).
+- A test tagged with a criterion that does not exist → stops the test run (AC-2).
+- Evidence recorded for an older tree → reported stale and refused where freshness is required (AC-2).
+- A provider test that runs on a fake → never evidences a criterion alone (AC-4).
+- The Stop gate asked for a heavier tier by the environment → still runs the fast tier (AC-3).
+- A failing step in any tier → that tier fails with exit 1 (AC-1, AC-4).
 
 ## Dependencies
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
@@ -51,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)

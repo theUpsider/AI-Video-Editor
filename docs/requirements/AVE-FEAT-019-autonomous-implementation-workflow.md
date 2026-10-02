@@ -1,7 +1,7 @@
 ---
 id: AVE-FEAT-019
 title: Autonomous implementation workflow
-status: ready
+status: in-progress
 priority: must
 parent: AVE-EPIC-09
 ---
@@ -33,3 +33,4 @@ Baseline feature [AVE-FEAT-019 — Autonomous implementation workflow](../../ai-
 
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
+- 2026-10-02 — in-progress — AVE-REQ-093 to AVE-REQ-098 entered in-progress (lead)

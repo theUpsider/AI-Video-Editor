@@ -12,7 +12,8 @@
 #
 # ==================================================================================================
 # Structure: this file runs the "Project control files" step, then sources every component step file
-# in scripts/verify.d/ in name order, then the final "Working tree unchanged by verification" step.
+# in scripts/verify.d/ in name order, then the "Working tree unchanged by verification" step, and
+# finally records the run's evidence (scripts/evidence.py record).
 # Component files register steps with fast_step / media_step / release_step "<name>" <command…>;
 # each registers its checks in this order: formatting check (read-only), lint, static analysis /
 # security scan, type checking, unit tests, integration tests, build, end-to-end / smoke tests of key
@@ -22,6 +23,12 @@
 # .gitignore-d paths; the last step enforces it, because the Stop-gate cache fingerprints untracked
 # files), identical locally and in CI. A missing tool fails its step. Never weaken, skip or suppress
 # a check to get green: fix the root cause. Package checks never certify product behavior.
+#
+# Evidence (AVE-REQ-097): every run gets a directory var/verify/runs/<run-id>/, exported to the
+# steps as AVE_EVIDENCE_DIR. run_step logs each step there (steps.tsv), test runners write their
+# per-test reports there, and the last step writes manifest.json: results tied to the commit, the
+# tree fingerprint, the toolchain, the configuration and every requirement tag. Inspect it with
+# `python3 scripts/evidence.py show [AVE-REQ-NNN ...]`.
 # ==================================================================================================
 # shellcheck source-path=SCRIPTDIR
 
@@ -32,6 +39,7 @@ STEPS_RUN=0
 STEPS_FAILED=0
 FAILED_STEPS=""
 TIER="${VERIFY_TIER:-fast}"
+AVE_EVIDENCE_DIR=""
 
 usage() {
   printf 'Usage: ./scripts/verify.sh [--tier fast|media|release]\n'
@@ -47,6 +55,10 @@ run_step() {
   started=$SECONDS
   "$@" </dev/null
   status=$?
+  if [ -n "$AVE_EVIDENCE_DIR" ]; then
+    printf '%s\t%s\t%s\n' "$name" "$([ "$status" -eq 0 ] && echo PASS || echo FAIL)" \
+      "$((SECONDS - started))" >>"$AVE_EVIDENCE_DIR/steps.tsv"
+  fi
   if [ "$status" -eq 0 ]; then
     printf '<== PASS: %s (%ss)\n' "$name" "$((SECONDS - started))"
   else
@@ -108,10 +120,18 @@ check_tree_unchanged() {
   return 1
 }
 
+# record_evidence <tree_state before the steps> — writes the run's manifest.json.
+record_evidence() {
+  python3 -B scripts/evidence.py record --dir "$AVE_EVIDENCE_DIR" --tier "$TIER" --fingerprint "$1"
+}
+
 main() {
   local before step_file
   cd "$ROOT" || return 2
   before="$(tree_state)"
+  AVE_EVIDENCE_DIR="$ROOT/var/verify/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$AVE_EVIDENCE_DIR" || return 2
+  export AVE_EVIDENCE_DIR
 
   run_step "Project control files" ./scripts/check-project-control.sh
   for step_file in scripts/verify.d/*.sh; do
@@ -120,7 +140,8 @@ main() {
     . "./$step_file"
   done
 
-  run_step "Working tree unchanged by verification" check_tree_unchanged "$before"  # keep last
+  run_step "Working tree unchanged by verification" check_tree_unchanged "$before"
+  run_step "Evidence manifest" record_evidence "$before"  # keep last
   print_summary
 }
 

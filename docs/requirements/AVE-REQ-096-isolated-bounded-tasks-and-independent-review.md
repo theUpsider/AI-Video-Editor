@@ -2,7 +2,7 @@
 id: AVE-REQ-096
 title: Isolated bounded tasks and independent review
 type: constraint
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -33,7 +33,11 @@ Delegate bounded tasks with explicit context and deliverables, using verified wo
 - [ ] AC-4 Respect actual concurrency and resource limits; never recursively multiply coding agents or bypass a cloud limit.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- A task interrupted by a usage, session or permission limit → resumable from its persisted brief and worktree
+  (AC-1, AC-2).
+- A worktree created from a different commit than intended → detected by the task's revision check (AC-2).
+- A reviewer given only the implementer's claims → rejected; reviews start from requirements and the diff (AC-3).
+- More writing agents than the measured limit → never started (AC-4).
 
 ## Dependencies
 - [AVE-REQ-094 — Capability-aware native dynamic workflows](AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
@@ -51,3 +55,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)

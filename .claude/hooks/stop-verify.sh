@@ -69,7 +69,9 @@ run_verify() {
     printf 'ERROR: ./scripts/verify.sh is missing or not executable.\n' >"$1"
     return 1
   fi
-  ./scripts/verify.sh >"$1" 2>&1 </dev/null
+  # The fast tier only: the gate runs on every stop, so it never renders media (AVE-REQ-097 AC-3);
+  # the media and release tiers run at requirement verification, milestone reviews and in CI.
+  ./scripts/verify.sh --tier fast >"$1" 2>&1 </dev/null
 }
 
 # Increments and prints the failed-attempt counter. When the counter cannot be stored, prints a

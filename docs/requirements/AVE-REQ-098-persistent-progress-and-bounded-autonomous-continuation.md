@@ -2,7 +2,7 @@
 id: AVE-REQ-098
 title: Persistent progress and bounded autonomous continuation
 type: constraint
-status: ready
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -33,7 +33,11 @@ Claude Code shall persist actionable progress and continue unblocked work within
 - [ ] AC-4 Do not use infinite loops, arbitrary sleep daemons, or permission bypass flags to simulate unlimited autonomy.
 
 ## Edge cases
-_TBD: refined when implementation starts._
+- Session compaction or restart → state reconstructed from PROGRESS.md, the repository and Git (AC-2).
+- A usage limit, permission denial or missing credential mid-task → partial work kept (worktree, commit or
+  brief) and the exact unblock action recorded (AC-3).
+- A failing verification gate → bounded retries, then a release with a recorded failure (AC-4).
+- No infinite loops, sleep daemons or permission bypass flags in settings or hooks (AC-4).
 
 ## Dependencies
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
@@ -52,3 +56,5 @@ _TBD: filled by the lead from the verify-requirement report._
 ## Status
 - 2026-10-01 — ready — imported from baseline v1.0 (lead)
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
+- 2026-10-02 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
+- 2026-10-02 — in-progress — M0 delivery-process gates implemented; criterion evidence under review (lead)

@@ -27,6 +27,15 @@ assert old in s, (p, old)
 open(p, 'w', newline='').write(s.replace(old, new, 1))
 PY
 }
+# fence_line <file> <line> — wraps the exact line <line> in a fenced code block.
+fence_line() { python3 - "$1" "$2" <<'PY'
+import sys
+p, line = sys.argv[1:3]
+s = open(p, newline='').read()
+assert "\n" + line + "\n" in s, (p, line)
+open(p, 'w', newline='').write(s.replace("\n" + line + "\n", "\n```\n" + line + "\n```\n", 1))
+PY
+}
 # expect <name> <exit> <grep-substring or ""> <mutation...>
 expect() {
   local name="$1" want_exit="$2" want="$3" out code
@@ -170,6 +179,11 @@ expect "FEAT parent of REQ kind"           1 "invalid parent 'AVE-REQ-001' (expe
 expect "FEAT parent of retired kind"       1 "invalid parent 'EPIC-001' (expected AVE-EPIC-NN)" "sub $R/AVE-FEAT-001-stub-feature.md 'parent: AVE-EPIC-01' 'parent: EPIC-001'"
 expect "deferred requirement accepted"     0 "OK:" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\r\\n' >> $R/AVE-REQ-002-crlf-requirement.md"
 expect "deferred status without log line"  1 "newest Status-log line records 'proposed' but frontmatter status is 'deferred'" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred'"
+# AVE-REQ-096 AC-1
+BRIEF='# Brief — stub task\n\n## Requirements\nAVE-REQ-001 AC-1\n\n## Input revision\nabc1234\n\n## Allowed paths\nsrc/\n\n## Forbidden paths\ndocs/\n\n## Dependencies and constraints\nNone.\n\n## Test commands\n./scripts/verify.sh\n\n## Handback schema\nResult line.\n'
+expect "complete task brief accepted"      0 "OK:" "printf '$BRIEF' > docs/briefs/2026-10-02-stub.md"
+expect "brief without test commands"       1 "ERROR: docs/briefs/2026-10-02-stub.md: missing heading '## Test commands'" "printf '$BRIEF' | grep -v '^## Test commands' > docs/briefs/2026-10-02-stub.md"
+expect "brief heading only in a fence"     1 "missing heading '## Handback schema'" "printf '$BRIEF' > docs/briefs/2026-10-02-stub.md && fence_line docs/briefs/2026-10-02-stub.md '## Handback schema'"
 expect "deferred epic and feature accepted" 0 "OK:" "sub $R/AVE-EPIC-01-stub-epic.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-EPIC-01-stub-epic.md && sub $R/AVE-FEAT-001-stub-feature.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-FEAT-001-stub-feature.md"
 expect "misspelled deferred status"        1 "invalid status 'defered'" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: defered'"
 expect "matrix row for a deferred requirement" 0 "OK:" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\r\\n' >> $R/AVE-REQ-002-crlf-requirement.md && printf '| [AVE-REQ-002](requirements/AVE-REQ-002-crlf-requirement.md) | deferred | — | — | — | — |\\n' >> docs/TRACEABILITY.md"

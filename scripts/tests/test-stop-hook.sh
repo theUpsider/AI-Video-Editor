@@ -34,14 +34,19 @@ logexists() { [ -f "$R/.git/claude-verify/last.log" ]; }
 (cd "$R" && git init -q && git config user.email t@t && git config user.name t && git add -A && git commit -qm init)
 
 echo "## pass path"
-hook "$J_FALSE"
+# AVE-REQ-097 AC-3: the gate runs the fast tier even when the session asks for a heavier one.
+VERIFY_TIER=release hook "$J_FALSE"
+check "gate ran the fast tier despite VERIFY_TIER=release" 'grep -q "verify.sh: PASS — tier fast" "$R/.git/claude-verify/last.log"'
+check "gate output holds no media or release step" '! grep -Eq "^==> (Backend media|Verification tooling regression)" "$R/.git/claude-verify/last.log"'
 check "exit 0 on pass" '[ "$CODE" = 0 ]'
 check "stdout empty on pass" '[ -z "$OUT" ]'
 check "last-pass = current fingerprint" '[ "$(state last-pass)" = "$(fp)" ]'
 check "last-result PASS ISO-8601 fp" 'state last-result | grep -Eq "^PASS [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z [0-9a-f]{40}$"'
 check "attempts reset to 0" '[ "$(state attempts)" = 0 ]'
 check "last.log holds verify output" 'grep -q "verify.sh: PASS" "$R/.git/claude-verify/last.log"'
-check "verify.sh ran the working-tree step last" 'grep "^==> " "$R/.git/claude-verify/last.log" | tail -1 | grep -qx "==> Working tree unchanged by verification" && grep -q "PASS: Working tree unchanged by verification" "$R/.git/claude-verify/last.log"'
+check "verify.sh ran the working-tree step, then recorded the evidence manifest" '[ "$(grep "^==> " "$R/.git/claude-verify/last.log" | tail -2 | tr "\n" "|")" = "==> Working tree unchanged by verification|==> Evidence manifest|" ] && grep -q "PASS: Working tree unchanged by verification" "$R/.git/claude-verify/last.log" && grep -q "PASS: Evidence manifest" "$R/.git/claude-verify/last.log"'
+# AVE-REQ-097 AC-2
+check "the run left a manifest tied to the tree fingerprint" 'm="$(ls "$R"/var/verify/runs/*/manifest.json | tail -1)" && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d[\"result\"]==\"PASS\" and len(d[\"fingerprint\"])==40" "$m"'
 check "state dir is ignored by git status" '[ -z "$(cd "$R" && git status --porcelain)" ]'
 
 echo "## cached path"
@@ -79,6 +84,7 @@ check "ignored files (.env, worktrees) keep the cache" '[ "$CODE" = 0 ] && ! log
 check "real index untouched by fingerprinting" '[ -z "$(cd "$R" && git diff --cached --name-only)" ]'
 check "no temp index left behind" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
 
+# AVE-REQ-097 AC-4: a failing check blocks; it never passes as green.
 echo "## failing path"
 printf '\n[broken](no-such-file.md)\n' >> "$R/docs/ARCHITECTURE.md"
 hook "$J_FALSE"
@@ -94,6 +100,7 @@ check "attempts = 1" '[ "$(state attempts)" = 1 ]'
 check "last-result FAIL" 'state last-result | grep -q "^FAIL "'
 check "last-pass kept from the previous pass" '[ -n "$(state last-pass)" ] && [ "$(state last-pass)" != "$(fp)" ]'
 
+# AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: the gate is bounded; it releases after its attempt limit.
 echo "## escalation and release"
 hook "$J_TRUE"
 check "attempt 2 blocks (stop_hook_active=true)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 2 of 3"'
@@ -116,6 +123,7 @@ check "pretty JSON with an embedded escaped key parses as false (reset)" '[ "$CO
 hook ""
 check "empty stdin counts as a continued stop (attempt 2)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 2 of 3"'
 
+# AVE-REQ-097 AC-3: no recursive Stop-hook loop, even without the stop_hook_active flag.
 echo "## stop_hook_active absent: the gate stays bounded"
 printf '0\n' > "$R/.git/claude-verify/attempts"
 codes=""
@@ -161,6 +169,7 @@ PY
 hook "$J_TRUE"
 check "repair back to the last passing tree: cache hit restores PASS record and attempts=0" '[ "$CODE" = 0 ] && [ -z "$OUT" ] && [ "$(state attempts)" = 0 ] && state last-result | grep -q "^PASS"'
 
+# AVE-REQ-097 AC-4: a missing or broken verification script fails the gate.
 echo "## missing or non-executable verify.sh"
 chmod -x "$R/scripts/verify.sh"
 hook "$J_FALSE"

@@ -12,6 +12,8 @@ from ave.fixtures.standard import StandardFixtures, standard_fixtures, timing_fi
 from ave.media.asset import MediaAsset, describe_asset
 from ave.paths import test_artifacts_root
 
+pytest_plugins = ["tests.evidence_plugin", "pytester"]
+
 
 @pytest.fixture(scope="session")
 def std() -> StandardFixtures:

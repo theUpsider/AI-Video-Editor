@@ -34,4 +34,49 @@ Not an improvement entry: the measured starting point that later entries compare
 
 ## Entries
 
-_No entries yet._
+### WF-001 — 2026-10-02 — Adversarial real-media review with the reviewer's own constructions
+- Observed failure and evidence: the M0 media core passed its implementer's 120 tests and all 17 decoded
+  checks, yet the first independent review of `24499a6` reproduced 4 blocking defects on real media (late audio
+  start, VFR gap beyond the seek margin, confident offsets on unrelated audio, `%` image names); the review of
+  the fix `548c8ca` reproduced 4 more (MPEG-TS re-basing, sub-100 ms gaps, microsecond-rounded TS origin, stderr
+  hang). Briefs: [round 1](briefs/2026-10-01-m0-media-core-review-fixes.md),
+  [round 2](briefs/2026-10-01-m0-media-core-review-fixes-round-2.md).
+- Root-cause hypothesis: tests written by the implementer exercise the constructions the implementer had in
+  mind (MP4/MOV, PCM, container start 0); containers and timestamp anomalies outside that set stay untested.
+- One proposed workflow/skill/context change: every media-core review prompt asks the reviewer to rebuild each
+  claimed fix with its own constructions (other containers, codecs, seek points, populations) in a scratch copy,
+  and to mutation-check at least two new tests; each fix round gets its own brief quoting the evidence.
+- Expected metric and fixed evaluation set (plus held-out cases): blocking findings per review round on the
+  media core; held-out: the reviewer's constructions are unknown to the implementer.
+- Independent review result: round 1 FAIL (4 blocking), round 2 FAIL (4 blocking), round 3 pending.
+- Measured before/after result: 8 real defects found that the implementer's suite passed; each fix now has a
+  real-media test confirmed to fail without it (mutation runs recorded in the commits' handbacks).
+- Keep or revert, with reason: keep; the cost (about 40 min of reviewer time per round) is far below the cost
+  of shipping wrong synchronization or frames.
+
+### WF-002 — 2026-10-02 — Account limit during a delegated fix round
+- Observed failure and evidence: the round-2 implementer stopped with HTTP 429 (weekly account limit) after
+  editing five files in its worktree and before testing or committing them.
+- Root-cause hypothesis: an external usage limit; nothing in the repository could prevent it, but the worktree
+  kept the partial edits and the brief kept the full task.
+- One proposed workflow/skill/context change: persist every task brief in `docs/briefs/` before the task starts
+  (template in [briefs/README.md](briefs/README.md)), so the lead or a new session can finish an interrupted
+  task from the repository: brief + worktree diff.
+- Expected metric and fixed evaluation set (plus held-out cases): an interrupted task is resumable without
+  re-deriving its scope; evaluated on this interruption.
+- Independent review result: the resumed work is under the round-3 review with the rest of the fix.
+- Measured before/after result: the lead completed items 1–9 of the round-2 brief from the brief and the
+  worktree diff alone, adding the missing tests and 7 mutation checks.
+- Keep or revert, with reason: keep; the briefs cost minutes and also serve as review input (AVE-REQ-096 AC-1).
+
+### WF-003 — 2026-10-02 — Background agents and lead idle time
+- Observed failure and evidence: two Agent calls requested in the background returned only when the agent
+  finished (52 and 37 minutes), leaving the lead idle; a later identical request returned at once and the lead
+  worked in parallel.
+- Root-cause hypothesis: runtime behavior outside the repository; it is not predictable from the request.
+- One proposed workflow/skill/context change: start an agent in the same message as independent lead work
+  (parallel tool calls), so a blocking agent call still overlaps with useful work.
+- Expected metric and fixed evaluation set (plus held-out cases): lead idle time while agents run.
+- Independent review result: not applicable (no product change).
+- Measured before/after result: the round-2 re-review overlapped with a full media-tier run of the merge.
+- Keep or revert, with reason: keep; no cost.

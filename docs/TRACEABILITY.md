@@ -55,9 +55,10 @@ they disagree:
 
 ## Conventions
 
-1. **Test tags.** Every test that verifies an AC carries the full tag `AVE-REQ-NNN AC-n` in its
-   name or description. When the framework forbids free text there, put the tag in a comment
-   directly above the test. A test covering several ACs carries one full tag per AC. A test that
+1. **Test tags.** Every test that verifies an AC carries the full tag `AVE-REQ-NNN AC-n`: Python
+   tests as `@pytest.mark.req("AVE-REQ-NNN AC-n", …)` (validated against the requirement files at
+   collection), tooling tests in `scripts/tests/` as a `# AVE-REQ-NNN AC-n` comment line directly
+   above the case. A test covering several ACs carries one full tag per AC. A test that
    runs an acceptance scenario of
    [ACCEPTANCE_TESTS.md](../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) also carries
    its scenario tag `AT-NN`; the scenario tag alone never proves a criterion.
@@ -198,3 +199,8 @@ move in an ADR (see the revisit trigger in
 | [AVE-REQ-031](requirements/AVE-REQ-031-explicit-master-audio-and-routing.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-072](requirements/AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-075](requirements/AVE-REQ-075-cpu-only-reference-rendering.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
+| [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | in-progress | — | — | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md) | in-progress | — | — | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
+| [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md) | in-progress | — | — | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
+| [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | in-progress | — | — | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md) | in-progress | — | — | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
