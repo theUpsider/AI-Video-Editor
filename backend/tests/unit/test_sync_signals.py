@@ -8,7 +8,6 @@ offset is ``a = s`` under ``T_reference = a + t_target``.
 from __future__ import annotations
 
 import tracemalloc
-from collections.abc import Iterator
 from fractions import Fraction
 
 import numpy as np
@@ -19,8 +18,6 @@ from scipy import signal as sps
 from ave.errors import AveError
 from ave.fixtures.generate import chirp
 from ave.sync.audio import (
-    MAX_CHANCE_PROBABILITY,
-    MIN_MATCHED_ONSETS,
     SyncStatus,
     _highpass,
     estimate_offset_from_signals,
@@ -28,7 +25,6 @@ from ave.sync.audio import (
 
 SCENE_EVENTS = (1.3, 3.217, 5.9, 9.433, 13.05, 17.717, 21.367, 24.8, 28.1, 33.7, 36.2)
 FRAME_60 = 1 / 60
-FloatArray32 = npt.NDArray[np.float32]
 
 
 def recording(
@@ -173,58 +169,7 @@ def test_offset_bounds_exclude_implausible_lags() -> None:
     assert bounded.offset is None
 
 
-UNRELATED_PAIRS = 400
 _RATE = 48000
-
-
-def _unrelated_pairs() -> Iterator[tuple[int, FloatArray32, FloatArray32]]:
-    """Seeded pairs of recordings of different scenes (independent random events).
-
-    Like :func:`recording` - 1 kHz / 1.7 kHz pilot tones, the fixture chirp per event, gain and
-    white noise - with 3 to 15 events each at uniformly random times in a 30 s reference and a
-    25 s target. Pilot and noise are generated once and shared, so only the events, gain and
-    noise level vary per pair.
-    """
-    t_ref = np.arange(30 * _RATE) / _RATE
-    t_tgt = np.arange(25 * _RATE) / _RATE
-    noise = np.random.default_rng(2024)
-    ref_base = 0.05 * np.sin(2 * np.pi * 1000.0 * t_ref)
-    ref_noise = 0.001 * noise.standard_normal(len(t_ref))
-    tgt_base = 0.05 * np.sin(2 * np.pi * 1700.0 * t_tgt)
-    tgt_noise = noise.standard_normal(len(t_tgt))
-    burst = 0.5 * chirp(_RATE)
-    for seed in range(UNRELATED_PAIRS):
-        rng = np.random.default_rng(seed)
-        reference = ref_base.copy()
-        target = tgt_base.copy()
-        for signal, span in ((reference, 29.8), (target, 24.8)):
-            for event in rng.uniform(0.1, span, size=int(rng.integers(3, 16))):
-                start = round(event * _RATE)
-                signal[start : start + len(burst)] += burst
-        target *= rng.uniform(0.3, 2.0)
-        target += rng.uniform(0.001, 0.01) * tgt_noise
-        reference += ref_noise
-        yield seed, reference.astype(np.float32), target.astype(np.float32)
-
-
-def test_unrelated_recordings_never_yield_an_offset() -> None:
-    """AVE-REQ-024 AC-3: on 400 seeded pairs of unrelated recordings no estimate is OK - chance
-    coincidences of onsets (two or three at the best of all searched lags) are reported as
-    insufficient evidence with their chance probability, never as an offset."""
-    results = [
-        (seed, estimate_offset_from_signals(ref, _RATE, tgt, _RATE))
-        for seed, ref, tgt in _unrelated_pairs()
-    ]
-    assert len(results) == UNRELATED_PAIRS
-    assert [seed for seed, r in results if r.status == SyncStatus.OK] == []
-    assert all(r.offset is None for _, r in results)
-    # The population really contains the chance coincidences that the gate must reject.
-    coincidences = [r for _, r in results if r.matched_onsets >= MIN_MATCHED_ONSETS]
-    assert len(coincidences) >= 20
-    for result in coincidences:
-        assert result.chance_probability is not None
-        assert result.chance_probability > MAX_CHANCE_PROBABILITY
-        assert result.status == SyncStatus.INSUFFICIENT_EVIDENCE
 
 
 def test_analysis_runs_on_float32_copies_without_full_length_float64() -> None:

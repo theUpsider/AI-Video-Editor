@@ -32,10 +32,20 @@ Method (interpretable, NumPy/SciPy only):
    among ``n_tgt`` target onsets is the binomial tail, multiplied by the number of independent lag
    positions searched (admissible lags / (2 * tolerance + 1), a Bonferroni bound). The result is
    reported as ``chance_probability``.
-6. **Decision** - silence, transient-free audio, fewer than two coinciding onsets, coincidences
+6. **Competing alignments** - the binomial null of step 5 assumes independent onset positions.
+   Structured sound (periodic clicks, noise whose level changes on a fixed block lattice) violates
+   it: many onsets coincide at every lattice-aligned lag. The number of coinciding onsets is
+   therefore computed at every admissible lag (FFT correlation of the onset trains), and the
+   largest count outside +-:data:`RIVAL_EXCLUSION_HOPS` of the chosen lag is reported as
+   ``rival_matched_onsets`` with its offset and its own chance probability (step 5). A rival that
+   chance explains is no competitor; a rival that chance does not explain means two alignments
+   are both supported.
+7. **Decision** - silence, transient-free audio, fewer than two coinciding onsets, coincidences
    that chance explains (``chance_probability > MAX_CHANCE_PROBABILITY``) or weak correlation yield
-   ``INSUFFICIENT_EVIDENCE``; a competing peak (for example periodic sound) yields ``AMBIGUOUS``
-   with the alternatives; otherwise ``OK``.
+   ``INSUFFICIENT_EVIDENCE``; a competing correlation peak (ratio below :data:`MIN_PEAK_RATIO`) or
+   a competing alignment that chance does not explain and that has at least
+   :data:`MAX_RIVAL_FRACTION` of the coinciding onsets yields ``AMBIGUOUS`` with the alternatives;
+   otherwise ``OK``.
 
 Sign convention: the result is ``a`` in ``T_reference = a + b * t_target`` with ``b = 1``; a target
 that starts two seconds after the reference has ``a = +2``. The thresholds are initial values
@@ -59,6 +69,7 @@ from scipy import special
 
 from ave.domain.model import SyncAnchor, SyncMember
 from ave.errors import AveError
+from ave.media.audio_timing import audio_placement_filter
 from ave.media.probe import probe
 from ave.proc import media_url, stream_tool
 from ave.timebase import Interval, Rational, rational_from_float
@@ -66,6 +77,7 @@ from ave.timebase import Interval, Rational, rational_from_float
 __all__ = [
     "ANALYSIS_RATE",
     "MAX_CHANCE_PROBABILITY",
+    "MAX_RIVAL_FRACTION",
     "METHOD",
     "AnchorEstimate",
     "OffsetCandidate",
@@ -89,6 +101,12 @@ MIN_MATCHED_ONSETS = 2
 """Fewer coinciding onsets than this at the best lag is insufficient evidence."""
 MAX_CHANCE_PROBABILITY = 1e-3
 """Largest accepted probability that unrelated onset trains coincide as often as observed."""
+MAX_RIVAL_FRACTION = 0.5
+"""Another alignment that chance does not explain, with at least this fraction of the coinciding
+onsets, makes the result ambiguous."""
+RIVAL_EXCLUSION_HOPS = 14
+"""Lags within this many hops of the chosen lag belong to the same alignment (twice the match
+window of +-:data:`ONSET_TOLERANCE_HOPS`)."""
 ENERGY_WINDOW_HOPS = 4
 MIN_ONSET_RISE = 0.05
 """Smallest log-RMS rise per hop (nats) treated as an onset."""
@@ -106,6 +124,8 @@ _CHUNK = 1 << 18
 """Samples per block of the in-place full-length processing (bounded temporary memory)."""
 _DRAIN_BYTES = 1 << 18
 """Bytes per pipe read while decoding (the only temporary buffer of the extraction)."""
+_INITIAL_SAMPLES = 1 << 20
+"""Initial analysis buffer when the stream length is unknown."""
 
 FloatArray = npt.NDArray[np.float64]
 Float32Array = npt.NDArray[np.float32]
@@ -172,6 +192,12 @@ class OffsetEstimate(_Frozen):
     """Bound on the probability that unrelated onset trains give ``matched_onsets`` coincidences at
     some searched lag (module doc, step 5); above :data:`MAX_CHANCE_PROBABILITY` the coincidences
     are no evidence."""
+    rival_matched_onsets: int | None = None
+    """Most coinciding onsets at any admissible lag outside the chosen alignment (step 6)."""
+    rival_offset_s: float | None = None
+    """Offset of that competing alignment."""
+    rival_chance_probability: float | None = None
+    """Chance probability (step 5) of the competing alignment's coincidences."""
     reference_onsets: int = 0
     target_onsets: int = 0
     reference_duration_s: float
@@ -216,31 +242,32 @@ class OffsetEstimate(_Frozen):
 
 
 def _read_float32(args: list[str], capacity: int | None) -> Float32Array:
-    """Runs FFmpeg and reads its little-endian float32 stdout into one array.
+    """Runs FFmpeg and reads its little-endian float32 stdout into one float32 array.
 
-    With a known ``capacity`` (samples) the bytes go straight into a preallocated array, so the
-    peak memory is the array itself; output beyond ``capacity`` is read and discarded.
+    The bytes go straight into that array. With a known ``capacity`` (samples) it is allocated
+    once and output beyond it is read and discarded; with an unknown length it grows in place by a
+    quarter at a time (no second copy). Either way it is trimmed to the samples delivered.
     """
+    samples = np.zeros(capacity if capacity is not None else _INITIAL_SAMPLES, dtype=np.float32)
+    filled = 0  # bytes
     with stream_tool("ffmpeg", args, timeout=_EXTRACT_TIMEOUT_S) as pipe:
-        if capacity is None:
-            data = bytearray()
-            while chunk := pipe.read(_DRAIN_BYTES):
-                data += chunk
-            usable = len(data) - len(data) % 4
-            return np.frombuffer(memoryview(data)[:usable], dtype="<f4").astype(np.float32)
-        samples = np.zeros(capacity, dtype=np.float32)
-        view = samples.data.cast("B")
-        filled = 0
-        while filled < len(view):
-            chunk = pipe.read(min(_DRAIN_BYTES, len(view) - filled))
+        while True:
+            room = 4 * len(samples) - filled
+            if room == 0:
+                if capacity is not None:
+                    break
+                samples.resize(len(samples) + max(len(samples) // 4, 1), refcheck=False)
+                continue
+            chunk = pipe.read(min(_DRAIN_BYTES, room))
             if not chunk:
                 break
+            view = samples.data.cast("B")
             view[filled : filled + len(chunk)] = chunk
+            view.release()
             filled += len(chunk)
-        view.release()
         while pipe.read(_DRAIN_BYTES):
             pass
-    if filled < 4 * capacity:
+    if filled < 4 * len(samples):
         samples.resize(filled // 4, refcheck=False)
     return samples
 
@@ -250,10 +277,11 @@ def extract_analysis_audio(
 ) -> Float32Array:
     """Decodes one audio stream to mono float32 PCM at ``rate`` (SoX resampler).
 
-    Sample ``k`` presents source time ``k / rate`` (time relative to the container start, the
-    origin of every source time): FFmpeg places the decoded samples by their presentation
-    timestamps (``aresample`` with ``first_pts=0`` and ``min_comp=0``), so a stream that starts
-    after the container start begins with silence instead of being shifted earlier.
+    Sample ``k`` presents source time ``k / rate`` (time relative to the exact container start,
+    the origin of every source time): the input is read with raw timestamps (``-copyts``) and the
+    decoded samples are placed by them (:func:`ave.media.audio_timing.audio_placement_filter`),
+    so a stream that starts after the container start begins with silence and a timestamp gap
+    inside the stream stays a gap, in every container (MPEG-TS included).
 
     ``stream_index`` is the absolute container index; the default is the first audio stream.
     The stream is read from the original file regardless of its mute state in any edit. Samples
@@ -271,12 +299,11 @@ def extract_analysis_audio(
     if stream is None:
         raise AveError("the file has no such audio stream", code="MISSING_STREAM")
     end = info.source_duration(stream)
+    placement = audio_placement_filter(info.container_start_time, rate)
     return _read_float32(
         [
-            "-hide_banner", "-nostdin", "-v", "error", "-i", media_url(path),
-            "-map", f"0:{stream.index}",
-            "-af", f"aresample={rate}:resampler=soxr:min_comp=0:first_pts=0",
-            "-ac", "1", "-f", "f32le", "-",
+            "-hide_banner", "-nostdin", "-v", "error", "-copyts", "-i", media_url(path),
+            "-map", f"0:{stream.index}", "-af", placement, "-ac", "1", "-f", "f32le", "-",
         ],
         math.ceil(end * rate) if end is not None else None,
     )  # fmt: skip
@@ -500,6 +527,9 @@ def _estimate(
             "alternatives": coarse.alternatives,
             "matched_onsets": coarse.matched,
             "chance_probability": coarse.chance,
+            "rival_matched_onsets": coarse.rival_matched,
+            "rival_offset_s": coarse.rival_offset_s,
+            "rival_chance_probability": coarse.rival_chance,
             "reference_onsets": coarse.reference_onsets,
             "target_onsets": coarse.target_onsets,
         }
@@ -527,6 +557,11 @@ class _Coarse:
     matched: int
     chance: float
     """Bound on the probability of ``matched`` coincidences between unrelated onset trains."""
+    rival_matched: int
+    """Most coinciding onsets at an admissible lag outside the chosen alignment."""
+    rival_offset_s: float | None
+    rival_chance: float
+    """Chance probability of ``rival_matched`` coincidences (1 without a rival)."""
     reference_onsets: int
     target_onsets: int
 
@@ -557,6 +592,20 @@ def _chance_probability(
     return min(1.0, trials * tail)
 
 
+def _coincidences_per_lag(
+    ref_peaks: npt.NDArray[np.int64], tgt_peaks: npt.NDArray[np.int64], n_ref: int, n_tgt: int
+) -> npt.NDArray[np.int64]:
+    """Coinciding onsets (``_matched_onsets``) at every lag ``-(n_tgt - 1) .. n_ref - 1``."""
+    reference = np.zeros(n_ref)
+    reference[ref_peaks] = 1.0
+    window = np.ones(2 * ONSET_TOLERANCE_HOPS + 1)
+    reference = np.convolve(reference, window, mode="same")
+    target = np.zeros(n_tgt)
+    target[tgt_peaks] = 1.0
+    counts = sps.correlate(reference, target, mode="full", method="fft")
+    return np.asarray(np.rint(counts), dtype=np.int64)
+
+
 def _coarse_search(
     ref_env: FloatArray, tgt_env: FloatArray, min_overlap_hops: int, max_lag: int | None
 ) -> _Coarse | None:
@@ -577,7 +626,14 @@ def _coarse_search(
     lag = int(lags[best])
     matched = _matched_onsets(ref_peaks, tgt_peaks, lag, ONSET_TOLERANCE_HOPS)
     overlap = (max(0, lag), min(len(ref_env), len(tgt_env) + lag))
-    searched = int(np.count_nonzero(np.isfinite(raw)))
+    admissible = np.isfinite(raw)
+    searched = int(np.count_nonzero(admissible))
+    per_lag = _coincidences_per_lag(ref_peaks, tgt_peaks, len(ref_env), len(tgt_env))
+    elsewhere = admissible & (np.abs(np.arange(len(per_lag)) - best) > RIVAL_EXCLUSION_HOPS)
+    rival = int(np.argmax(np.where(elsewhere, per_lag, -1))) if elsewhere.any() else None
+    rival_matched = int(per_lag[rival]) if rival is not None else 0
+    rival_lag = int(lags[rival]) if rival is not None else 0
+    rival_overlap = (max(0, rival_lag), min(len(ref_env), len(tgt_env) + rival_lag))
     return _Coarse(
         lag=lag,
         offset_s=float(lag) * hop_s,
@@ -591,6 +647,11 @@ def _coarse_search(
         ),
         matched=matched,
         chance=_chance_probability(ref_peaks, tgt_peaks, lag, overlap, matched, searched),
+        rival_matched=rival_matched,
+        rival_offset_s=float(rival_lag) * hop_s if rival is not None else None,
+        rival_chance=_chance_probability(
+            ref_peaks, tgt_peaks, rival_lag, rival_overlap, rival_matched, searched
+        ),
         reference_onsets=len(ref_peaks),
         target_onsets=len(tgt_peaks),
     )
@@ -704,6 +765,15 @@ def _estimate_analysis(
             SyncStatus.AMBIGUOUS, ref_s, tgt_s, coarse,
             reason=f"competing correlation peaks (ratio {coarse.peak_ratio:.2f} < "
             f"{MIN_PEAK_RATIO})",
+        )  # fmt: skip
+    if (
+        coarse.rival_chance <= MAX_CHANCE_PROBABILITY
+        and coarse.rival_matched >= MAX_RIVAL_FRACTION * coarse.matched
+    ):
+        return _estimate(
+            SyncStatus.AMBIGUOUS, ref_s, tgt_s, coarse,
+            reason=f"a competing alignment ({coarse.rival_offset_s} s) has "
+            f"{coarse.rival_matched} of the {coarse.matched} coinciding onsets",
         )  # fmt: skip
 
     lo = max(0, coarse.lag * hop)

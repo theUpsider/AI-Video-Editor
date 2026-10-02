@@ -11,9 +11,10 @@ files that never contain file paths):
    ``-f image2 -pattern_type none``, so a ``%`` in a file name never selects another file. Every
    segment is encoded with identical libx264 settings into an MP4 whose video time scale
    represents the frame rate exactly; the first frame is an IDR frame and GOPs are closed.
-2. **Audio** - one run renders the range's audio: samples placed by their presentation timestamps
-   relative to the seek point (``aresample`` with ``first_pts=0`` and ``min_comp=0`` pads a stream
-   that starts later with silence), sample-accurate trims, resampling to 48 kHz with SoX,
+2. **Audio** - one run renders the range's audio: inputs read with ``-copyts`` and samples placed
+   by their presentation timestamps relative to the exact container start plus the seek point
+   (:func:`ave.media.audio_timing.audio_placement_filter`: silence before a late stream start and
+   in timestamp gaps), sample-accurate trims, resampling to 48 kHz with SoX,
    pitch-preserving time scaling (Rubber Band) when the clip speed is not 1, gain, exact sample
    delay and an un-normalized mix, written as 32-bit float PCM.
 3. **Assembly** - the segments are concatenated by stream copy (concat demuxer) and muxed with the
@@ -36,6 +37,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from ave.errors import AveError, MediaToolError
+from ave.media.audio_timing import audio_placement_filter
 from ave.paths import render_work_root
 from ave.proc import ffmpeg_version, media_url, run_tool
 from ave.render.compiler import AudioClipPlan, RenderPlan, SegmentPlan, VideoLayerPlan
@@ -224,7 +226,7 @@ def _audio_chain(index: int, clip: AudioClipPlan, plan: RenderPlan) -> str:
     stretch = "" if clip.speed == 1 else f"rubberband=tempo={float(clip.speed)!r}:pitch=1,"
     return (
         f"[{index}:{clip.stream_index}]"
-        f"aresample={plan.sample_rate}:resampler=soxr:min_comp=0:first_pts=0,"
+        f"{audio_placement_filter(clip.origin + clip.seek, plan.sample_rate)},"
         f"{_channel_map(clip.channels)},"
         f"atrim=start_sample={start}:end_sample={end},asetpts=PTS-STARTPTS,{stretch}"
         f"apad=whole_len={clip.output_samples},atrim=end_sample={clip.output_samples},"
@@ -234,8 +236,12 @@ def _audio_chain(index: int, clip: AudioClipPlan, plan: RenderPlan) -> str:
 
 
 def build_audio_command(plan: RenderPlan, output: Path, script: Path) -> tuple[list[str], str]:
-    """Arguments and filter script that render the range's mixed audio as float WAV."""
-    args = list(_BASE_ARGS)
+    """Arguments and filter script that render the range's mixed audio as float WAV.
+
+    ``-copyts`` keeps every input's raw timestamps (FFmpeg would otherwise re-base them, for
+    MPEG-TS on the start of the audio stream); the filter chains place samples explicitly.
+    """
+    args = [*_BASE_ARGS, "-copyts"]
     lines = []
     for index, clip in enumerate(plan.audio):
         args += [

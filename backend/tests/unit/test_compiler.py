@@ -324,7 +324,8 @@ def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() ->
     """AVE-REQ-072 AC-3, AVE-REQ-012 AC-4: an image2 still is opened with sequence patterns
     disabled (``%d`` in its name is literal); video inputs seek to a keyframe without discarding
     frames before the seek point and are not cut by a read duration; audio is placed by its
-    timestamps (``first_pts=0`` with ``min_comp=0``)."""
+    timestamps relative to the exact container start plus the seek point (raw timestamps via
+    ``-copyts``, ``first_pts=0``, gaps above 1 ms compensated)."""
     still = Clip(
         id="still", track_id="v", asset_id="img", kind="image", timeline_start=Fraction(0),
         source_in=Fraction(0), source_out=Fraction(1),
@@ -347,5 +348,16 @@ def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() ->
     assert args[position - 4 : position] == ["-noaccurate_seek", "-ss", "1", "-i"]
     assert "-t" not in args
     assert all(layer.input_format is None for layer in first.layers)
-    _, audio_script = build_audio_command(video_plan, Path("/w/a.wav"), Path("/w/a.filter"))
-    assert audio_script.count("resampler=soxr:min_comp=0:first_pts=0,") == len(video_plan.audio)
+    audio_args, audio_script = build_audio_command(
+        video_plan, Path("/w/a.wav"), Path("/w/a.filter")
+    )
+    assert audio_args.index("-copyts") < audio_args.index("-i")
+    # Seek points from the specification table: A[2,10) -> 1, C[0,6) -> 0, A[12,20) -> 11; the
+    # fake assets start at container time 0.
+    placement = (
+        "asetpts=PTS-round(({seek}/1)/TB),"
+        "aresample=48000:resampler=soxr:min_comp=0:min_hard_comp=0.001:first_pts=0,"
+    )
+    chains = audio_script.splitlines()[: len(video_plan.audio)]
+    for chain, seek in zip(chains, (1, 0, 11), strict=True):
+        assert chain.split("]", 1)[1].startswith(placement.format(seek=seek))

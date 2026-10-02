@@ -29,6 +29,8 @@ __all__ = ["ToolName", "ffmpeg_version", "media_url", "run_tool", "stream_tool",
 ToolName = Literal["ffmpeg", "ffprobe"]
 
 _STDERR_TAIL = 4000
+"""Bytes of a child's stderr kept for error messages."""
+_PIPE_CHUNK = 1 << 16
 
 
 @functools.cache
@@ -105,13 +107,37 @@ def run_tool(
     return completed
 
 
+class _StderrTail:
+    """Drains a child's stderr on a daemon thread and keeps only its last :data:`_STDERR_TAIL`
+    bytes, so a chatty child never blocks on a full stderr pipe while stdout is being read."""
+
+    def __init__(self, pipe: IO[bytes]) -> None:
+        self._fd = pipe.fileno()
+        self._data = bytearray()
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+
+    def _drain(self) -> None:
+        while chunk := os.read(self._fd, _PIPE_CHUNK):
+            self._data += chunk
+            if len(self._data) > _STDERR_TAIL:
+                del self._data[: len(self._data) - _STDERR_TAIL]
+
+    def text(self) -> str:
+        """The bounded tail, once the child has closed stderr."""
+        self._thread.join()
+        return _tail(bytes(self._data))
+
+
 @contextmanager
 def stream_tool(tool: ToolName, args: Sequence[str], *, timeout: float) -> Iterator[IO[bytes]]:
     """Runs ``tool`` and yields its stdout pipe for incremental reading.
 
-    A watchdog kills the process after ``timeout`` seconds. When the ``with`` body raises, the
-    process is killed and the exception propagates; otherwise the process is awaited and a non-zero
-    exit status (or a watchdog kill) raises :class:`MediaToolError`.
+    Stderr is drained concurrently (only a bounded tail is kept for error messages), so the child
+    can write any amount of diagnostics without stalling. A watchdog kills the process after
+    ``timeout`` seconds. When the ``with`` body raises, the process is killed and the exception
+    propagates; otherwise unread stdout is discarded, the process is awaited and a non-zero exit
+    status (or a watchdog kill) raises :class:`MediaToolError`.
     """
     argv = [tool_path(tool), *_check_argv(args)]
     process = subprocess.Popen(
@@ -121,6 +147,11 @@ def stream_tool(tool: ToolName, args: Sequence[str], *, timeout: float) -> Itera
         stderr=subprocess.PIPE,
         shell=False,
     )
+    if process.stdout is None or process.stderr is None:  # pragma: no cover - PIPE guarantees
+        process.kill()
+        raise MediaToolError(f"{tool} pipes are unavailable", tool=tool)
+    stdout = process.stdout
+    stderr = _StderrTail(process.stderr)
     timed_out = threading.Event()
 
     def _expire() -> None:
@@ -131,25 +162,28 @@ def stream_tool(tool: ToolName, args: Sequence[str], *, timeout: float) -> Itera
     watchdog.daemon = True
     watchdog.start()
     try:
-        if process.stdout is None:  # pragma: no cover - guaranteed by stdout=PIPE
-            raise MediaToolError(f"{tool} stdout pipe is unavailable", tool=tool)
         try:
-            yield process.stdout
+            yield stdout
         except BaseException:
             process.kill()
-            process.communicate()
+            process.wait()
             raise
-        _, stderr = process.communicate()
+        while stdout.read(_PIPE_CHUNK):
+            pass
+        process.wait()
     finally:
         watchdog.cancel()
+        stdout.close()
+        tail = stderr.text()
+        process.stderr.close()
     if timed_out.is_set():
-        raise MediaToolError(f"{tool} timed out after {timeout:.0f} s", tool=tool)
+        raise MediaToolError(f"{tool} timed out after {timeout:.0f} s", tool=tool, stderr=tail)
     if process.returncode != 0:
         raise MediaToolError(
             f"{tool} exited with status {process.returncode}",
             tool=tool,
             returncode=process.returncode,
-            stderr=_tail(stderr),
+            stderr=tail,
         )
 
 

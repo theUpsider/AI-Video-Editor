@@ -13,7 +13,7 @@ import pytest
 from ave.fixtures.standard import B_OFFSET, REFERENCE_EVENT_FRAMES, StandardFixtures
 from ave.media.probe import probe
 from ave.sync.audio import SyncStatus, estimate_offset, extract_analysis_audio
-from tests.media.derived import AUDIO_DELAY, DerivedMedia, derived_media
+from tests.media.derived import AUDIO_DELAY, LATE_AAC_DELAY, DerivedMedia, derived_media
 from tests.oracles import detect_chirps, match_events
 
 pytestmark = pytest.mark.media
@@ -74,6 +74,19 @@ def test_late_audio_start_is_part_of_the_offset(
     assert result.status == SyncStatus.OK
     assert result.offset_s is not None
     assert abs(result.offset_s + float(AUDIO_DELAY)) < 1e-4
+
+
+@pytest.mark.parametrize("variant", ["late_aac_mp4", "late_aac_ts"])
+def test_late_aac_audio_offset_in_mp4_and_mpegts(
+    std: StandardFixtures, derived: DerivedMedia, variant: str
+) -> None:
+    """AVE-REQ-024 AC-2, AVE-REQ-012 AC-4: A's AAC audio shifted 0.8 s against its video, in MP4
+    and in MPEG-TS (container start 43/30 s, audio stream start 2.212 s), is found at a = -0.8
+    against A: the offset is measured in source time, from the exact container start."""
+    result = estimate_offset(std.a.path, getattr(derived, variant))
+    assert result.status == SyncStatus.OK
+    assert result.offset_s is not None
+    assert abs(result.offset_s + float(LATE_AAC_DELAY)) < 1e-4
 
 
 def test_analysis_audio_follows_timestamps_in_float32_within_its_memory(

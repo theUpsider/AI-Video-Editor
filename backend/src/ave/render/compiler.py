@@ -18,12 +18,21 @@ the video stream starts after the container start) no frame satisfies ``PTS <= t
 frames show the source's **first frame** (clamped), so a clip never flashes the background at the
 source's start.
 
-Decoding starts at a keyframe at or before the seek point ``S0 = max(0, floor(t_first - 1 s))``
-(FFmpeg ``-noaccurate_seek``: the demuxer seeks to a keyframe whose timestamp is ``<= S0`` and
-every frame from there is decoded and passed to the timestamp mapping). The latest frame with
-``PTS <= t`` is therefore always among the decoded frames, however long a variable-frame-rate gap
-before ``t`` is; the one-second margin only absorbs decode-order versus presentation-order
-(B-frame) differences of the seek. Decoding stops when the segment's last output frame is complete.
+Seeking: video is read with FFmpeg ``-noaccurate_seek`` from a seek point ``S0``, so every decoded
+frame reaches the timestamp mapping (nothing before ``S0`` is discarded); decoding stops when the
+segment's last output frame is complete. ``S0`` must lie before a keyframe at or before ``t_first``:
+
+* containers with a keyframe index (:data:`ave.media.probe.INDEXED_SEEK_FORMATS`: MP4/MOV,
+  Matroska, AVI, MXF) seek to a keyframe whose timestamp is ``<= S0``, so
+  ``S0 = max(0, floor(t_first - 1 s))``;
+* other containers (MPEG-TS/PS...) seek to any packet with a timestamp ``<= S0`` and decoding
+  resumes at the next keyframe, which may lie after ``t_first``. With the probe's keyframe index,
+  ``S0 = max(0, floor(K - 1 s))`` where ``K`` is the latest keyframe at or before ``t_first`` (0
+  when there is none): the next keyframe after the landing point is then ``K`` or an earlier one.
+
+Either way the latest frame with ``PTS <= t`` is among the decoded frames, however long a
+variable-frame-rate gap or a group of pictures before ``t`` is; the one-second margin absorbs
+decode-order versus presentation-order (B-frame) differences of the seek.
 
 Exact evaluation in FFmpeg: a source frame with PTS ``p`` becomes due at segment-relative output
 time ``y(p) = p * (time_base / speed) + c`` (all rational). The plan chooses an integer tick rate
@@ -49,15 +58,17 @@ source time ``t_k`` (rounded to the nearest 48 kHz sample after resampling, an e
 times editorial speed) is not 1, gained and delayed to its exact sample position; clips are summed
 without normalization.
 
-Audio sample positions follow presentation timestamps: the decoded samples are placed by their
-timestamps relative to the seek point ``S0`` (source time, i.e. relative to the container start),
-not by counting samples from the first one delivered. A stream that starts after ``S0`` (its own
-start later than the container start) is preceded by silence up to its first timestamp, to the
-input sample.
+Audio sample positions follow presentation timestamps: the input is read with raw timestamps and
+the decoded samples are placed relative to ``origin + S0`` (the exact container start plus the seek
+point, :mod:`ave.media.audio_timing`), not by counting samples from the first one delivered. A
+stream that starts after ``S0`` is preceded by silence up to its first timestamp, and timestamp
+gaps or overlaps above one millisecond inside the stream are filled with silence or dropped, to the
+input sample, whatever the container (MPEG-TS included).
 """
 
 from __future__ import annotations
 
+import bisect
 import itertools
 import math
 from collections.abc import Mapping
@@ -178,6 +189,9 @@ class AudioClipPlan(_Frozen):
     input_path: str
     stream_index: int
     channels: int
+    origin: Rational = Fraction(0)
+    """Exact container start time of the input: raw input timestamps minus ``origin`` are source
+    time (the renderer reads audio with ``-copyts``)."""
     seek: int
     """Input seek point ``S0`` (whole seconds of source time)."""
     read_duration: int
@@ -412,7 +426,7 @@ def _plan_layer(
         read_duration = frame_start(len(frames), fps) + 1
         timestamps = None
     else:
-        seek = Fraction(max(0, math.floor(t_first - SEEK_MARGIN_S)))
+        seek = _seek_point(asset, stream, t_first)
         timestamps = _timestamp_map(clip, asset, stream, segment_start, fps, t_last, warnings)
     return VideoLayerPlan(
         clip_id=clip.id,
@@ -436,6 +450,21 @@ def _plan_layer(
         x=geometry.position[0],
         y=geometry.position[1],
     )
+
+
+def _seek_point(asset: MediaAsset, stream: VideoStreamInfo, t_first: Fraction) -> Fraction:
+    """Seek point ``S0`` that precedes a keyframe at or before ``t_first`` (module doc)."""
+    anchor = t_first
+    if stream.keyframe_pts is not None and stream.time_base is not None:
+        # Latest keyframe with source time <= t_first (pts * time_base - origin <= t_first).
+        limit = math.floor((t_first + asset.probe.container_start_time) / stream.time_base)
+        position = bisect.bisect_right(stream.keyframe_pts, limit) - 1
+        anchor = (
+            stream.keyframe_pts[position] * stream.time_base - asset.probe.container_start_time
+            if position >= 0
+            else Fraction(0)
+        )
+    return Fraction(max(0, math.floor(anchor - SEEK_MARGIN_S)))
 
 
 def _timestamp_map(
@@ -524,6 +553,7 @@ def _plan_audio(
                 input_path=asset.path,
                 stream_index=stream.index,
                 channels=stream.channels or 1,
+                origin=asset.probe.container_start_time,
                 seek=seek,
                 read_duration=math.ceil(t_end - seek) + READ_MARGIN_S,
                 source_start_sample=source_start,
