@@ -15,7 +15,12 @@ from ave.errors import RenderPlanningError, SourceBoundsError
 from ave.media.asset import MediaAsset
 from ave.media.probe import parse_probe_json
 from ave.render.compiler import compile_render_plan
-from ave.render.ffmpeg import build_audio_command, build_segment_command, video_timescale
+from ave.render.ffmpeg import (
+    background_ycbcr,
+    build_audio_command,
+    build_segment_command,
+    video_timescale,
+)
 from ave.render.profile import OutputProfile
 from ave.timebase import Interval
 from tests.assets import fake_asset, printed_start_time
@@ -306,6 +311,21 @@ def test_segment_commands_use_identical_encoder_settings_and_no_shell() -> None:
     assert "-i" in audio_args
     with pytest.raises(ValueError, match="video_bitrate_kbps"):
         OutputProfile(rate_control="bitrate")
+
+
+def test_background_is_filled_with_its_bt709_limited_range_values() -> None:
+    """AVE-REQ-020 AC-3 (background), AVE-REQ-019 AC-1: the segment graph fills the background
+    with the BT.709 limited-range Y'CbCr of the configured color, the matrix the output is tagged
+    with: reference values black 16/128/128, white 235/128/128, red 63/102/240, and #204060
+    67/145/113 (BT.601 coding would give 66/147/112)."""
+    assert background_ycbcr("#000000") == (16, 128, 128)
+    assert background_ycbcr("#FFFFFF") == (235, 128, 128)
+    assert background_ycbcr("#FF0000") == (63, 102, 240)
+    assert background_ycbcr("#204060") == (67, 145, 113)
+    plan = compile_render_plan(standard_sequence(sync_group(B_TRUE)), _assets())
+    plan = plan.model_copy(update={"background": "#204060"})
+    _, script = build_segment_command(plan, plan.segments[0], Path("/w/o.mp4"), Path("/w/s"))
+    assert "format=yuv420p,lutyuv=y=67:u=145:v=113[bg]" in script
 
 
 def test_editorial_speed_retimes_audio_with_pitch_kept_on_top_of_drift() -> None:
