@@ -235,7 +235,10 @@ def validate_output(path: Path | str, expected: ExpectedOutput) -> ValidationRes
 
 
 def _scale_filter(stream: VideoStreamInfo | None, width: int, height: int) -> str:
-    options = [f"{width}:{height}", "flags=area"]
+    # The exact conversion path: the scaler's default fast YUV-to-RGB routines differ between CPU
+    # architectures by several levels (measured on arm64: 27/61/96 for a patch whose BT.709
+    # value is 30/63/98), which would make every color measurement depend on the host.
+    options = [f"{width}:{height}", "flags=area+accurate_rnd+full_chroma_int+bitexact"]
     if stream is not None and stream.color_space in _MATRICES:
         options.append(f"in_color_matrix={_MATRICES[stream.color_space]}")
     if stream is not None and stream.color_range in {"tv", "pc"}:
@@ -255,7 +258,8 @@ def iter_video_frames(
     """Yields decoded frames as ``(height, width, 3)`` RGB arrays, in presentation order.
 
     Frames are counted from the first decoded frame (no rate conversion); scaling uses area
-    averaging, which suits measurements on large uniform patches.
+    averaging, which suits measurements on large uniform patches, and the exact color
+    conversion, so the values are the same on every CPU architecture.
     """
     trim = f"trim=start_frame={start_frame}"
     if count is not None:
