@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-02 — M0: process gates committed; media-core fixes (round 2) under independent review._
+_Last updated: 2026-10-02 — M0: process gates committed; media-core fixes (round 3) under focused review._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -18,10 +18,11 @@ AVE-REQ-093/094/096/097/098 independently, run the M0 milestone-review. Then M1 
 
 ## In progress
 
-- Media-core review fixes on branch `worktree-agent-ace5eb07e8aecbfbf` (`548c8ca`, `90a1f2e`; worktree
-  `.claude/worktrees/agent-ace5eb07e8aecbfbf`): round-3 independent review running. Briefs in
-  [docs/briefs/](briefs/README.md). On PASS: `git merge --no-commit --no-ff` that branch, resolve
-  `scripts/verify.d/20-backend.sh` and `backend/pyproject.toml` in favor of the main tree, verify, commit.
+- Media-core review fixes on branch `worktree-agent-ace5eb07e8aecbfbf` (`548c8ca`, `90a1f2e`, `dc89da2`; worktree
+  `.claude/worktrees/agent-ace5eb07e8aecbfbf`): rounds 1–3 fixed; focused review of `dc89da2` running. Briefs in
+  [docs/briefs/](briefs/README.md); ASM-007–ASM-009 and AVE-REQ-102 record the round's decisions. On PASS:
+  `git merge --no-commit --no-ff` that branch, resolve `scripts/verify.d/20-backend.sh` and
+  `backend/pyproject.toml` in favor of the main tree, run the media tier, commit, push.
 - AVE-REQ-093/094/096/097/098 `in-progress`: gates and tests committed; independent verification next.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Drafted briefs for the next tasks (lead's scratchpad; persist into docs/briefs with the base commit at launch):

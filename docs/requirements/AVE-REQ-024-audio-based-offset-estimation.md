@@ -57,3 +57,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)
 - 2026-10-01 — ready — Edge cases settled; dependency order per ROADMAP.md (lead)
 - 2026-10-01 — in-progress — M0 media core implements part of the ACs (timebase, probe, layout, segmented CPU renderer, audio offset); remaining ACs follow in their gate milestone (lead)
+- 2026-10-02 — in-progress — known open weakness, found by the lead while strengthening the population tests: unrelated recordings on a sparse shared 16th-note grid with identical transients return a wrong offset in 2 of 60 synthetic pairs despite the chance and rival gates (ASM-007); assigned to the M2 synchronization task (lead)

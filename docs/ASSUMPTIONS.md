@@ -112,3 +112,42 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Status:** confirmed — 2026-10-01 — measured
 - **Links:** [ADR-007](decisions/ADR-007-ai-integration-boundaries.md), [ADR-008](decisions/ADR-008-local-speech-recognition.md)
 
+### ASM-007 — Audio sync accepts an offset only when chance and rival alignments are ruled out
+- **Date:** 2026-10-02
+- **Assumption:** The audio offset estimator (`ave.sync.audio`) reports OK only when the coinciding onsets at the
+  chosen lag are unlikely by chance (binomial bound times the number of searched lags at most 1e-3) and no other
+  alignment that chance does not explain has at least half as many coincidences; otherwise it reports
+  insufficient evidence or ambiguity with alternatives. Thresholds are validated on seeded synthetic populations
+  only.
+- **Reason:** A confident wrong offset is the one unacceptable outcome (CLAUDE.md product invariants,
+  AVE-REQ-024); independent reviews found wrong offsets on unrelated, lattice-noise and same-tempo populations
+  before these gates.
+- **Impact:** Sensitivity cost, measured by the independent review: music-like scenes with a strong shared
+  rhythm become ambiguous (9 of 100 music-like positives right with the gate, 100 without), so such footage needs
+  visual or manual anchors (AVE-REQ-025, AVE-REQ-030) until the M2 synchronization work adds a waveform-level
+  discriminator. Known open weakness: unrelated recordings whose notes sit on a sparse shared 16th-note grid with
+  identical transients still return a wrong offset in 2 of 60 synthetic pairs; the M2 synchronization task owns
+  the fix.
+- **Status:** open
+- **Links:** [AVE-REQ-024](requirements/AVE-REQ-024-audio-based-offset-estimation.md), [WORKFLOW_LOG WF-001](WORKFLOW_LOG.md)
+
+### ASM-008 — Audio timestamp deviations up to 10 ms are jitter
+- **Date:** 2026-10-02
+- **Assumption:** Decoded audio is placed by its timestamps; deviations from a contiguous stream up to 10 ms are
+  treated as container rounding or muxer jitter (samples stay contiguous), larger ones as real gaps or overlaps
+  (filled with silence or dropped in full).
+- **Reason:** A 1 ms threshold inserted hundreds of dropouts into a stream with 2 ms jitter; one lost AAC frame is
+  21.3 ms at 48 kHz, so real gaps stay above the threshold.
+- **Impact:** A genuine gap shorter than 10 ms stays uncorrected (an error below one frame at 60 fps).
+- **Status:** open
+- **Links:** [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), `backend/src/ave/media/audio_timing.py`
+
+### ASM-009 — Output before a source's first video frame shows that first frame
+- **Date:** 2026-10-02
+- **Assumption:** When a clip's source time precedes the stream's first video frame (a video stream that starts
+  after the container start), the output shows the first frame instead of the background.
+- **Reason:** The frame rule (latest frame with PTS <= t) has no frame there; a background flash at a clip's start
+  would be a visible artifact, while the first frame is what players show.
+- **Impact:** Up to the stream's start offset (typically a few milliseconds) shows a held first frame.
+- **Status:** open
+- **Links:** [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), `backend/src/ave/render/compiler.py`

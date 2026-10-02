@@ -80,3 +80,16 @@ Not an improvement entry: the measured starting point that later entries compare
 - Independent review result: not applicable (no product change).
 - Measured before/after result: the round-2 re-review overlapped with a full media-tier run of the merge.
 - Keep or revert, with reason: keep; no cost.
+
+### WF-004 — 2026-10-02 — Mutation checks must not run stale bytecode
+- Observed failure and evidence: a mutation that replaced `min` with `max` in `ave.media.probe` reported the
+  target test as passing; rerun after deleting `__pycache__` it failed as expected. A same-size source edit
+  within one second keeps the cached `.pyc` valid (Python checks size and whole-second mtime).
+- Root-cause hypothesis: the mutation helper reran pytest right after an equal-length edit.
+- One proposed workflow/skill/context change: every mutation run deletes `__pycache__` directories before and
+  after the run; reviewer prompts for media-core rounds say so explicitly.
+- Expected metric and fixed evaluation set (plus held-out cases): no mutation reported as surviving because of a
+  stale cache; re-run of the affected mutation.
+- Independent review result: the round-3 review prompt carries the rule.
+- Measured before/after result: the `min`/`max` mutation went from a false "passed" to "failed" (caught).
+- Keep or revert, with reason: keep; it costs a cache rebuild of a few seconds.

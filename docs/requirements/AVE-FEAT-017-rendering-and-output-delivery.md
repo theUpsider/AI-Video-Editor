@@ -26,6 +26,7 @@ Baseline feature [AVE-FEAT-017 — Rendering and output delivery](../../ai-video
 - [AVE-REQ-079 — Editable output presets and quality guidance](AVE-REQ-079-editable-output-presets-and-quality-guidance.md)
 - [AVE-REQ-080 — Storage quotas and safe derived-file cleanup](AVE-REQ-080-storage-quotas-and-safe-derived-file-cleanup.md)
 - [AVE-REQ-081 — Complete output delivery bundle](AVE-REQ-081-complete-output-delivery-bundle.md)
+- [AVE-REQ-102 — Seek-safe decoding of gradual-refresh sources](AVE-REQ-102-seek-safe-decoding-of-gradual-refresh-sources.md)
 
 ## Out of scope
 - Object and motion tracking and advanced continuous video understanding, deferred to a later version ([scope](../../ai-video-editor-requirements/spec/SCOPE_AND_ASSUMPTIONS.md)).
