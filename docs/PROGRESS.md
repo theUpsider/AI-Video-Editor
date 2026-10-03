@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-03 — M0: AVE-REQ-093 re-verification FAIL fixed (the checker verifies the baseline hashes itself); reviews of 094/096/097/098 launched, verdicts not recorded._
+_Last updated: 2026-10-03 — M0: AVE-REQ-096/098 reviewed PASS; AVE-REQ-094 repaired and under challenge; AVE-REQ-093/097 under a red-team pass before their next reviews._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,21 +23,19 @@ from the drafts.
 
 ## In progress
 
-- AVE-REQ-093 `verification`: review 2 at `d4d3883` FAILED (hashes verified only by a package file; fixed in
-  `0e4f8d9`); reviews 3 (`97a8d20`) and 4 (`08237ac`) PASSED and were refuted by their skeptics (notes inside
-  § Acceptance criteria, fixed in `a681e4d`; supersession by a weaker requirement, fixed in `442f68c`, 96 suite
-  cases); review 5 at `442f68c` (`wf_b5fa6671-c21`): launched 2026-10-03; verdict not recorded; on resume
-  without a recorded verdict, re-run the script in [docs/workflows/](workflows/README.md) with `{commit: '442f68c'}`.
-- AVE-REQ-097 `verification`: review PASS at `d4d3883` refuted by its skeptic (a tagged `exit 0` suite credited
-  every tag; fixed in `a10e2df`); review 2 runs in the same `wf_b5fa6671-c21` (re-run command above).
-- AVE-REQ-094 `in-progress`: its re-review PASS at `d4d3883` was refuted by the skeptic (probe suite checks
-  headings and formats, bandwidth-dependent network probe, browser tools unrecorded, no run with investigation
-  and testing stages). Repair from [the probe-evidence brief](briefs/2026-10-03-ave-req-094-probe-evidence.md)
-  in worktree `ave-req-094-probe-evidence`: researcher ‖ tester → implementer → review with a skeptic; the
-  persisted script in [docs/workflows/](workflows/README.md) names the re-run command.
+- AVE-REQ-093 and AVE-REQ-097 `in-progress`: every PASS so far fell to one skeptic probe (fixes `0e4f8d9`,
+  `a681e4d`, `442f68c`, `a10e2df`, `56e5864`; Status logs hold each). A six-lens red-team pass
+  ([brief](briefs/2026-10-03-m0-gates-red-team.md)) enumerates the remaining probes: launched 2026-10-03;
+  verdict not recorded; on resume without a recorded verdict, re-run its script in
+  [docs/workflows/](workflows/README.md) with the commit that adds the brief. Then one review each with a skeptic.
+- AVE-REQ-094 `in-progress`: the repair run `wf_d57d9cab-829` ([brief](briefs/2026-10-03-ave-req-094-probe-evidence.md))
+  finished research, tests (`49ecb21`) and implementation (`fcd97f0`, branch `ave-req-094-probe-evidence`,
+  unmerged and pushed); its review PASSED at `fcd97f0`; the skeptic was cut off by a session restart and
+  resumed: launched 2026-10-03; verdict not recorded; on resume without a recorded verdict, run
+  `verify-requirement AVE-REQ-094` with a skeptic on that branch. On an upheld PASS: merge `--no-commit`,
+  release tier, `done`.
 - AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenges upheld;
-  `done` follows AVE-REQ-093 and AVE-REQ-094. The same run reviewed WORKFLOW_LOG.md: WF-004 and WF-005
-  supported; WF-001 to WF-003 corrected from its findings.
+  `done` follows AVE-REQ-093 and AVE-REQ-094.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Next delegated tasks, drafts persisted: [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
   [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md); each becomes a brief with the closing M0
@@ -86,7 +84,6 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS at `cd21812` in the development container (arm64; 12 of 12 steps; 108
-unit, 84 media and population tests; 6 tooling suites on every installed awk); CI (x86_64) release tier green
-at `12dbb9d`, the newest commit CI had verified when this file was written; GitHub holds the state of later
-pushes. The fast tier passes on every commit of this branch (Stop gate).
+`./scripts/verify.sh --tier release` PASS at `cd21812` in the development container (arm64; 12 of 12 steps); CI
+(x86_64) release tier green at `6ddd91e`, the newest commit CI had verified when this file was written; GitHub
+holds the state of later pushes. The fast tier passes on every commit of this branch (Stop gate).
