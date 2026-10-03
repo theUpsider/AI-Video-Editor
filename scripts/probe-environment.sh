@@ -37,7 +37,8 @@ item "kernel" "$(uname -srm)"
 item "cpus" "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
 item "cpu model" "$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
 item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' /proc/meminfo 2>/dev/null)"
-item "disk (repository)" "$(df -h . 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
+# The disk and Git lines measure the repository, whichever directory the probe starts in.
+item "disk (repository)" "$(df -h "$ROOT" 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
 
 section "Accelerators"
 gpu=""
@@ -95,8 +96,8 @@ done
     -exec basename {} \; | sort | tr '\n' ' ')"
 
 section "Git"
-item "worktrees" "$(git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
-item "branch" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
+item "worktrees" "$(git -C "$ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
+item "branch" "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
 
 section "Claude Code and session"
 # The development container holds no `claude` command: there the version comes from the host.
@@ -117,10 +118,16 @@ if [ "$OFFLINE" -eq 1 ]; then
 elif ! have curl; then
   item "probes" "curl not installed"
 else
+  # One HEAD request per host (-I) with a 10 s limit: any status code proves that the host answers,
+  # and no body is downloaded, so the verdict does not depend on bandwidth. curl writes the code
+  # 000 when no response arrives (refused, unresolved, TLS failure, the time limit): unreachable.
   for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://registry.npmjs.org/ \
     https://github.com/ https://huggingface.co/api/models?limit=1 https://api.anthropic.com/ \
     https://api.openai.com/; do
-    code="$(curl -sS -o /dev/null -m 8 -w '%{http_code}' "$url" 2>/dev/null)" || code="unreachable"
-    item "${url#https://}" "HTTP ${code:-none}"
+    code="$(curl -sS -o /dev/null -I -m 10 -w '%{http_code}' "$url" 2>/dev/null)"
+    case "$code" in
+      [1-9][0-9][0-9]) item "${url#https://}" "HTTP $code" ;;
+      *) item "${url#https://}" "unreachable" ;;
+    esac
   done
 fi

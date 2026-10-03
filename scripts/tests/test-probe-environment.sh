@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/tests/test-probe-environment.sh — tests of scripts/probe-environment.sh. Every AC-1 line is
 # compared with a value this suite measures itself in the same run: CPUs, memory (MemTotal of
-# /proc/meminfo in GiB) and disk (`df -h .`); the accelerator verdict from device nodes alone; the
+# /proc/meminfo in GiB) and disk (`df -h "$REPO"`); the accelerator verdict from device nodes alone; the
 # ffmpeg, ffprobe, python3, uv and git versions (`not installed` when hidden from PATH, a fake's
 # version when a fake comes first); Playwright's browser directory and the browser binaries; the
 # Git worktree count and branch (of the repository and of a fixture repository with three
@@ -10,6 +10,7 @@
 # every request and flags a request that downloads a body without a bound. Device nodes come from
 # a temp directory (AVE_PROBE_DEV_DIR) and every other external command is hidden or faked through
 # PATH, so the results hold on any host and no host is contacted. Exit 0 when every check passes.
+# Every probe run starts in the temp directory, outside the repository it measures.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,8 +62,8 @@ first_line() {
 second_line() { local p="$1"; shift; (PATH="$p"; "$@" 2>/dev/null | sed -n 2p); }
 # no_line <text> — $OUT holds no line equal to <text> (always true for an empty text).
 no_line() { [ -z "$1" ] || ! printf '%s\n' "$OUT" | grep -qxF -- "$1"; }
-# disk_free — "<Avail> free of <Size>" from the second line of `df -h .`, read by this suite.
-disk_free() { df -h . 2>/dev/null | { read -r _ && read -r _ size _ avail _ && printf '%s free of %s' "$avail" "$size"; }; }
+# disk_free <dir> — "<Avail> free of <Size>" from the second line of `df -h <dir>`, read by this suite.
+disk_free() { df -h "$1" 2>/dev/null | { read -r _ && read -r _ size _ avail _ && printf '%s free of %s' "$avail" "$size"; }; }
 
 # make_fake_curl <dir> <script line>... — writes <dir>/bin/curl, a fake curl that answers each URL
 # from the script lines ("<URL without scheme> <HTTP code> [<body bytes>]" or "<URL without scheme>
@@ -210,9 +211,9 @@ time_limits_ok() {
        END { exit !(n > 0 && bad == 0) }' "$1"
 }
 
-# Every probe run starts in the repository: `df -h .` and the Git lines then measure the repository
-# whichever directory the probe resolves them in.
-cd "$REPO" || exit 2
+# Every probe run starts in the temp directory, outside the repository: the disk and Git lines pass
+# only when the probe measures the repository, whichever directory it starts in.
+cd "$T" || exit 2
 unset PLAYWRIGHT_BROWSERS_PATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
 BARE_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome)"
 mkdir -p "$T/dev-none" "$T/dev-gpu" "$T/bin"
@@ -230,10 +231,10 @@ fi
 
 SECRET="probe-test-secret-$$-value"
 # Disk space and worktrees can change while the probe runs: both are measured before and after.
-DISK_BEFORE="$(disk_free)"; WT_BEFORE="$(git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
+DISK_BEFORE="$(disk_free "$REPO")"; WT_BEFORE="$(git -C "$REPO" worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
 OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" HF_TOKEN="$SECRET" ANTHROPIC_API_KEY="" "$PROBE" --offline 2>&1)"; CODE=$?
-DISK_AFTER="$(disk_free)"; WT_AFTER="$(git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
-BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
+DISK_AFTER="$(disk_free "$REPO")"; WT_AFTER="$(git -C "$REPO" worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
+BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
 # AVE-REQ-094 AC-1
 check "offline probe exits 0" '[ "$CODE" = 0 ]'
 for heading in "Platform and resources" "Accelerators" "Media tools" "Toolchains" "Browsers" "Git" \
@@ -243,7 +244,7 @@ done
 # AVE-REQ-094 AC-1: resources equal this suite's own measurement.
 check "cpus equals getconf _NPROCESSORS_ONLN ($(getconf _NPROCESSORS_ONLN))" 'has "^cpus +$(getconf _NPROCESSORS_ONLN)\$"'
 check "memory equals MemTotal of /proc/meminfo in GiB ($MEM_GIB)" '[ -n "$MEM_KB" ] && { has_line memory "$MEM_GIB" || has_line memory "$MEM_TIE"; }'
-check "disk equals the Avail and Size fields of df -h . ($DISK_BEFORE)" '[ -n "$DISK_BEFORE" ] && { has_line "disk (repository)" "$DISK_BEFORE" || has_line "disk (repository)" "$DISK_AFTER"; }'
+check "disk equals the Avail and Size fields of df -h on the repository ($DISK_BEFORE)" '[ -n "$DISK_BEFORE" ] && { has_line "disk (repository)" "$DISK_BEFORE" || has_line "disk (repository)" "$DISK_AFTER"; }'
 # AVE-REQ-094 AC-1: media tools and toolchains equal the first line of their own version output,
 # without the lines that follow it.
 for SPEC in "ffmpeg -hide_banner -version" "ffprobe -hide_banner -version" "python3 --version" "uv --version" "git --version"; do
@@ -315,9 +316,15 @@ case "\$1" in
   *) exec "$REAL_GIT" "\$@" ;;
 esac
 EOF
-cat > "$FAKE/df" <<'EOF'
+cat > "$FAKE/df" <<EOF
 #!/bin/sh
-printf '%s\n' 'Filesystem      Size  Used Avail Use% Mounted on' 'probe-fake-fs   977G  512G  465G  53% /probe'
+# One file system for the repository (the last argument), another for every other directory.
+for arg in "\$@"; do dir="\$arg"; done
+if [ "\$(cd "\${dir:-.}" 2>/dev/null && pwd -P)" = "$(cd "$REPO" && pwd -P)" ]; then
+  printf '%s\n' 'Filesystem      Size  Used Avail Use% Mounted on' 'probe-fake-fs   977G  512G  465G  53% /probe'
+else
+  printf '%s\n' 'Filesystem      Size  Used Avail Use% Mounted on' 'probe-fake-other  2.0G  1.0G  1.0G  50% /other'
+fi
 EOF
 cat > "$FAKE/chromium" <<'EOF'
 #!/bin/sh
@@ -330,7 +337,7 @@ EOF
 chmod +x "$FAKE"/*
 make_fake_curl "$T/net-offline"
 FAKE_PATH="$FAKE:$T/net-offline/bin:$BARE_PATH"
-DISK_FAKE="$(PATH="$FAKE_PATH"; disk_free)"
+DISK_FAKE="$(PATH="$FAKE_PATH"; disk_free "$REPO")"
 OUT="$(PATH="$FAKE_PATH" PLAYWRIGHT_BROWSERS_PATH="$T/pw" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" --offline 2>&1)"; CODE=$?
 check "fakes first on PATH: probe exits 0" '[ "$CODE" = 0 ]'
 for SPEC in "ffmpeg -hide_banner -version" "ffprobe -hide_banner -version" "python3 --version" "uv --version" "git --version"; do
@@ -339,7 +346,7 @@ for SPEC in "ffmpeg -hide_banner -version" "ffprobe -hide_banner -version" "pyth
   EXPECTED="$(first_line "$FAKE_PATH" $SPEC)"; NEXT="$(second_line "$FAKE_PATH" $SPEC)"
   check "fake $TOOL first on PATH: equals the first line of '$SPEC' ($EXPECTED)" 'has_line "$TOOL" "$EXPECTED" && no_line "$NEXT"'
 done
-check "fake df first on PATH: disk equals its Avail and Size fields ($DISK_FAKE)" 'has_line "disk (repository)" "$DISK_FAKE"'
+check "fake df first on PATH: disk equals its Avail and Size fields for the repository ($DISK_FAKE)" 'has_line "disk (repository)" "$DISK_FAKE"'
 for TOOL in chromium google-chrome; do
   EXPECTED="$(first_line "$FAKE_PATH" "$TOOL" --version)"; NEXT="$(second_line "$FAKE_PATH" "$TOOL" --version)"
   check "fake $TOOL on PATH: reported with the first line of its --version ($EXPECTED)" 'has_line "$TOOL" "$EXPECTED" && no_line "$NEXT"'
@@ -350,7 +357,7 @@ check "playwright browsers lists the entries of PLAYWRIGHT_BROWSERS_PATH ($PW_EX
 check "offline: curl is never invoked" '[ ! -s "$T/net-offline/calls" ]'
 
 # AVE-REQ-094 AC-1: Git lines of a fixture repository with three worktrees on a known branch; the
-# probe runs from its copy in the fixture, so the repository and the working directory coincide.
+# probe runs as its copy in the fixture, started from the temp directory outside the fixture.
 GITFIX="$T/gitfix"
 git_fixture() {
   git -c init.defaultBranch=probe-main init -q "$GITFIX/main" &&
@@ -364,7 +371,7 @@ git_fixture() {
 git_fixture >/dev/null 2>&1; FIX_CODE=$?
 FIX_WT="$(cd "$GITFIX/main" 2>/dev/null && git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
 FIX_BRANCH="$(cd "$GITFIX/main" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-OUT="$(cd "$GITFIX/main" 2>/dev/null && PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" ./scripts/probe-environment.sh --offline 2>&1)"; CODE=$?
+OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$GITFIX/main/scripts/probe-environment.sh" --offline 2>&1)"; CODE=$?
 check "git fixture: three worktrees on branch probe-fixture-branch" '[ "$FIX_CODE" = 0 ] && [ "$FIX_WT" = "3 listed" ] && [ "$FIX_BRANCH" = probe-fixture-branch ]'
 check "git fixture: worktrees equals git worktree list | wc -l ($FIX_WT)" '[ "$CODE" = 0 ] && has_line worktrees "$FIX_WT"'
 check "git fixture: branch equals git rev-parse --abbrev-ref HEAD ($FIX_BRANCH)" 'has_line branch "$FIX_BRANCH"'

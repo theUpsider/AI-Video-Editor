@@ -7,8 +7,11 @@ every entry below is a measured observation or an executed test on this host or 
 container is a build and test environment; it is no production host. Re-check after a session restart: tools,
 network policy and credentials can change. `./scripts/dev-container.sh ./scripts/probe-environment.sh`
 re-measures the shell-observable part (resources, accelerators with a device verdict, media tools, toolchains,
-browsers, the Claude Code version, OS user and repository writability, credential variables by name, network);
-its runs on 2026-10-02 produced the container observations below. The Claude Code rows record what a session
+browsers, Git worktrees and branch, the Claude Code version, OS user and repository writability, credential
+variables by name, and network reachability: one HEAD request per host with a 10 s limit, reported as
+`HTTP <code>` for any status and `unreachable` when no response arrives, so no body is downloaded and the verdict
+does not depend on bandwidth); its runs on 2026-10-02 produced the container observations below, and its runs on
+2026-10-03 the § Network policy results. The Claude Code rows record what a session
 observed (the lead's session, or a workflow agent where the row says so); the container has no `claude` command,
 so the version comes from `claude --version` on the host. The work before `bd12fe8` ran in a Linux x86_64 cloud
 container (4 vCPU, 15 GiB, egress proxy); Git history holds its record.
@@ -58,16 +61,20 @@ Versions inside the development container (the image mirrors the CI package list
 
 ## Network policy
 
-The laptop reaches the internet directly (no egress proxy). Observed from the container on 2026-10-02:
+The laptop reaches the internet directly (no egress proxy). Observed from the container on 2026-10-03 with
+`scripts/probe-environment.sh`, which sends one HEAD request per host
+(`curl -sS -o /dev/null -I -m 10 -w '%{http_code}'`): two runs printed the same codes, and a timed run of the same
+request received each response in 0.83 to 1.43 s with 0 body bytes. `HTTP <code>` shows that the host answers,
+whatever the status. The `uv sync` result and the apt row are observations of 2026-10-02.
 
 | Host | Result | Consequence |
 |---|---|---|
-| pypi.org, files.pythonhosted.org | reachable (`uv sync` installed the locked environment) | Python dependencies install with `uv` |
-| registry.npmjs.org | reachable (HTTP 200) | frontend dependencies install with `pnpm` |
+| pypi.org/simple/, files.pythonhosted.org/ | HTTP 200, HTTP 404; `uv sync` installed the locked environment | Python dependencies install with `uv` |
+| registry.npmjs.org/ | HTTP 200 | frontend dependencies install with `pnpm` |
 | ports.ubuntu.com, ppa.launchpadcontent.net | reachable | apt packages installable in the image |
-| github.com | reachable (HTTP 200) | release assets and `gh` work |
-| huggingface.co | reachable (HTTP 200, anonymous) | public model downloads are possible on this host; CI and `verify.sh` stay offline for models |
-| api.anthropic.com, api.openai.com | reachable (HTTP 404 / 421 without a request) | no application credential exists (below) |
+| github.com/ | HTTP 200 | release assets and `gh` work |
+| huggingface.co/api/models?limit=1 | HTTP 200 (anonymous) | public model downloads are possible on this host; CI and `verify.sh` stay offline for models |
+| api.anthropic.com/, api.openai.com/ | HTTP 404, HTTP 421 (no API request sent) | no application credential exists (below) |
 
 ## Credentials
 
