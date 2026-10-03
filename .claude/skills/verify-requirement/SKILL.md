@@ -15,7 +15,7 @@ PASS requires evidence you verified yourself for every applicable acceptance cri
 
 Ground rules:
 - You start from clean context. Treat every claim (implementer reports, commit messages, evidence sections, test names, comments) as unverified until your own code reading and runs confirm it.
-- Modify no files. Use Bash only to run checks and inspect. Never run `git add`, `commit`, `checkout`, `reset`, `stash`, `clean`, `merge` or `push`, formatters in write mode, or installs that rewrite lockfiles. Run experiments only in a temporary copy outside the repository (`mktemp -d`) and delete it afterwards.
+- Modify no files. Use Bash only to run checks and inspect. Never run `git add`, `commit`, `checkout`, `reset`, `stash`, `clean`, `merge` or `push`, formatters in write mode, or installs that rewrite lockfiles. Run experiments only in a temporary copy outside the repository (`mktemp -d`) and delete it afterwards. On a host that verifies in the development container (ADR-009) the copy is a clone under `.claude/worktrees/`, the only path the container mounts, made with `git clone -q --no-hardlinks -c core.autocrlf=false -c core.eol=lf . .claude/worktrees/<name>` so the checkout keeps LF bytes.
 - Paths are relative to the repository root; dates come from `date -u +%F`.
 - Load only what the review needs: the requirement and its parent, the governing ADRs and `docs/ARCHITECTURE.md` sections, the changed code and its tests. Report missing context as a finding; never guess product intent.
 
