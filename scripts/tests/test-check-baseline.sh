@@ -89,11 +89,12 @@ run_case() {
 
 R001="$R/AVE-REQ-001-*.md"
 R067="$R/AVE-REQ-067-*.md"
-# successor <priority> <all|three> — writes AVE-REQ-102 as the replacement of AVE-REQ-001 with the
-# given priority and the baseline's criteria (all four, or three without AC-4).
+# successor <priority> <all|three> [source glob] — writes AVE-REQ-102 as the replacement of the
+# source requirement (default AVE-REQ-001) with the given priority and the source's criteria (all,
+# or all without AC-4).
 successor() {
   local crit
-  crit="$(grep -h '^- \[ \] AC-' $R001)"
+  crit="$(grep -h '^- \[ \] AC-' ${3:-$R001})"
   [ "$2" = three ] && crit="$(printf '%s\n' "$crit" | grep -v '^- \[ \] AC-4 ')"
   printf '%s\n' "$DERIVED" | sed "s/^priority: should\$/priority: $1/" |
     awk -v crit="$crit" '/^- \[ \] AC-1 Something$/ { print crit; next } { print }' > "$R"/AVE-REQ-102-derived-stub.md
@@ -213,6 +214,16 @@ expect "superseded by a future-scope requirement fails" 1 "a version-one require
 expect "successor dropping a criterion unlogged fails" 1 "AC-4 of the baseline is absent from the successor AVE-REQ-102 and the Status log has no 'AC-4 changed: <reason>' line" "$SUPERSEDE && successor must three"
 expect "successor carrying every criterion is reported" 0 "Supersession: AVE-REQ-001 → AVE-REQ-102 carries every baseline criterion" "$SUPERSEDE && successor must all"
 expect "successor dropping a criterion with a logged change" 0 "Recorded change: AVE-REQ-001 AC-4 is absent from the successor AVE-REQ-102 — deletion moves to AVE-REQ-103" "$SUPERSEDE && successor must three && printf -- '- 2026-10-03 — superseded — AC-4 changed: deletion moves to AVE-REQ-103 (lead)\n' >> $R001"
+# AVE-REQ-093 AC-3: an exclusion (future scope) never enters version one through a supersession.
+SUPERSEDE67="sub '$R067' 'status: deferred' 'status: superseded' && sub '$R067' 'spec/requirements/AVE-REQ-067.md' 'spec/requirements/AVE-REQ-067.md
+superseded_by: AVE-REQ-102' && printf -- '- 2026-10-03 — superseded — replaced by AVE-REQ-102 (lead)\n' >> $R067"
+FUTURE102="sub $R/AVE-REQ-102-derived-stub.md 'scope: v1' 'scope: future' && sub $R/AVE-REQ-102-derived-stub.md 'primary_gate: M1' 'primary_gate: FUTURE' && sub $R/AVE-REQ-102-derived-stub.md 'status: proposed' 'status: deferred'"
+expect "future requirement superseded into version one fails" 1 "a future-scope requirement cannot be superseded by AVE-REQ-102 (scope 'v1', status 'proposed')" "$SUPERSEDE67 && successor must all '$R067'"
+expect "future requirement superseded by a ready future one fails" 1 "a future-scope requirement cannot be superseded by AVE-REQ-102 (scope 'future', status 'proposed')" "$SUPERSEDE67 && successor could all '$R067' && sub $R/AVE-REQ-102-derived-stub.md 'scope: v1' 'scope: future' && sub $R/AVE-REQ-102-derived-stub.md 'primary_gate: M1' 'primary_gate: FUTURE'"
+expect "future requirement superseded by a deferred future one is reported" 0 "Supersession: AVE-REQ-067 → AVE-REQ-102 carries every baseline criterion" "$SUPERSEDE67 && successor could all '$R067' && $FUTURE102"
+# AVE-REQ-093 AC-3: a baseline feature or epic leaves delivery only together with its baseline children.
+expect "feature superseded while its requirements live fails" 1 "a baseline feature is superseded only when every baseline requirement under it is superseded (AVE-REQ-001 is 'ready')" "sub '$R/AVE-FEAT-001-*.md' 'status: ready' 'status: superseded'"
+expect "epic superseded while its features live fails" 1 "a baseline epic is superseded only when every baseline feature under it is superseded (AVE-FEAT-001 is 'ready')" "sub '$R/AVE-EPIC-01-*.md' 'status: ready' 'status: superseded'"
 expect "superseded without a superseded log line fails" 1 "Status log has no 'superseded' line" "sub '$R001' 'status: ready' 'status: superseded' && sub '$R001' 'spec/requirements/AVE-REQ-001.md' 'spec/requirements/AVE-REQ-001.md
 superseded_by: AVE-REQ-102' && successor must all"
 expect "duplicate criterion ID"                      1 "duplicate acceptance criterion AC-2" "sub '$R001' '$AC2' '$AC2

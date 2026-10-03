@@ -2,7 +2,7 @@
 id: AVE-REQ-097
 title: Verification gates that cannot pass as placeholders
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -43,6 +43,14 @@ Replace bootstrap-only verification with staged real checks and independently ve
 - A provider test that runs on a fake → never evidences a criterion alone (AC-4).
 - The Stop gate asked for a heavier tier by the environment → still runs the fast tier (AC-3).
 - A failing step in any tier → that tier fails with exit 1 (AC-1, AC-4).
+- A test or suite whose checks are vacuous (an assertion that cannot fail, a fabricated `TOTAL` line) → outside the
+  mechanical gate, which sees that checks ran and how they ended: `verify-requirement` § 8 hunts false-positive
+  tests, and Definition of Done item 5 requires its PASS before `done` (AC-4, inspection).
+- A criterion evidenced by an inspection line → credited only for a `done` requirement whose § Verification
+  strategy justifies the inspection; `verify-requirement` performs it again and judges it (AC-4, inspection).
+- A change to the gate itself (`scripts/verify.sh`, `scripts/verify.d/`, `scripts/evidence.py`, `scripts/tests/run.sh`,
+  `backend/tests/evidence_plugin.py`, the hooks, the CI workflow) → outside the mechanical gate: the diff shows it,
+  and `verify-requirement` and the commit review judge it (AC-4, inspection).
 
 ## Dependencies
 - [AVE-REQ-093 — Adopt and preserve the supplied requirements baseline](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
@@ -51,7 +59,7 @@ Replace bootstrap-only verification with staged real checks and independently ve
 - AC-1 — integration — `scripts/tests/test-verify-tiers.sh`: fast ⊂ media ⊂ release membership, `--tier`/`VERIFY_TIER` selection, usage errors; CI runs the release tier.
 - AC-2 — unit and integration — `scripts/tests/test_evidence.py` (criterion states, manifest ties results to commit, fingerprint, configuration and suite results, stale evidence refused with `--require-fresh`, tooling tags naming no criterion stop `record` and `check-done` with file and line, unknown requirement IDs reported by `show`), `backend/tests/unit/test_evidence_plugin.py` (tags validated against requirement files, per-test report), `scripts/tests/test-stop-hook.sh` (a real run leaves a manifest with the tree fingerprint).
 - AC-3 — integration and inspection — `scripts/tests/test-stop-hook.sh`: the gate runs the fast tier even when the environment asks for release (its fixture registers one marker step per tier; the log holds the fast marker and neither the media nor the release marker), stays bounded without `stop_hook_active`, releases after its attempt limit; hooks were smoke-tested before use (ASM-001, ASM-003).
-- AC-4 — unit and integration — `backend/tests/unit/test_evidence_plugin.py` (`--forbid-skips` fails a session holding one skipped, expected-to-fail or unexpectedly passing test, one module per category, or a module skipped at collection; contract flag recorded), `scripts/tests/test_evidence.py` (contract-only and skipped evidence never satisfy a done requirement; tooling tags count only through suite results of the run: a suite `run.sh` never runs gives no evidence, a failing suite counts against its criteria, a listed suite that exits 0 without a check fails `run.sh` and counts against its criteria, `evidence.py unittest` fails on a skipped, failing, erroring, expected-to-fail or unexpectedly passing test and on a file without tests; a failed run never satisfies `show --require-complete`), `scripts/tests/test-verify-tiers.sh` and `test-stop-hook.sh` (failing steps fail the tier and the gate).
+- AC-4 — unit, integration and inspection — `backend/tests/unit/test_evidence_plugin.py` (`--forbid-skips` fails a session holding one skipped, expected-to-fail or unexpectedly passing test, one module per category, or a module skipped at collection; contract flag recorded), `scripts/tests/test_evidence.py` (contract-only and skipped evidence never satisfy a done requirement; tooling tags count only through suite results of the run: a suite `run.sh` never runs gives no evidence, a failing suite counts against its criteria, a listed suite that exits 0 without a check fails `run.sh` and counts against its criteria, `evidence.py unittest` fails on a skipped, failing, erroring, expected-to-fail or unexpectedly passing test and on a file without tests; a failed run never satisfies `show --require-complete`), `scripts/tests/test-verify-tiers.sh` and `test-stop-hook.sh` (failing steps fail the tier and the gate); inspection for what no gate can read: whether a passing test asserts the criterion (`verify-requirement` § 8, required by Definition of Done item 5) and whether an inspection line is justified.
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
@@ -76,3 +84,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-02 — in-progress — verify-requirement FAIL at `4d9ef9a` (workflow `wf_b0c34bba-a20`); blocking findings and fixes in [the fix brief](../briefs/2026-10-02-m0-process-verification-fixes.md) (lead)
 - 2026-10-03 — in-progress — verify-requirement PASS at `d4d3883` (workflow `wf_ed1f5104-63a`) refuted by its skeptic: a listed shell suite reduced to `exit 0` still credited every tag it carries, because `scripts/tests/run.sh` recorded the exit status only; `run.sh` now records the suite's check count from its `TOTAL: pass=N fail=M` line and fails a suite that ran no check, and `scripts/evidence.py` credits a suite only with exit 0 and at least one check (lead)
 - 2026-10-03 — verification — fix in place with unit and runner cases; independent verification requested again (lead)
+- 2026-10-03 — in-progress — review 2 (workflow `wf_b5fa6671-c21` at `442f68c`) was cut off by a session restart without a verdict; Edge cases now state the limits of the mechanical gate (vacuous tests, inspection lines, the gate's own code) and the inspection that covers them; a six-lens red-team pass ([brief](../briefs/2026-10-03-m0-gates-red-team.md)) precedes the next review (lead)

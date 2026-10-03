@@ -24,9 +24,11 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity):
      Description equals the baseline statement unless the Status log records "Description changed:
      <reason>" (reported likewise); a superseded baseline requirement logs a "superseded" line and
      names a replacement that exists: for version one the replacement is version-one, undeferred,
-     of a priority not below the baseline's, and carries every baseline criterion verbatim unless
-     the old file logs "AC-n changed: <reason>" for the criterion it drops (reported as a
-     supersession);
+     of a priority not below the baseline's; for future scope the replacement is future-scope and
+     deferred (an exclusion never enters version one this way); either way it carries every
+     baseline criterion verbatim unless the old file logs "AC-n changed: <reason>" for the
+     criterion it drops (reported as a supersession); a baseline feature or epic is superseded
+     only when every baseline child under it is superseded;
   d  no deferred requirement is a dependency of a version-one working requirement; requirements
      added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
   e  a summary: requirements by status and by gate, acceptance criteria ticked.
@@ -359,6 +361,20 @@ def lists_child(parent, child) -> bool:
     return f"]({child.path.name})" in parent.text
 
 
+def check_parent_supersession(item, kind: str, child_kind: str, child_ids, files) -> None:
+    """A baseline epic or feature leaves delivery only together with every baseline child."""
+    for child_id in child_ids:
+        found = files.get(child_id, [])
+        status = found[0].get("status") if len(found) == 1 else "missing"
+        if status != "superseded":
+            error(
+                item.path,
+                f"a baseline {kind} is superseded only when every baseline {child_kind} under it"
+                f" is superseded ({child_id} is '{status}')",
+            )
+            return
+
+
 def check_epics_features(base, files) -> None:
     epic_files = {}
     for epic in base["epics"]:
@@ -369,6 +385,8 @@ def check_epics_features(base, files) -> None:
         future = all(r["scope"] == "future" for f in epic["features"] for r in f["reqs"])
         if future != (item.get("status") == "deferred"):
             error(item.path, "status must be deferred exactly when every child is future scope")
+        if item.get("status") == "superseded":
+            check_parent_supersession(item, "epic", "feature", [f["id"] for f in epic["features"]], files)
     for feature in base["features"]:
         item = single_file(files, feature["id"], feature["title"])
         if item is None:
@@ -377,6 +395,10 @@ def check_epics_features(base, files) -> None:
         future = all(r["scope"] == "future" for r in feature["reqs"])
         if future != (item.get("status") == "deferred"):
             error(item.path, "status must be deferred exactly when every child is future scope")
+        if item.get("status") == "superseded":
+            check_parent_supersession(
+                item, "feature", "requirement", [r["id"] for r in feature["reqs"]], files
+            )
         parent = epic_files.get(feature["epic"])
         if parent is not None and not lists_child(parent, item):
             error(parent.path, f"§ Features must link {item.path.name}")
@@ -481,6 +503,15 @@ def check_supersession(item, req, files) -> None:
     else:
         error(item.path, f"superseded_by chain {' → '.join(seen) or '(empty)'} names no replacement")
         return
+    if req["scope"] == "future" and (
+        successor.get("scope") != "future" or successor.get("status") != "deferred"
+    ):
+        error(
+            item.path,
+            f"a future-scope requirement cannot be superseded by {successor.id} (scope"
+            f" '{successor.get('scope')}', status '{successor.get('status')}'): entering version"
+            " one is a product change the human makes with a new baseline",
+        )
     if req["scope"] == "v1":
         if successor.get("scope") != "v1" or successor.get("status") == "deferred":
             error(

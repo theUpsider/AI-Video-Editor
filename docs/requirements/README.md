@@ -344,6 +344,10 @@ means status `ready` or later, and `deferred`. For an approved requirement:
    the human as in rule 2.
 4. Changing a `done` requirement reopens it (`in-progress`).
 5. Discovered work becomes a new `proposed` requirement. Never expand the current one silently.
+6. A criterion binds as written. Text in another section (Intent, Edge cases, Verification
+   strategy, evidence) never narrows, qualifies or waives it; narrowing a criterion is a change of
+   that criterion under rule 1. `verify-requirement` judges against the criteria exactly as
+   written and reports such text as a finding.
 
 ### Superseding
 
@@ -354,7 +358,10 @@ means status `ready` or later, and `deferred`. For an approved requirement:
    any `superseded_by` chain) exists, keeps scope `v1` and is not `deferred`, has a priority not
    below the baseline's, and carries every baseline criterion verbatim (any AC number); a
    criterion the replacement drops needs `AC-n changed: <reason>` in the old file's Status log.
-   Supersession never demotes an explicit user requirement
+   A future-scope baseline requirement is superseded only by a future-scope, `deferred`
+   requirement: an exclusion enters version one only through a new baseline from the human. A
+   baseline EPIC or FEAT is `superseded` only when every baseline child under it is superseded.
+   Supersession never demotes an explicit user requirement and never lifts an exclusion
    ([AVE-REQ-093](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) AC-3).
 3. Update the parent's list, the TRACEABILITY.md row status, ROADMAP.md references, ADR
    `## Related requirements`, and tests tagged with the old ID (retag or delete them).
