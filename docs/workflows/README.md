@@ -9,7 +9,10 @@ script is copied here, and its row links both; `wf_5493b930-f7c`, `wf_1a23bf0d-2
 predate that rule.
 [WORKFLOW_LOG.md](../WORKFLOW_LOG.md) records measured process changes. The scripts reference the session
 scratchpad and absolute paths of the cloud container that ran them; the copies here are the record of those
-inputs.
+inputs. Prompts recorded before `a55605b` name the heavy-media lock at `/tmp/ave-heavy-media.lock`, a path
+private to each container; since that commit `scripts/dev-container.sh` exports
+`AVE_HEAVY_LOCK=/state/ave-heavy-media.lock`, the shared path later prompts use through the form in
+`docs/ARCHITECTURE.md` § Testing strategy item 6.
 
 | Run | Date (UTC) | Script | Inputs | Agents | Outcome |
 |---|---|---|---|---|---|
