@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-03 — M0: AVE-REQ-096/098 reviewed PASS; AVE-REQ-094 repaired and under challenge; AVE-REQ-093/097 under a red-team pass before their next reviews._
+_Last updated: 2026-10-03 — M0 open; work paused at the session's usage limit; § In progress names every re-run command._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -30,10 +30,7 @@ from the drafts.
   (`wf_4514929c-244` in [docs/workflows/](workflows/README.md)) with `{commit: '35f99c5'}`. Then one review each with a skeptic.
 - AVE-REQ-094 `in-progress`: the repair run `wf_d57d9cab-829` ([brief](briefs/2026-10-03-ave-req-094-probe-evidence.md))
   finished research, tests (`49ecb21`) and implementation (`fcd97f0`, branch `ave-req-094-probe-evidence`,
-  unmerged and pushed); its review PASSED at `fcd97f0`; the skeptic was cut off by a session restart and
-  resumed: launched 2026-10-03; verdict not recorded; on resume without a recorded verdict, run
-  `verify-requirement AVE-REQ-094` with a skeptic on that branch. On an upheld PASS: merge `--no-commit`,
-  release tier, `done`.
+  unmerged and pushed); review PASS at `fcd97f0`; its skeptic refuted the PASS (findings in [handback part 4](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-4.md)); repair on the branch, then review again.
 - AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenges upheld;
   `done` follows AVE-REQ-093 and AVE-REQ-094.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
