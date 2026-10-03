@@ -160,7 +160,9 @@ baseline (origins, scenarios, dependencies, criteria). `milestone-review` audits
 4. The orphan-tag loop reports nothing.
 5. The ADRs column matches each ADR's § Related requirements.
 6. Every acceptance scenario `AT-NN` named by a `done` requirement has a tagged test whose latest
-   run passed on real rendered output.
+   run passed on real rendered output, or is a whole-product scenario that the requirement's
+   § Verification strategy schedules for the final review (AT-29 to AT-31 run in M7,
+   [ROADMAP.md](ROADMAP.md)); the final review runs those and audits them under this rule.
 
 ## Scale
 
