@@ -24,20 +24,20 @@ from the drafts.
 ## In progress
 
 - AVE-REQ-093 `verification`: review 2 at `d4d3883` FAILED (hashes verified only by a package file; fixed in
-  `0e4f8d9`); review 3 at `97a8d20` (`wf_e3b34e48-f7e`) PASSED and was refuted by its skeptic (notes inside
-  § Acceptance criteria escaped both checkers; fixed in `a681e4d`, 86 suite cases); review 4 at `08237ac`
-  (`wf_eabbb2f5-6a0`): launched 2026-10-03; verdict not recorded; on resume without a recorded verdict, re-run
-  the script in [docs/workflows/](workflows/README.md) with `{commit: '08237ac'}`.
+  `0e4f8d9`); reviews 3 (`97a8d20`) and 4 (`08237ac`) PASSED and were refuted by their skeptics (notes inside
+  § Acceptance criteria, fixed in `a681e4d`; supersession by a weaker requirement, fixed in `442f68c`, 96 suite
+  cases); review 5 at `442f68c` (`wf_b5fa6671-c21`): launched 2026-10-03; verdict not recorded; on resume
+  without a recorded verdict, re-run the script in [docs/workflows/](workflows/README.md) with `{commit: '442f68c'}`.
+- AVE-REQ-097 `verification`: review PASS at `d4d3883` refuted by its skeptic (a tagged `exit 0` suite credited
+  every tag; fixed in `a10e2df`); review 2 runs in the same `wf_b5fa6671-c21` (re-run command above).
 - AVE-REQ-094 `in-progress`: its re-review PASS at `d4d3883` was refuted by the skeptic (probe suite checks
   headings and formats, bandwidth-dependent network probe, browser tools unrecorded, no run with investigation
   and testing stages). Repair from [the probe-evidence brief](briefs/2026-10-03-ave-req-094-probe-evidence.md)
   in worktree `ave-req-094-probe-evidence`: researcher ‖ tester → implementer → review with a skeptic; the
   persisted script in [docs/workflows/](workflows/README.md) names the re-run command.
-- AVE-REQ-096 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenge upheld; `done` follows
-  AVE-REQ-094. AVE-REQ-097/098 `in-progress`: their reviews in the same run: launched 2026-10-03; verdict not
-  recorded; on resume without a recorded verdict, re-run the script in [docs/workflows/](workflows/README.md)
-  with `{commit: 'd4d3883'}`. The same run reviewed WORKFLOW_LOG.md: WF-004 and WF-005 supported; WF-001 to
-  WF-003 corrected from its findings.
+- AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenges upheld;
+  `done` follows AVE-REQ-093 and AVE-REQ-094. The same run reviewed WORKFLOW_LOG.md: WF-004 and WF-005
+  supported; WF-001 to WF-003 corrected from its findings.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Next delegated tasks, drafts persisted: [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
   [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md); each becomes a brief with the closing M0
