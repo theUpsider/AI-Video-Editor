@@ -1,7 +1,9 @@
-// Record of workflow run wf_164de68e-23b (2026-10-02), launched with args {base: '6736401'}.
-// Relaunched once after 13 minutes with explicit model and effort settings; the first agents of
-// both tracks continued from the interrupted agents' uncommitted edits. The session trailer lines
-// and the tier aliases are redacted: repository files carry no model identifier.
+// Record of workflow run wf_164de68e-23b (2026-10-02/03), launched with args {base: '6736401'}.
+// Relaunched twice: once after 13 minutes with explicit model and effort settings, once after the
+// session restarted (parts 1-3, the media implementer and review round 1 returned from the cache;
+// part 4 and the first media fix round restarted from the interrupted agents' uncommitted edits with
+// the lead's decisions on part 3's open questions). The session trailer lines and the tier aliases
+// are redacted: repository files carry no model identifier.
 export const meta = {
   name: 'm0-fix-tracks',
   description: 'M0 process fixes (4 sequential parts) in one worktree, media-core follow-ups with independent review in another',
@@ -17,6 +19,7 @@ const ROOT = 'C:/dev/AI-Video-Editor'
 // Writing agents and reviewing agents run on the models and efforts the human chose (2026-10-02).
 const IMPL = { model: '<tier alias>', effort: 'xhigh' }
 const VERIFY = { model: '<tier alias>', effort: 'high' }
+const PART4_DECISIONS = `Lead decisions for this part (2026-10-03), after part 3's handback: (a) item 15's commit rule: under "## Input revision" check 11 requires either a delimited 7-to-40-hex token (no letter, digit, underscore or hyphen on either side, so a branch name such as ccr-af7078da-q8r8mf fails) or the self-reference form \`git log -1 --format=%h -- docs/briefs/<this file's own name>\`; checker cases: no commit, branch name only, abbreviated hash accepted, self-reference accepted. (b) The two unlaunched briefs docs/briefs/2026-10-02-m1-backend-core.md and docs/briefs/2026-10-02-m2-synchronization.md name no commit yet: \`git mv\` them into docs/briefs/drafts/ (outside check 11), document in docs/briefs/README.md that a draft has no input revision yet and moves to docs/briefs/ with its commit hash when it is launched, and update the two links in docs/PROGRESS.md § In progress that point at them (the only PROGRESS.md edit you make). (c) Item 23 also rejects a hook entry with \`"async": true\` (such hooks escape their timeout), with a checker case. (d) Part 3's other open questions need no change: record them in your handback as answered.`
 const RESUME_NOTE = `An earlier agent on this task was interrupted before committing. The worktree holds its uncommitted edits: start with \`git status --short\` and \`git diff\`, judge every hunk against the briefs (one hunk can be a temporary mutation that the interrupted agent had yet to revert: a deliberately broken behavior or assertion), keep what is right, repair what is wrong, and complete the rest. Rerun every mutation check yourself; treat nothing as verified.`
 const BASE = args.base
 const TRAILERS = '<the session's Co-Authored-By and Claude-Session trailer lines>'
@@ -85,7 +88,8 @@ const PARTS = [
 
 const partPrompt = (part, modelProbe) => `Implement part ${part.n} ("${part.title}") of the M0 process fix work for AVE-REQ-093, AVE-REQ-094, AVE-REQ-096, AVE-REQ-097 and AVE-REQ-098 (all in-progress).
 Contract: docs/briefs/2026-10-02-m0-process-fixes-execution.md (execution plan, decisions, constraints) together with docs/briefs/2026-10-02-m0-process-verification-fixes.md (the findings with evidence and required fixes). Read both first. Do items ${part.items} only; every other item belongs to another part.
-${part.n === 1 ? RESUME_NOTE : ''}
+${part.n === 1 || part.n === 4 ? RESUME_NOTE : ''}
+${part.n === 4 ? PART4_DECISIONS : ''}
 ${part.n > 1 ? `Earlier parts are committed on this branch: read their handbacks under docs/briefs/handbacks/ and \`git log ${BASE}..HEAD --stat\` before you start, and build on their changes.` : ''}
 ${worktreeRules('m0-process-fixes', 'm0-process-fixes')}
 Scope: the brief's Allowed paths override your default document boundary for this task (CLAUDE.md, .claude/**, the named docs and the named sections of the five requirement files are in scope where an item requires them). Requirement statements, acceptance criteria, statuses, Status logs, PROGRESS.md, TRACEABILITY.md, ROADMAP.md and ASSUMPTIONS.md stay the lead's: report proposed updates.
@@ -156,6 +160,7 @@ const fixPromptB = (round, findings) => `Fix the blocking review findings (round
 Contract: docs/briefs/2026-10-02-m0-media-core-follow-ups-execution.md and docs/briefs/2026-10-02-m0-media-core-round-3-follow-ups.md; the same allowed and forbidden paths apply.
 ${worktreeRules('m0-media-follow-ups', 'm0-media-follow-ups')}
 Every heavy media command holds the shared lock: \`./scripts/dev-container.sh flock /tmp/ave-heavy-media.lock <command>\`.
+${RESUME_NOTE}
 Blocking findings to fix, each with a test that fails without the fix (mutation-checked):
 ${JSON.stringify(findings, null, 2)}
 When a finding is wrong, say so with measured evidence and leave the code unchanged for it. Run the media tier under the lock until it passes, append a "Review round ${round}" section to docs/briefs/handbacks/2026-10-02-m0-media-core-follow-ups-execution.md, and commit as "AVE-REQ-012, AVE-REQ-024: fix review findings of the follow-ups (round ${round})" plus the trailers (name AVE-REQ-019, AVE-REQ-020 as well when item 13 changed).
