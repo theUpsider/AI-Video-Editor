@@ -89,6 +89,15 @@ run_case() {
 
 R001="$R/AVE-REQ-001-*.md"
 R067="$R/AVE-REQ-067-*.md"
+# successor <priority> <all|three> — writes AVE-REQ-102 as the replacement of AVE-REQ-001 with the
+# given priority and the baseline's criteria (all four, or three without AC-4).
+successor() {
+  local crit
+  crit="$(grep -h '^- \[ \] AC-' $R001)"
+  [ "$2" = three ] && crit="$(printf '%s\n' "$crit" | grep -v '^- \[ \] AC-4 ')"
+  printf '%s\n' "$DERIVED" | sed "s/^priority: should\$/priority: $1/" |
+    awk -v crit="$crit" '/^- \[ \] AC-1 Something$/ { print crit; next } { print }' > "$R"/AVE-REQ-102-derived-stub.md
+}
 STATEMENT="The application shall create, name, reopen, duplicate, and persist editing projects, including their media references, timeline, output settings, and revisions."
 AC2="- [ ] AC-2 After saving and restarting the application, timeline content, output settings, selected profiles, and project metadata are unchanged."
 AC4="- [ ] AC-4 Project deletion clearly distinguishes deleting editing data from deleting original media; originals are not deleted by default."
@@ -176,7 +185,10 @@ expect "FUTURE gate on a v1 requirement"             1 "primary_gate FUTURE belo
 expect "invalid gate"                                1 "frontmatter primary_gate 'M1.5' must be M<n> or FUTURE" "sub '$R001' 'primary_gate: M1' 'primary_gate: M1.5'"
 # (c) acceptance criteria
 # AVE-REQ-093 AC-3: criteria stay verbatim unless a reasoned change is logged.
-expect "ticked criterion stays verbatim"             0 "Acceptance criteria ticked: 1 of 404" "sub '$R001' '- [ ] AC-1 A new project' '- [x] AC-1 A new project'"
+# AVE-REQ-093 AC-4: a criterion is ticked only once the requirement reached done.
+expect "ticked criterion on a ready requirement fails" 1 "AC-1 is ticked while status is 'ready'" "sub '$R001' '- [ ] AC-1 A new project' '- [x] AC-1 A new project'"
+expect "ticked criterion with status done passes"    0 "Acceptance criteria ticked: 1 of 404" "sub '$R001' '- [ ] AC-1 A new project' '- [x] AC-1 A new project' && sub '$R001' 'status: ready' 'status: done' && printf -- '- 2026-10-03 — done — verify-requirement PASS (lead)\n' >> $R001"
+expect "ticked criterion after reopening passes"     0 "Acceptance criteria ticked: 1 of 404" "sub '$R001' '- [ ] AC-1 A new project' '- [x] AC-1 A new project' && sub '$R001' 'status: ready' 'status: in-progress' && printf -- '- 2026-10-03 — done — verify-requirement PASS (lead)\n- 2026-10-04 — in-progress — reopened by the milestone review (lead)\n' >> $R001"
 expect "altered criterion without log line"          1 "AC-2 differs from the baseline text and the Status log has no 'AC-2 changed: <reason>' line" "sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.'"
 expect "removed criterion without log line"          1 "AC-4 is missing and the Status log has no 'AC-4 changed: <reason>' line" "sub '$R001' '$AC4' ''"
 expect "renumbered criterion fails"                  1 "AC-2 is missing" "sub '$R001' '- [ ] AC-2 After saving' '- [ ] AC-5 After saving'"
@@ -187,8 +199,22 @@ expect "recorded change needs a reason"              1 "AC-2 differs from the ba
 expect "AC-12 log line does not cover AC-2"          1 "AC-2 differs from the baseline text" "sub '$R001' 'project metadata are unchanged.' 'x.' && printf -- '- 2026-10-02 — ready — AC-12 changed: other (lead)\n' >> $R001"
 expect "log line outside ## Status does not count"   1 "AC-2 differs from the baseline text" "sub '$R001' 'project metadata are unchanged.' 'x.' && sub '$R001' '## Edge cases' '## Edge cases
 - 2026-10-02 — ready — AC-2 changed: misplaced (lead)'"
-expect "additional criterion is reported"            0 "Additional criterion: AVE-REQ-001 AC-5" "sub '$R001' '$AC4' '$AC4
+# AVE-REQ-093 AC-3: an added criterion needs a logged reason, so no criterion line can qualify another unlogged.
+expect "additional criterion without log line fails" 1 "AC-5 is not a baseline criterion and the Status log has no 'AC-5 added: <reason>' line" "sub '$R001' '$AC4' '$AC4
 - [ ] AC-5 Added behavior.'"
+expect "additional criterion with recorded addition" 0 "Recorded addition: AVE-REQ-001 AC-5 — split from AC-4" "sub '$R001' '$AC4' '$AC4
+- [ ] AC-5 Added behavior.' && printf -- '- 2026-10-02 — ready — AC-5 added: split from AC-4 (lead)\n' >> $R001"
+# AVE-REQ-093 AC-3: superseding a version-one requirement cannot demote it or drop its criteria unlogged.
+SUPERSEDE="sub '$R001' 'status: ready' 'status: superseded' && sub '$R001' 'spec/requirements/AVE-REQ-001.md' 'spec/requirements/AVE-REQ-001.md
+superseded_by: AVE-REQ-102' && printf -- '- 2026-10-03 — superseded — replaced by AVE-REQ-102 (lead)\n' >> $R001"
+expect "superseded by a missing requirement fails"   1 "superseded_by AVE-REQ-404 has no working requirement file" "$SUPERSEDE && sub '$R001' 'superseded_by: AVE-REQ-102' 'superseded_by: AVE-REQ-404'"
+expect "superseded by a weaker requirement fails"    1 "a baseline must requirement cannot be superseded by a 'should' requirement (AVE-REQ-102)" "$SUPERSEDE && successor should all"
+expect "superseded by a future-scope requirement fails" 1 "a version-one requirement cannot be superseded by AVE-REQ-102 (scope 'future'" "$SUPERSEDE && successor must all && sub $R/AVE-REQ-102-derived-stub.md 'scope: v1' 'scope: future' && sub $R/AVE-REQ-102-derived-stub.md 'primary_gate: M1' 'primary_gate: FUTURE' && sub $R/AVE-REQ-102-derived-stub.md 'status: proposed' 'status: deferred'"
+expect "successor dropping a criterion unlogged fails" 1 "AC-4 of the baseline is absent from the successor AVE-REQ-102 and the Status log has no 'AC-4 changed: <reason>' line" "$SUPERSEDE && successor must three"
+expect "successor carrying every criterion is reported" 0 "Supersession: AVE-REQ-001 → AVE-REQ-102 carries every baseline criterion" "$SUPERSEDE && successor must all"
+expect "successor dropping a criterion with a logged change" 0 "Recorded change: AVE-REQ-001 AC-4 is absent from the successor AVE-REQ-102 — deletion moves to AVE-REQ-103" "$SUPERSEDE && successor must three && printf -- '- 2026-10-03 — superseded — AC-4 changed: deletion moves to AVE-REQ-103 (lead)\n' >> $R001"
+expect "superseded without a superseded log line fails" 1 "Status log has no 'superseded' line" "sub '$R001' 'status: ready' 'status: superseded' && sub '$R001' 'spec/requirements/AVE-REQ-001.md' 'spec/requirements/AVE-REQ-001.md
+superseded_by: AVE-REQ-102' && successor must all"
 expect "duplicate criterion ID"                      1 "duplicate acceptance criterion AC-2" "sub '$R001' '$AC2' '$AC2
 $AC2'"
 # AVE-REQ-093 AC-3: the criteria section holds criterion lines only, so no note can qualify or waive one.
@@ -236,8 +262,8 @@ expect_import "lifecycle edits are kept"             0 "kept: docs/requirements/
 - 2026-10-02 — in-progress — work starts (lead)' && sub '$R001' 'status: ready' 'status: in-progress'"
 expect_import "stale mapping: --check reports it"    1 "would regenerate: docs/requirements/IMPORT_MAPPING.md" "printf 'edit\n' >> $R/IMPORT_MAPPING.md"
 expect "import restores a deleted file"              0 "OK: baseline intact" "rm $R/AVE-REQ-050-*.md && python3 scripts/requirements/import_baseline.py >/dev/null"
-expect "import never overwrites a working file"      0 "Additional criterion: AVE-REQ-001 AC-5" "sub '$R001' '$AC4' '$AC4
-- [ ] AC-5 Added behavior.' && python3 scripts/requirements/import_baseline.py >/dev/null"
+expect "import never overwrites a working file"      0 "Recorded addition: AVE-REQ-001 AC-5 — kept" "sub '$R001' '$AC4' '$AC4
+- [ ] AC-5 Added behavior.' && printf -- '- 2026-10-02 — ready — AC-5 added: kept (lead)\n' >> $R001 && python3 scripts/requirements/import_baseline.py >/dev/null"
 expect "import leaves the baseline untouched"        0 "Baseline package: PASS" "python3 scripts/requirements/import_baseline.py >/dev/null && python3 scripts/requirements/import_baseline.py >/dev/null"
 echo "BASELINE TOTAL: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

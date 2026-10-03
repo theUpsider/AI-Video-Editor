@@ -17,10 +17,16 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity):
      current;
   c  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
      unless the file's Status log records "AC-n changed: <reason>" (reported as a recorded change);
-     additional working criteria are allowed and reported; the Acceptance criteria section of every
-     working requirement holds criterion lines only (a continuation line, a fenced block or a
-     sub-heading there fails); the Description equals the baseline statement unless the Status log
-     records "Description changed: <reason>" (reported likewise);
+     an added working criterion needs "AC-n added: <reason>" (reported as a recorded addition); the
+     Acceptance criteria section of every working requirement holds criterion lines only (a
+     continuation line, a fenced block or a sub-heading there fails); a criterion is ticked only
+     once the file reached done (status done or superseded, or a done line in its Status log); the
+     Description equals the baseline statement unless the Status log records "Description changed:
+     <reason>" (reported likewise); a superseded baseline requirement logs a "superseded" line and
+     names a replacement that exists: for version one the replacement is version-one, undeferred,
+     of a priority not below the baseline's, and carries every baseline criterion verbatim unless
+     the old file logs "AC-n changed: <reason>" for the criterion it drops (reported as a
+     supersession);
   d  no deferred requirement is a dependency of a version-one working requirement; requirements
      added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
   e  a summary: requirements by status and by gate, acceptance criteria ticked.
@@ -58,6 +64,8 @@ STATUSES = (
 ID_PATTERN = re.compile(r"^(AVE-EPIC-\d{2,}|AVE-FEAT-\d{3,}|AVE-REQ-\d{3,})-[a-z0-9-]+\.md$")
 AC_LINE = re.compile(r"^- \[([ xX])\] (AC-\d+) (.*)$")
 LOG_LINE = re.compile(r"^- \d{4}-\d{2}-\d{2} — ")
+STATUS_LINE = re.compile(r"^- \d{4}-\d{2}-\d{2} — ([a-z-]+) — ")
+PRIORITY_RANK = {"must": 3, "should": 2, "could": 1}
 GATE = re.compile(r"^(M\d+|FUTURE)$")
 # Highest baseline number per kind; later IDs are derived work.
 BASELINE_MAX = {"EPIC": 10, "FEAT": 20, "REQ": 101}
@@ -139,6 +147,7 @@ class Working:
                 self.sections[current].append(line.rstrip())
                 self.raw_sections[current].append(line.rstrip())
         self.text = text
+        self._criteria = None
 
     def get(self, key: str) -> str:
         return self.fm.get(key, "")
@@ -151,7 +160,9 @@ class Working:
         return [item.strip() for item in inner.split(",")] if inner else []
 
     def criteria(self):
-        """AC ID -> (ticked, text) in file order; duplicate IDs are reported."""
+        """AC ID -> (ticked, text) in file order; duplicate IDs are reported once."""
+        if self._criteria is not None:
+            return self._criteria
         found = OrderedDict()
         for line in self.sections.get("Acceptance criteria", []):
             match = AC_LINE.match(line)
@@ -162,6 +173,7 @@ class Working:
                 error(self.path, f"duplicate acceptance criterion {ac_id}")
                 continue
             found[ac_id] = (match.group(1) in "xX", match.group(3))
+        self._criteria = found
         return found
 
     def criteria_extras(self):
@@ -175,13 +187,20 @@ class Working:
     def log(self):
         return [line for line in self.sections.get("Status", []) if LOG_LINE.match(line)]
 
+    def log_statuses(self):
+        """The status word of every Status-log line, in file order."""
+        return [m.group(1) for m in (STATUS_LINE.match(line) for line in self.log()) if m]
+
     def description(self) -> str:
         """The whole ## Description section, fenced blocks included."""
         return "\n".join(self.raw_sections.get("Description", [])).strip()
 
-    def recorded_change(self, subject: str) -> str:
-        """The reason of the Status-log line '<subject> changed: <reason>' (AC-n or Description)."""
-        pattern = re.compile(r"(?<![A-Za-z0-9-])" + re.escape(subject) + r" changed:\s*(\S.*)$")
+    def recorded_change(self, subject: str, verb: str = "changed") -> str:
+        """The reason of the Status-log line '<subject> <verb>: <reason>' (AC-n changed, AC-n added
+        or Description changed)."""
+        pattern = re.compile(
+            r"(?<![A-Za-z0-9-])" + re.escape(subject) + " " + verb + r":\s*(\S.*)$"
+        )
         for line in self.log():
             match = pattern.search(line)
             if match:
@@ -421,8 +440,19 @@ def check_requirements(importer, base, files):
                 )
         baseline_ids = {ac_id for ac_id, _ in req["criteria"]}
         for ac_id in criteria:
-            if ac_id not in baseline_ids:
-                notes.append(f"Additional criterion: {req['id']} {ac_id}")
+            if ac_id in baseline_ids:
+                continue
+            reason = item.recorded_change(ac_id, "added")
+            if reason:
+                notes.append(f"Recorded addition: {req['id']} {ac_id} — {reason}")
+            else:
+                error(
+                    item.path,
+                    f"{ac_id} is not a baseline criterion and the Status log has no"
+                    f" '{ac_id} added: <reason>' line",
+                )
+        if status == "superseded":
+            check_supersession(item, req, files)
         scope = item.get("scope")
         for ticked, _text in criteria.values():
             totals["all"] += 1
@@ -431,6 +461,63 @@ def check_requirements(importer, base, files):
                 totals["v1"] += 1
                 totals["v1_ticked"] += ticked
     return totals
+
+
+def check_supersession(item, req, files) -> None:
+    """A superseded baseline requirement names a replacement that keeps its rank and criteria."""
+    if "superseded" not in item.log_statuses():
+        error(item.path, "Status log has no 'superseded' line with the reason")
+    seen, current, successor = [], item.get("superseded_by"), None
+    while current and current not in seen:
+        seen.append(current)
+        found = files.get(current, [])
+        if len(found) != 1 or found[0].kind != "REQ":
+            error(item.path, f"superseded_by {current} has no working requirement file")
+            return
+        successor = found[0]
+        if successor.get("status") != "superseded":
+            break
+        current = successor.get("superseded_by")
+    else:
+        error(item.path, f"superseded_by chain {' → '.join(seen) or '(empty)'} names no replacement")
+        return
+    if req["scope"] == "v1":
+        if successor.get("scope") != "v1" or successor.get("status") == "deferred":
+            error(
+                item.path,
+                f"a version-one requirement cannot be superseded by {successor.id} (scope"
+                f" '{successor.get('scope')}', status '{successor.get('status')}'): leaving version"
+                " one is a product change",
+            )
+        if PRIORITY_RANK.get(successor.get("priority"), 0) < PRIORITY_RANK.get(req["priority"], 0):
+            error(
+                item.path,
+                f"a baseline {req['priority']} requirement cannot be superseded by a"
+                f" '{successor.get('priority')}' requirement ({successor.id})",
+            )
+    carried = {text for _ticked, text in successor.criteria().values()}
+    dropped = 0
+    for ac_id, text in req["criteria"]:
+        if text in carried:
+            continue
+        reason = item.recorded_change(ac_id)
+        if reason:
+            notes.append(
+                f"Recorded change: {req['id']} {ac_id} is absent from the successor"
+                f" {successor.id} — {reason}"
+            )
+        else:
+            dropped += 1
+            error(
+                item.path,
+                f"{ac_id} of the baseline is absent from the successor {successor.id} and the"
+                f" Status log has no '{ac_id} changed: <reason>' line",
+            )
+    if not dropped:
+        notes.append(
+            f"Supersession: {req['id']} → {successor.id} carries every baseline criterion or logs"
+            " each change"
+        )
 
 
 def check_derived(base, files) -> None:
@@ -475,6 +562,13 @@ def check_all_requirements(base, files):
                 " a note belongs in Edge cases or the Description with a logged reason",
             )
         scope, gate, status = item.get("scope"), item.get("primary_gate"), item.get("status")
+        ticked = [ac_id for ac_id, (is_ticked, _text) in item.criteria().items() if is_ticked]
+        if ticked and status not in ("done", "superseded") and "done" not in item.log_statuses():
+            error(
+                item.path,
+                f"{ticked[0]} is ticked while status is '{status}' and the Status log has no done"
+                " line; criteria are ticked only after a verify-requirement PASS, with status done",
+            )
         if scope not in ("v1", "future"):
             error(item.path, f"frontmatter scope '{scope}' must be v1 or future")
         if not GATE.match(gate):

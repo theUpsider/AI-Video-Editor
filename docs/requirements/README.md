@@ -349,7 +349,13 @@ means status `ready` or later, and `deferred`. For an approved requirement:
 
 1. Create the replacement with the next free ID; its Intent names the requirement it replaces.
 2. In the old file set `status: superseded`, add `superseded_by: <new ID>` as the last
-   frontmatter key, and log the reason.
+   frontmatter key, and log the reason in a `superseded` Status-log line. For a baseline
+   requirement of version one, check_baseline.py also requires that the replacement (the end of
+   any `superseded_by` chain) exists, keeps scope `v1` and is not `deferred`, has a priority not
+   below the baseline's, and carries every baseline criterion verbatim (any AC number); a
+   criterion the replacement drops needs `AC-n changed: <reason>` in the old file's Status log.
+   Supersession never demotes an explicit user requirement
+   ([AVE-REQ-093](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) AC-3).
 3. Update the parent's list, the TRACEABILITY.md row status, ROADMAP.md references, ADR
    `## Related requirements`, and tests tagged with the old ID (retag or delete them).
 4. Keep the old file.
@@ -410,10 +416,14 @@ is edited. The working files in this directory carry the lifecycle.
 4. **Changing an imported requirement.** Log every change in `## Status` (see
    [Changing requirements](#changing-requirements)). A baseline AC whose text changes, or which
    is removed, needs a Status-log line containing `AC-n changed: <reason>`; check_baseline.py
-   reports it as a recorded change. Added ACs take the next unused AC number and are reported.
-   `## Acceptance criteria` holds criterion lines only: a continuation line under a criterion, a
-   fenced block or a sub-heading there fails the check, so no note can qualify or waive a criterion
-   in place; a note belongs in Edge cases or the Description with a logged reason.
+   reports it as a recorded change. An added AC takes the next unused AC number and needs a
+   Status-log line containing `AC-n added: <reason>`; check_baseline.py reports it as a recorded
+   addition. `## Acceptance criteria` holds criterion lines only: a continuation line under a
+   criterion, a fenced block or a sub-heading there fails the check, so no note can qualify or
+   waive a criterion in place; a note belongs in Edge cases or the Description with a logged
+   reason (check_baseline.py owns these rules; check 8 of `scripts/check-project-control.sh`
+   covers the list-item form). A criterion is ticked only once the requirement reached `done`
+   (status `done` or `superseded`, or a `done` line in its Status log for a reopened one).
    The Description (the baseline statement verbatim), `scope`, `parent`, `dependencies`,
    `origins`, `scenarios`, `baseline`, the title, the type, the priority and the source stay
    equal to the baseline (mapped); a different value fails the check. Of these, only the
