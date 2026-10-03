@@ -7,14 +7,19 @@ files that never contain file paths):
    at or before its seek point (``-noaccurate_seek``, so no frame the frame rule may need is
    discarded), mapped onto the output frame grid with exact integer timestamp arithmetic (see
    :mod:`ave.render.compiler`), scaled/cropped per the layout geometry and overlaid in z-order on
-   the background canvas. Still images probed through the image2 demuxer are opened with
-   ``-f image2 -pattern_type none``, so a ``%`` in a file name never selects another file. Every
-   segment is encoded with identical libx264 settings into an MP4 whose video time scale
-   represents the frame rate exactly; the first frame is an IDR frame and GOPs are closed.
+   the background canvas. The background color enters the graph as its Y'CbCr values in the
+   BT.709 limited-range matrix the output is tagged with (:func:`background_ycbcr`), so gaps and
+   contain bars decode to the configured color. Still images probed through the image2 demuxer
+   are opened with ``-f image2 -pattern_type none``, so a ``%`` in a file name never selects
+   another file. Every segment is encoded with identical libx264 settings into an MP4 whose video
+   time scale represents the frame rate exactly; the first frame is an IDR frame and GOPs are
+   closed.
 2. **Audio** - one run renders the range's audio: inputs read with ``-copyts`` and samples placed
    by their presentation timestamps relative to the exact container start plus the seek point
    (:func:`ave.media.audio_timing.audio_placement_filter`: silence before a late stream start and
-   in timestamp gaps), sample-accurate trims, resampling to 48 kHz with SoX,
+   in timestamp gaps of 10 ms or more; smaller deviations, measured from the first decoded
+   packet, are jitter and leave the samples contiguous), sample-accurate trims, resampling to
+   48 kHz with SoX,
    pitch-preserving time scaling (Rubber Band) when the clip speed is not 1, gain, exact sample
    delay and an un-normalized mix, written as 32-bit float PCM.
 3. **Assembly** - the segments are concatenated by stream copy (concat demuxer) and muxed with the
@@ -42,11 +47,13 @@ from ave.paths import render_work_root
 from ave.proc import ffmpeg_version, media_url, run_tool
 from ave.render.compiler import AudioClipPlan, RenderPlan, SegmentPlan, VideoLayerPlan
 from ave.render.validate import ExpectedOutput, ValidationResult, validate_output
+from ave.timebase import round_half_up
 
 __all__ = [
     "OUTPUT_PATH_CONFLICT",
     "CommandRecord",
     "RenderReport",
+    "background_ycbcr",
     "build_audio_command",
     "build_mux_command",
     "build_segment_command",
@@ -114,6 +121,30 @@ def video_timescale(fps: Fraction) -> int:
     return scale
 
 
+_BT709_KR = Fraction(2126, 10000)
+_BT709_KB = Fraction(722, 10000)
+
+
+def background_ycbcr(color: str) -> tuple[int, int, int]:
+    """8-bit Y', Cb, Cr of a ``#RRGGBB`` color in BT.709 limited range (ITU-R BT.709-6, Part 1,
+    section 3: Y' = 16 + 219 E'Y, Cb and Cr = 128 + 224 E'Cb and E'Cr, rounded to nearest).
+
+    The segments are tagged BT.709 limited range. FFmpeg's ``color`` source converts its RGB
+    color with the BT.601 matrix (FFmpeg 6.1 stores ``#204060`` as 66/147/112), which decodes
+    up to several levels off under that tag; the renderer therefore fills the background with
+    these values directly.
+    """
+    red, green, blue = (Fraction(int(color.lstrip("#")[i : i + 2], 16), 255) for i in (0, 2, 4))
+    luma = _BT709_KR * red + (1 - _BT709_KR - _BT709_KB) * green + _BT709_KB * blue
+    blue_difference = (blue - luma) / (2 * (1 - _BT709_KB))
+    red_difference = (red - luma) / (2 * (1 - _BT709_KR))
+    return (
+        round_half_up(16 + 219 * luma),
+        round_half_up(128 + 224 * blue_difference),
+        round_half_up(128 + 224 * red_difference),
+    )
+
+
 def _rate(value: Fraction) -> str:
     return f"{value.numerator}/{value.denominator}"
 
@@ -172,10 +203,11 @@ def build_segment_command(
 ) -> tuple[list[str], str]:
     """Arguments and filter script that render ``segment`` into ``output`` (MP4, video only)."""
     fps = plan.fps
-    color = "0x" + plan.background.lstrip("#")
+    luma, blue_difference, red_difference = background_ycbcr(plan.background)
     lines = [
-        f"color=c={color}:s={plan.canvas.width}x{plan.canvas.height}:r={_rate(fps)},"
-        f"trim=end_frame={segment.frame_count},format=yuv420p[bg]"
+        f"color=c=black:s={plan.canvas.width}x{plan.canvas.height}:r={_rate(fps)},"
+        f"trim=end_frame={segment.frame_count},format=yuv420p,"
+        f"lutyuv=y={luma}:u={blue_difference}:v={red_difference}[bg]"
     ]
     args = [*_BASE_ARGS, "-copyts"]
     for index, layer in enumerate(segment.layers):

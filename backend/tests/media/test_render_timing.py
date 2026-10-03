@@ -31,6 +31,7 @@ from ave.render.validate import (
     ValidationCheck,
     ValidationResult,
     decode_audio,
+    decode_video_frames,
     iter_video_frames,
     validate_output,
 )
@@ -284,3 +285,66 @@ def test_gaps_and_bars_show_the_configured_background(
     for frame in frames[15:]:
         assert np.abs(frame[20, 180].astype(int) - background).max() < 6  # bar above the image
         assert np.abs(frame[320, 20].astype(int) - (50, 170, 70)).max() < 12  # C's color
+
+
+BT709_KR, BT709_KB = Fraction(2126, 10000), Fraction(722, 10000)
+"""Luma coefficients of ITU-R BT.709-6 (Part 1, section 3)."""
+
+
+def _nearest(value: Fraction) -> int:
+    """The specification's rounding to the nearest integer (halves upward)."""
+    return math.floor(value + Fraction(1, 2))
+
+
+def _bt709_round_trip(rgb: tuple[int, int, int]) -> np.ndarray:
+    """8-bit RGB after encoding ``rgb`` as 8-bit BT.709 limited-range Y'CbCr and decoding it
+    again (ITU-R BT.709-6, Part 1, section 3: Y' = 16 + 219 E'Y, Cb/Cr = 128 + 224 E'Cb/E'Cr)."""
+    red, green, blue = (Fraction(value, 255) for value in rgb)
+    luma = BT709_KR * red + (1 - BT709_KR - BT709_KB) * green + BT709_KB * blue
+    coded_luma = _nearest(16 + 219 * luma)
+    coded_blue = _nearest(128 + 224 * (blue - luma) / (2 * (1 - BT709_KB)))
+    coded_red = _nearest(128 + 224 * (red - luma) / (2 * (1 - BT709_KR)))
+    luma = Fraction(coded_luma - 16, 219)
+    blue = luma + 2 * (1 - BT709_KB) * Fraction(coded_blue - 128, 224)
+    red = luma + 2 * (1 - BT709_KR) * Fraction(coded_red - 128, 224)
+    green = (luma - BT709_KR * red - BT709_KB * blue) / (1 - BT709_KR - BT709_KB)
+    return np.array([min(255, max(0, _nearest(255 * value))) for value in (red, green, blue)])
+
+
+@pytest.mark.parametrize("background", ["#204060", "#C03020", "#30A040", "#E0C020"])
+def test_background_decodes_to_its_color_under_the_tagged_bt709_matrix(
+    std: StandardFixtures, artifacts_dir: Path, background: str
+) -> None:
+    """AVE-REQ-020 AC-3 (background), AVE-REQ-019 AC-1: the output is tagged BT.709 limited
+    range, and the empty stretch of the timeline and the contain bars above and below C decode,
+    with that matrix, to the BT.709 round trip of the configured color: every channel mean within
+    one level (a BT.601-coded background reads up to 17 levels off)."""
+    asset = describe_asset(std.c.path, asset_id="C")
+    clip = Clip(
+        id="late", track_id="v", asset_id="C", kind="video", timeline_start=Fraction(1, 2),
+        source_in=Fraction(0), source_out=Fraction(1, 2),
+    )  # fmt: skip
+    sequence = Sequence(
+        id="color", fps=Fraction(30), canvas=Canvas(width=360, height=640),
+        background=background, tracks=TRACKS, clips=(clip,),
+    )  # fmt: skip
+    plan = compile_render_plan(sequence, {"C": asset}, profile=FAST)
+    assert [len(s.layers) for s in plan.segments] == [0, 1]
+    output = artifacts_dir / f"background-{background.lstrip('#')}.mp4"
+    assert render(plan, output).succeeded
+    (video,) = probe(output).video_streams
+    assert (video.color_space, video.color_range) == ("bt709", "tv")
+    frames = decode_video_frames(output, width=360, height=640, stream=video).astype(float)
+    assert len(frames) == 30
+    red, green, blue = (int(background[i : i + 2], 16) for i in (1, 3, 5))
+    expected = _bt709_round_trip((red, green, blue))
+    # C (16:9) contained in 360x640 is 360x202.5, centered: the bars end near row 219 and start
+    # again near row 421. About 20 rows next to the image are left out (coding bleed).
+    regions = {
+        "gap": frames[:15],
+        "bar above": frames[15:, :200],
+        "bar below": frames[15:, 442:],
+    }
+    for name, pixels in regions.items():
+        mean = pixels.reshape(-1, 3).mean(axis=0)
+        assert np.abs(mean - expected).max() <= 1, (name, mean, expected)

@@ -175,6 +175,21 @@ def test_unmatched_container_start_falls_back_with_a_warning() -> None:
     assert "approximate" in info.warnings[0]
 
 
+@pytest.mark.parametrize("missing", ["start_pts", "time_base"])
+def test_stream_start_known_only_as_printed_never_defines_the_origin(missing: str) -> None:
+    """AVE-REQ-012 AC-4, AVE-REQ-004 AC-4: a stream that reports its start only as printed
+    seconds (``start_time`` 1.433333 without ``start_pts`` or without ``time_base``) is itself
+    rounded to microseconds, so it supplies no exact origin: the printed container start is used
+    and reported as approximate, even though the two printed values agree."""
+    stream = _video(time_base="1/90000", start_pts=129000, start_time="1.433333")
+    del stream[missing]
+    info = _with_start("1.433333", stream)
+    assert info.streams[0].start_time == Fraction(1433333, 1000000)
+    assert info.container_start_time == Fraction(1433333, 1000000)
+    assert len(info.warnings) == 1
+    assert "approximate" in info.warnings[0]
+
+
 def test_missing_container_start_is_zero_without_a_warning() -> None:
     """AVE-REQ-004 AC-4: a container without a start time starts source time at 0."""
     info = _with_start(None, _video())

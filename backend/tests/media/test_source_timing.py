@@ -1,9 +1,11 @@
-"""Source timing edge cases on real media: late stream starts, VFR gaps, literal image names.
+"""Source timing edge cases on real media: late stream starts, VFR gaps, audio timestamp gaps and
+jitter, keyframe indexes, literal image names.
 
-The sources are timing variants of fixture A (:mod:`tests.media.derived`) and copies of the still
-fixture. Expected frames and sample positions come from fixture A's manifest (frame ``n`` at
-``n / 60`` s, chirps at the event frames), the stated transformation of each variant and the frame
-rule of ADR-004 - never from the compiler.
+The sources are timing variants of fixture A (:mod:`tests.media.derived`), a raw H.264 stream
+generated here and copies of the still fixture. Expected frames and sample positions come from
+fixture A's manifest (frame ``n`` at ``n / 60`` s, chirps at the event frames), the stated
+transformation of each variant, the files' own packet tables and the frame rule of ADR-004 -
+never from the compiler.
 """
 
 from __future__ import annotations
@@ -11,9 +13,11 @@ from __future__ import annotations
 import bisect
 import itertools
 import json
+import math
 import shutil
 from fractions import Fraction
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -23,7 +27,6 @@ from ave.fixtures.barcode import barcode_layout
 from ave.fixtures.generate import Fixture
 from ave.fixtures.standard import COLOR_A, PILOT_HZ, REFERENCE_EVENT_FRAMES, StandardFixtures
 from ave.media.asset import MediaAsset, describe_asset
-from ave.media.audio_timing import AUDIO_TIMESTAMP_TOLERANCE_S
 from ave.media.probe import probe
 from ave.proc import media_url, run_tool
 from ave.render.compiler import compile_render_plan
@@ -34,7 +37,6 @@ from ave.sync.audio import extract_analysis_audio
 from tests.media.derived import (
     AAC_PRIMING,
     AUDIO_DELAY,
-    AUDIO_GAP,
     AUDIO_GAP_AT,
     AUDIO_JITTER,
     GAP_FIRST,
@@ -42,7 +44,9 @@ from tests.media.derived import (
     LATE_AAC_DELAY,
     LONG_GOP_FRAMES,
     VIDEO_DELAY,
+    WIDE_JITTER,
     DerivedMedia,
+    audio_gap_media,
     derived_media,
 )
 from tests.oracles import (
@@ -229,60 +233,182 @@ MATROSKA_PRECISION = Fraction(1, 1000)
 """Matroska stores timestamps in milliseconds."""
 
 
+@pytest.mark.parametrize(
+    ("variant", "origin"),
+    [("intra_ts", Fraction(7, 5)), ("intra_ts_offset", Fraction(43, 30))],
+    ids=["start-1.4", "start-43-30"],
+)
+@pytest.mark.parametrize(
+    "source_in", [Fraction(0), Fraction(59, 60), Fraction(1999, 100)], ids=["0", "59-60", "19.99"]
+)
 def test_intra_only_mpegts_needs_no_keyframe_index(
-    derived: DerivedMedia, artifacts_dir: Path
+    derived: DerivedMedia, artifacts_dir: Path, variant: str, origin: Fraction, source_in: Fraction
 ) -> None:
     """AVE-REQ-012 AC-4: an intra-only MPEG-TS source stores no keyframe index (one entry per
-    frame would grow with the recording) and still shows the frame rule's frame at a cut."""
-    asset = describe_asset(derived.intra_ts, asset_id="intra")
+    frame would grow with the recording) and still shows the frame rule's frame, floor(60 t), at
+    cuts on the first frame, on a frame time (59/60 s) and between frames late in the file - also
+    when the container starts at 129000/90000 s, an origin without an exact microsecond value."""
+    path = getattr(derived, variant)
+    assert _stream_start(path, "v:0") == origin  # the file's own timestamps
+    asset = describe_asset(path, asset_id=variant)
+    assert asset.probe.container_start_time == origin
+    assert asset.probe.warnings == ()
     (video,) = asset.probe.video_streams
     assert video.keyframe_pts is None
-    output = artifacts_dir / "intra-ts.mp4"
-    _render(_clips(asset, Fraction(5, 2), Fraction(1, 2), audio=False), asset, output)
-    assert _shown_frames(output) == [150 + k for k in range(30)]
+    output = artifacts_dir / f"{variant}-{source_in.numerator}-{source_in.denominator}.mp4"
+    _render(_clips(asset, source_in, Fraction(1, 2), audio=False), asset, output)
+    first = math.floor(source_in * 60)
+    assert _shown_frames(output) == [first + k for k in range(30)]
 
 
-def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
-    """``(time, gap)`` wherever a packet starts more than the container's timestamp precision
-    after the previous packet ends (FFprobe's packet table: the fixture's own timestamps,
-    independent of the code under test)."""
+def test_stream_without_presentation_timestamps_gets_an_empty_keyframe_index(
+    tmp_path: Path,
+) -> None:
+    """AVE-REQ-012 AC-4: a raw H.264 elementary stream (no keyframe index in the format, no
+    presentation timestamp on any packet) is no intra-only stream: the probe stores an empty
+    keyframe index, so a cut anywhere in it seeks to the start of the file."""
+    raw = tmp_path / "raw.h264"
+    run_tool(
+        "ffmpeg",
+        [
+            "-hide_banner", "-nostdin", "-v", "error", "-f", "lavfi",
+            "-i", "testsrc2=size=160x90:rate=30:duration=4", "-c:v", "libx264",
+            "-preset", "veryfast", "-g", "30", "-bf", "2", "-pix_fmt", "yuv420p", "-f", "h264",
+            media_url(raw),
+        ],
+        timeout=120,
+    )  # fmt: skip
+    table = run_tool(
+        "ffprobe",
+        [
+            "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts,flags",
+            "-of", "csv=p=0", media_url(raw),
+        ],
+        timeout=60,
+    )  # fmt: skip
+    packets = [line.split(",") for line in table.stdout.decode().split()]
+    assert len(packets) == 120
+    assert {pts for pts, _ in packets} == {"N/A"}  # the file's own packets carry no PTS
+    assert 0 < sum(flags.startswith("K") for _, flags in packets) < len(packets)
+    asset = describe_asset(raw, asset_id="raw")
+    assert asset.probe.format_name == "h264"
+    (video,) = asset.probe.video_streams
+    assert video.keyframe_pts == ()
+    plan = compile_render_plan(
+        _clips(asset, Fraction(5, 2), Fraction(1, 2), audio=False), {asset.id: asset}, profile=FAST
+    )
+    (layer,) = plan.segments[0].layers
+    assert layer.seek == 0
+
+
+def _packet_table(path: Path) -> list[tuple[Fraction, Fraction]]:
+    """``(start, duration)`` of every audio packet in seconds, from FFprobe's packet table in
+    exact time-base ticks (the file's own timestamps, independent of the code under test)."""
     completed = run_tool(
         "ffprobe",
         [
             "-v", "error", "-select_streams", "a:0", "-show_entries",
-            "packet=pts_time,duration_time", "-of", "csv=p=0", media_url(path),
+            "stream=time_base:packet=pts,duration", "-of", "json", media_url(path),
         ],
         timeout=60,
     )  # fmt: skip
-    rows = [line.split(",") for line in completed.stdout.decode().split()]
-    packets = [(Fraction(pts), Fraction(duration)) for pts, duration in rows]
+    data = json.loads(completed.stdout)
+    (stream,) = data["streams"]
+    tick = Fraction(stream["time_base"])
+    return [(int(p["pts"]) * tick, int(p["duration"]) * tick) for p in data["packets"]]
+
+
+def _contiguity_deviations(packets: list[tuple[Fraction, Fraction]]) -> list[Fraction]:
+    """Each packet's start minus its position in a contiguous stream that begins at the first
+    packet (the sum of the earlier packets' durations)."""
+    deviations, position = [], packets[0][0]
+    for start, duration in packets:
+        deviations.append(start - position)
+        position += duration
+    return deviations
+
+
+def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
+    """``(time, gap)`` wherever an audio packet starts more than :data:`MATROSKA_PRECISION` after
+    the previous packet ends (:func:`_packet_table`); ``time`` is that packet's start relative to
+    the first packet."""
+    packets = _packet_table(path)
+    first = packets[0][0]
     return [
-        (start, start - (previous + length))
+        (start - first, start - (previous + length))
         for (previous, length), (start, _) in itertools.pairwise(packets)
         if start - (previous + length) > MATROSKA_PRECISION
     ]
 
 
-def test_audio_gap_below_100_ms_stays_a_gap(derived: DerivedMedia, artifacts_dir: Path) -> None:
-    """AVE-REQ-012 AC-4: a 50 ms timestamp gap at 8 s inside an audio stream (below FFmpeg's
-    default 100 ms compensation) keeps every later sample at its timestamp, in the analysis
-    extraction and in the render: chirps after the gap sit 50 ms later. Before the gap chirps
-    are sample-exact; after it they are exact to Matroska's millisecond timestamps, far from the
-    uncompensated 50 ms error."""
-    ((gap_time, gap),) = _packet_gaps(derived.audio_gap)
-    assert abs(gap_time - (AUDIO_GAP_AT + AUDIO_GAP)) <= MATROSKA_PRECISION
-    assert abs(gap - AUDIO_GAP) <= MATROSKA_PRECISION
-    # A compensated gap is corrected in full; what remains is the container's timestamp rounding.
-    after_tolerance = float(MATROSKA_PRECISION)
-    assert AUDIO_GAP > AUDIO_TIMESTAMP_TOLERANCE_S  # the gap is a gap, not jitter
-    events = [Fraction(frame, 60) for frame in REFERENCE_EVENT_FRAMES]
-    shifted = [e + AUDIO_GAP if e >= AUDIO_GAP_AT else e for e in events]
-    analysis = extract_analysis_audio(derived.audio_gap)
-    errors = _chirp_errors(analysis, [float(e) for e in shifted])
-    before = [error for error, e in zip(errors, events, strict=True) if e < AUDIO_GAP_AT]
+def _zero_runs(samples: np.ndarray, minimum: int) -> list[int]:
+    """Lengths of the runs of at least ``minimum`` exactly-zero samples (inserted silence; the
+    pilot tone is never zero for that long)."""
+    zero = np.concatenate(([0], (samples == 0).astype(np.int8), [0]))
+    edges = np.diff(zero)
+    lengths = np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)
+    return [int(length) for length in lengths if length >= minimum]
+
+
+TIMESTAMP_PRECISION = {"mkv": MATROSKA_PRECISION, "ts": Fraction(1, 90000)}
+"""Timestamp resolution of the gap variants (Matroska milliseconds, the MPEG-TS 90 kHz clock)."""
+CONTENT_START = {"mkv": Fraction(0), "ts": AAC_PRIMING}
+"""Source time of the gap variants' first real sample (re-encoded AAC presents its priming
+first)."""
+CHIRP_PRECISION = {"mkv": MATROSKA_PRECISION, "ts": Fraction(2, 48000)}
+"""Largest chirp error after a corrected gap: the container's timestamp rounding (Matroska), or
+the detection's two samples (MPEG-TS, whose 90 kHz gaps are whole 48 kHz samples)."""
+
+
+@pytest.mark.parametrize("container", ["mkv", "ts"])
+@pytest.mark.parametrize(
+    ("gap", "corrected"),
+    [
+        pytest.param(Fraction(5, 1000), False, id="5ms"),
+        pytest.param(Fraction(12, 1000), True, id="12ms"),
+        pytest.param(Fraction(21, 1000), True, id="21ms"),
+        pytest.param(Fraction(50, 1000), True, id="50ms"),
+    ],
+)
+def test_audio_gaps_of_10_ms_or_more_stay_gaps_and_smaller_ones_are_jitter(
+    std: StandardFixtures,
+    artifacts_dir: Path,
+    container: Literal["mkv", "ts"],
+    gap: Fraction,
+    corrected: bool,
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): a timestamp gap at 8 s inside an audio stream, in Matroska
+    (PCM, millisecond timestamps) and in MPEG-TS (AAC, 90 kHz timestamps). A gap of 10 ms or
+    more (12 ms, 21 ms - one lost AAC frame - and 50 ms) keeps every later sample at its
+    timestamp, in the analysis extraction and in the render: silence of the gap's length fills
+    it and chirps after it sit the gap later. A 5 ms gap is jitter: the samples stay contiguous
+    (no zero run) and chirps after it sit exactly the gap earlier than their timestamps."""
+    path = audio_gap_media(std, artifacts_dir / "derived", gap, container)
+    precision, lead = TIMESTAMP_PRECISION[container], CONTENT_START[container]
+    ((gap_end, measured),) = _packet_gaps(path)
+    assert abs(measured - gap) <= precision
+    # The gap starts at content time 8 s, or at the next PES packet (MPEG-TS): before any chirp.
+    gap_start = gap_end - measured
+    assert AUDIO_GAP_AT + lead - precision <= gap_start < AUDIO_GAP_AT + lead + Fraction(1, 5)
+    events = [Fraction(frame, 60) + lead for frame in REFERENCE_EVENT_FRAMES]
+    timestamps = [e + gap if e > gap_start else e for e in events]
+    placed = timestamps if corrected else events
+    tolerance = float(CHIRP_PRECISION[container])
+    analysis = extract_analysis_audio(path)
+    errors = _chirp_errors(analysis, [float(e) for e in placed])
+    before = [error for error, e in zip(errors, events, strict=True) if e < gap_start]
+    assert len(before) == 2
     assert max(before) <= 2 / 48000
-    assert max(errors) <= after_tolerance
-    asset = describe_asset(derived.audio_gap, asset_id="gap-audio")
+    assert max(errors) <= tolerance
+    second = 48000
+    window = analysis[int((gap_start - 1) * second) : int((gap_end + 1) * second)]
+    runs = _zero_runs(window, 8)
+    if corrected:
+        (run,) = runs  # the gap is filled with silence of its length
+        assert abs(run - gap * second) <= precision * second + 1
+    else:
+        assert runs == []
+    asset = describe_asset(path, asset_id=f"gap-{container}")
     source_in, duration = Fraction(15, 2), Fraction(8)
     clip = Clip(
         id="snd", track_id="a", asset_id=asset.id, kind="audio", timeline_start=Fraction(0),
@@ -291,12 +417,12 @@ def test_audio_gap_below_100_ms_stays_a_gap(derived: DerivedMedia, artifacts_dir
     sequence = Sequence(
         id="gap", fps=FPS, canvas=Canvas(width=640, height=360), tracks=TRACKS, clips=(clip,)
     )
-    output = artifacts_dir / "audio-gap.mp4"
+    output = artifacts_dir / f"audio-gap-{container}-{gap.numerator}-{gap.denominator}.mp4"
     _render(sequence, asset, output)
     audio = decode_audio(output, sample_rate=48000, channels=1)[:, 0]
-    expected = [float(e - source_in) for e in shifted if 0 <= e - source_in < duration]
+    expected = [float(e - source_in) for e in placed if 0 <= e - source_in < duration]
     assert len(expected) == 2
-    assert max(_chirp_errors(audio, expected)) <= after_tolerance
+    assert max(_chirp_errors(audio, expected)) <= tolerance
 
 
 def _packet_deviations(path: Path) -> list[Fraction]:
@@ -316,20 +442,7 @@ def _packet_deviations(path: Path) -> list[Fraction]:
     bytes_per_second = 2 * int(stream["channels"]) * int(stream["sample_rate"])
     packets = [(Fraction(p["pts_time"]), Fraction(int(p["size"]), bytes_per_second))
                for p in data["packets"]]  # fmt: skip
-    deviations, position = [], packets[0][0]
-    for pts, duration in packets:
-        deviations.append(pts - position)
-        position += duration
-    return deviations
-
-
-def _silence_runs(samples: np.ndarray, minimum: int) -> int:
-    """Runs of at least ``minimum`` exactly-zero samples (inserted silence; the pilot tone is
-    never zero for that long)."""
-    zero = np.concatenate(([0], (samples == 0).astype(np.int8), [0]))
-    edges = np.diff(zero)
-    lengths = np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)
-    return int(np.count_nonzero(lengths >= minimum))
+    return _contiguity_deviations(packets)
 
 
 def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
@@ -343,9 +456,129 @@ def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
     assert Fraction(3, 2000) <= largest <= 2 * AUDIO_JITTER + MATROSKA_PRECISION
     samples = extract_analysis_audio(derived.audio_jitter)
     interior = samples[: len(samples) - 48000 // 10]  # the stream's end may be padded
-    assert _silence_runs(interior, 8) == 0
+    assert _zero_runs(interior, 8) == []
     expected = [float(Fraction(frame, 60)) for frame in REFERENCE_EVENT_FRAMES]
     assert max(_chirp_errors(samples, expected)) <= 2 / 48000
+
+
+JITTER_PLACEMENT_BOUND = Fraction(1, 100)
+"""ASM-008: while the peak-to-peak spread of the timestamp jitter stays below the 10 ms tolerance,
+a rendered clip of a jittered source sits less than 10 ms from the analysis placement: the
+deviation of its anchor packet from the stream's first packet, at most that spread."""
+
+
+@pytest.mark.parametrize("source_in", [Fraction(15, 2), Fraction(33, 2)], ids=["7.5", "16.5"])
+def test_render_of_a_jittered_source_inserts_no_silence(
+    derived: DerivedMedia, artifacts_dir: Path, tmp_path: Path, source_in: Fraction
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): a rendered clip of the jittered stream (a spread of at most
+    5 ms) is anchored on the first decoded packet that ends after its seek point: its float PCM
+    audio stage (the render's kept work directory) holds no inserted silence, and every chirp of
+    the decoded export lies within the file's largest packet deviation from its first packet
+    (plus two samples of detection) and below 10 ms of its time."""
+    largest = max(abs(d) for d in _packet_deviations(derived.audio_jitter))
+    asset = describe_asset(derived.audio_jitter, asset_id="jitter")
+    duration = Fraction(8)
+    clip = Clip(
+        id="snd", track_id="a", asset_id=asset.id, kind="audio", timeline_start=Fraction(0),
+        source_in=source_in, source_out=source_in + duration,
+    )  # fmt: skip
+    sequence = Sequence(
+        id="jitter", fps=FPS, canvas=Canvas(width=640, height=360), tracks=TRACKS, clips=(clip,)
+    )
+    output = artifacts_dir / f"jitter-{source_in.numerator}-{source_in.denominator}.mp4"
+    plan = compile_render_plan(sequence, {asset.id: asset}, profile=FAST)
+    report = render(plan, output, work_dir=tmp_path, keep_work_dir=True)
+    assert report.succeeded, report.error
+    (stage,) = tmp_path.glob("render-*/audio.wav")
+    pcm = decode_audio(stage, sample_rate=48000, channels=2)[:, 0]
+    assert len(pcm) == duration * 48000
+    assert _zero_runs(pcm, 8) == []
+    audio = decode_audio(output, sample_rate=48000, channels=1)[:, 0]
+    expected = [
+        float(Fraction(frame, 60) - source_in)
+        for frame in REFERENCE_EVENT_FRAMES
+        if 0 <= Fraction(frame, 60) - source_in < duration
+    ]
+    assert len(expected) == 2
+    errors = _chirp_errors(audio, expected)
+    assert max(errors) <= float(largest) + 2 / 48000
+    assert max(errors) < float(JITTER_PLACEMENT_BOUND)
+
+
+def test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis(
+    derived: DerivedMedia,
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): AAC packets in MPEG-TS whose timestamps sit alternately
+    4.5 ms early (the first packet included) and 4.5 ms late spread 9 ms peak to peak, just
+    below the 10 ms tolerance. Deviations count from the first decoded packet, an early one, so
+    every late packet deviates the full 9 ms from the anchor of the analysis extraction, which
+    keeps the samples contiguous: no inserted silence anywhere, every chirp sample-exact."""
+    path = derived.audio_jitter_ts
+    deviations = _contiguity_deviations(_packet_table(path))
+    assert set(deviations) == {Fraction(0), 2 * WIDE_JITTER}  # the file's own timestamps
+    samples = extract_analysis_audio(path)
+    interior = samples[: len(samples) - 48000 // 10]  # the stream's end is padded
+    assert _zero_runs(interior, 8) == []
+    expected = [float(Fraction(frame, 60) + AAC_PRIMING) for frame in REFERENCE_EVENT_FRAMES]
+    assert max(_chirp_errors(samples, expected)) <= 2 / 48000
+
+
+@pytest.mark.parametrize(
+    ("source_in", "anchor"),
+    [
+        pytest.param(Fraction(2), 2 * WIDE_JITTER, id="late-anchor"),
+        pytest.param(Fraction(25, 2), Fraction(0), id="early-anchor"),
+    ],
+)
+def test_render_of_a_jitter_spread_just_below_10_ms_inserts_no_silence(
+    derived: DerivedMedia,
+    artifacts_dir: Path,
+    tmp_path: Path,
+    source_in: Fraction,
+    anchor: Fraction,
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): a rendered clip of the same 9 ms spread stream is anchored on
+    the first decoded packet that ends after its seek point; each case's seek point lies in one
+    packet only, which is then the anchor wherever the demuxer's seek lands: a late packet
+    (every early packet then deviates 9 ms the other way) or an early one. The clip's float PCM
+    audio stage holds no inserted silence, and every chirp of the decoded export sits exactly
+    the anchor's deviation from the first packet (0 or 9 ms, at most the peak-to-peak spread)
+    after its analysis placement."""
+    path = derived.audio_jitter_ts
+    packets = _packet_table(path)
+    deviations = _contiguity_deviations(packets)
+    asset = describe_asset(path, asset_id="jitter-ts")
+    assert asset.probe.container_start_time == packets[0][0]  # source time 0: the first packet
+    duration = Fraction(6)
+    clip = Clip(
+        id="snd", track_id="a", asset_id=asset.id, kind="audio", timeline_start=Fraction(0),
+        source_in=source_in, source_out=source_in + duration,
+    )  # fmt: skip
+    sequence = Sequence(
+        id="jitter-ts", fps=FPS, canvas=Canvas(width=640, height=360), tracks=TRACKS, clips=(clip,)
+    )
+    plan = compile_render_plan(sequence, {asset.id: asset}, profile=FAST)
+    (planned,) = plan.audio
+    seek = packets[0][0] + planned.seek
+    holding = [
+        deviation
+        for (start, length), deviation in zip(packets, deviations, strict=True)
+        if start <= seek < start + length
+    ]
+    assert holding == [anchor]  # one packet holds the seek point, of the kind the id names
+    output = artifacts_dir / f"jitter-ts-{source_in.numerator}-{source_in.denominator}.mp4"
+    report = render(plan, output, work_dir=tmp_path, keep_work_dir=True)
+    assert report.succeeded, report.error
+    (stage,) = tmp_path.glob("render-*/audio.wav")
+    pcm = decode_audio(stage, sample_rate=48000, channels=2)[:, 0]
+    assert len(pcm) == duration * 48000
+    assert _zero_runs(pcm, 8) == []
+    audio = decode_audio(output, sample_rate=48000, channels=1)[:, 0]
+    content = [Fraction(frame, 60) + AAC_PRIMING - source_in for frame in REFERENCE_EVENT_FRAMES]
+    expected = [float(time + anchor) for time in content if 0 <= time < duration]
+    assert len(expected) == 2
+    assert max(_chirp_errors(audio, expected)) <= 2 / 48000
 
 
 def test_vfr_gap_longer_than_the_seek_margin_keeps_the_frame_rule(

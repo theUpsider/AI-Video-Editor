@@ -53,7 +53,9 @@ def test_streamed_tool_never_stalls_on_a_flood_of_diagnostics() -> None:
 def test_failing_streamed_tool_reports_a_bounded_diagnostic_tail(tmp_path: Path) -> None:
     """AVE-REQ-009 AC-4, AVE-REQ-086 AC-4: decoding an MP4 whose media data is cut off at 90 %
     (with ``-xerror``, after megabytes of per-frame diagnostics) raises MediaToolError with the
-    non-zero exit status and a bounded tail of the diagnostics that names the read error."""
+    non-zero exit status and a bounded tail of the diagnostics that names the read error: the
+    demuxer's "corrupt input packet" line and FFmpeg's closing "Conversion failed!" (both printed
+    by FFmpeg 4.2, 6.1 and 7.0)."""
     complete = tmp_path / "complete.mp4"
     run_tool(
         "ffmpeg",
@@ -78,7 +80,8 @@ def test_failing_streamed_tool_reports_a_bounded_diagnostic_tail(tmp_path: Path)
     assert details["returncode"] != 0
     tail = details["stderr"]
     assert 0 < len(tail) <= 4000
-    assert "error" in tail.lower()  # FFmpeg names the failure; the exact wording varies by version
+    assert "corrupt input packet" in tail  # the failure itself, after megabytes of frame lines
+    assert tail.rstrip().endswith("Conversion failed!")  # the end of the diagnostics is kept
 
 
 def test_extraction_of_unknown_length_grows_one_float32_buffer() -> None:
