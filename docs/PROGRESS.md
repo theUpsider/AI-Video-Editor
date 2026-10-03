@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-03 — M0: process fixes and media-core follow-ups integrated; test tags are markers; re-verification of AVE-REQ-093/094/096/097/098 next._
+_Last updated: 2026-10-03 — M0: AVE-REQ-093 re-verification FAIL fixed (the checker verifies the baseline hashes itself); reviews of 094/096/097/098 launched, verdicts not recorded._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,10 +23,14 @@ from the drafts.
 
 ## In progress
 
-- AVE-REQ-093/094/096/097/098 `in-progress`: the fix brief (items 1–26) is implemented and integrated (`c084f7c`;
-  handbacks under [docs/briefs/handbacks/](briefs/handbacks/)); release tier PASS on that merge. Next:
-  `verify-requirement` per requirement with a skeptic per PASS (script persisted in [docs/workflows/](workflows/README.md)
-  at launch), then `done` in dependency order with the inspection lines of the part-4 handback.
+- AVE-REQ-093 `verification`: the re-verification at `d4d3883` (`wf_ed1f5104-63a`) FAILED on one blocking finding
+  (the file hashes were verified only by a package file); fixed on this branch (the checker verifies the inventory
+  and every hash itself; suite cases for an edited validator) and queued for a re-review.
+- AVE-REQ-094/096/097/098 `in-progress`: the fix brief (items 1–26) is implemented and integrated (`c084f7c`;
+  handbacks under [docs/briefs/handbacks/](briefs/handbacks/)); their reviews in `wf_ed1f5104-63a` at `d4d3883`:
+  launched 2026-10-03; verdict not recorded; on resume without a recorded verdict, re-run the script in
+  [docs/workflows/](workflows/README.md) with `{commit: 'd4d3883'}`. The same run reviewed
+  WORKFLOW_LOG.md: WF-004 and WF-005 supported; WF-001 to WF-003 corrected from its findings.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 - Next delegated tasks, drafts persisted: [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
   [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md); each becomes a brief with the closing M0
@@ -75,6 +79,6 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS at `c084f7c` in the development container (arm64; 12 of 12 steps; 108
-unit, 84 media and population tests; 6 tooling suites on every installed awk); CI (x86_64) release tier green at
-`28d241b` and pending for the later pushes of this branch.
+`./scripts/verify.sh --tier release` PASS at `cd21812` in the development container (arm64; 12 of 12 steps; 108
+unit, 84 media and population tests; 6 tooling suites on every installed awk); CI (x86_64) release tier green
+through `cd21812`. The fast tier passes on the AVE-REQ-093 fix (Stop gate).

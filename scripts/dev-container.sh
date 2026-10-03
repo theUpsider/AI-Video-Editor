@@ -100,6 +100,13 @@ case "$1" in
   -*) die "unknown option: $1" 2 ;;
 esac
 
+# ADR-009: the container reads the checkout's bytes; a CRLF checkout changes every hashed baseline file.
+[ "$(git config --get core.autocrlf 2>/dev/null)" != true ] ||
+  die "core.autocrlf is true for this checkout; set core.autocrlf false and core.eol lf, then check the files out again (ADR-009)" 2
+case "$(git ls-files --eol -- "$TOP/ai-video-editor-requirements/MANIFEST.json" 2>/dev/null)" in
+  *"w/crlf"*) die "ai-video-editor-requirements/MANIFEST.json is checked out with CRLF line endings; set core.autocrlf false and core.eol lf, then check the files out again (ADR-009)" 2 ;;
+esac
+
 ensure_container
 ENV_ARGS=(-e "UV_PROJECT_ENVIRONMENT=$VENV" -e "AVE_HEAVY_LOCK=/state/ave-heavy-media.lock")
 [ -n "${VERIFY_TIER:-}" ] && ENV_ARGS+=(-e "VERIFY_TIER=$VERIFY_TIER")

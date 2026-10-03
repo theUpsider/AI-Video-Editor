@@ -132,6 +132,15 @@ expect "baseline edit with a re-hashed manifest fails" 1 "$B/MANIFEST.json: base
 expect "re-hashed manifest: the pin is the only failure" 1 "FAILED: 1 baseline integrity error(s)" "$WEAKENED"
 expect "removed MANIFEST.json fails"                 1 "$B/MANIFEST.json: baseline changed: the manifest is missing" "rm $B/MANIFEST.json"
 expect "second MANIFEST.json in the package fails"   1 "$B/spec/MANIFEST.json: baseline changed: a file the package inventory skips" "printf '{}\n' > $B/spec/MANIFEST.json"
+# AVE-REQ-093 AC-1, AVE-REQ-093 AC-3: the checker verifies the manifest's inventory and file hashes itself,
+# so an edited package validator (a package file) fails before it runs, and a baseline edited, weakened or
+# extended behind it fails too.
+NEUTERED="sub $B/tools/validate_package.py 'def validate(' 'sys.exit(0)
+def validate('"
+expect "edited package validator fails"             1 "$B/tools/validate_package.py: baseline changed: SHA-256" "$NEUTERED"
+expect "weakened baseline behind an edited validator fails" 1 "$B/spec/requirements/AVE-REQ-001.md: baseline changed: SHA-256" "$NEUTERED && sub $B/spec/requirements/AVE-REQ-001.md 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub $B/spec/requirements.json 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.'"
+expect "file added behind an edited validator fails" 1 "$B/spec/NOTES.md: baseline changed: the file is absent from the manifest" "$NEUTERED && printf 'x\n' > $B/spec/NOTES.md"
+expect "removed baseline file fails"                1 "$B/spec/requirements/AVE-REQ-001.md: baseline changed: the file is missing from the package" "rm $B/spec/requirements/AVE-REQ-001.md"
 # (b) one working file per baseline item, same identity
 # AVE-REQ-093 AC-1: every baseline ID maps to exactly one working file.
 # AVE-REQ-093 AC-3: priority, scope, type, source and exclusions cannot be demoted or rewritten.

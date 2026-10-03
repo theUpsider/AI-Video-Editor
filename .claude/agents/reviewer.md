@@ -43,7 +43,7 @@ For each test claimed for an AC, ask: would it fail if the behavior were removed
 - depend on timing, execution order or shared state;
 - are never collected by the test runner.
 
-When reasoning is inconclusive for a critical AC, copy the working tree to a temporary directory outside the repository (`mktemp -d`), break the behavior in the copy, run the test there, and delete the copy.
+When reasoning is inconclusive for a critical AC, copy the working tree to a temporary directory outside the repository (`mktemp -d`), break the behavior in the copy, run the test there, and delete the copy. Delete every `__pycache__` directory before each run of mutated Python: a same-size edit within one second keeps a stale `.pyc` valid (WF-004). For media and file-format criteria, rebuild each claimed fix with constructions of your own (other containers, codecs, seek points, populations) in that copy and measure the numbers there; the implementer's fixtures prove only what the implementer had in mind (WF-001).
 
 ## Finding classification
 

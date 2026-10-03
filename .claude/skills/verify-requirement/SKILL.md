@@ -79,13 +79,14 @@ Probe the edge cases from your working note: empty, minimum, maximum, limit and 
 
 Every test claimed for an AC must pass all of these:
 - [ ] **Assertion strength:** asserts the AC's observable outcome with specific expected values. "Not null", "did not throw", truthiness or length alone fail where content matters.
-- [ ] **Fails without the behavior:** removing, inverting or shifting the behavior by one would make it fail. When reasoning is inconclusive for a critical AC, break the behavior in a temporary copy of the working tree outside the repository, run the test there, and delete the copy.
+- [ ] **Fails without the behavior:** removing, inverting or shifting the behavior by one would make it fail. When reasoning is inconclusive for a critical AC, break the behavior in a temporary copy of the working tree outside the repository, run the test there, and delete the copy. Delete every `__pycache__` directory before each run of mutated Python: a same-size edit within one second keeps a stale `.pyc` valid (WF-004).
 - [ ] **Real unit under test:** mocks and stubs replace only external boundaries; assertions target real outputs and state; a test that asserts only on mock call records fails this item.
 - [ ] **No tautology:** the expected value is independent of the code under test; it is neither copied from that code's output nor computed by the same code path, and no value is compared with itself.
 - [ ] **Executed:** neither skipped, focused (`only`, `fit`, `fdescribe`), filtered, marked expected-to-fail nor conditionally skipped; the runner collects it.
 - [ ] **Snapshots and golden files:** their content was checked against the AC; a snapshot created or updated in this change without that check fails.
 - [ ] **Tagged:** carries `AVE-REQ-NNN AC-n`; an untagged test gives the AC no traceable evidence.
 - [ ] **Sound control flow and determinism:** no swallowed errors, early returns or conditional assertions; no dependence on timing, execution order or shared state.
+- [ ] **Own constructions (media and file-format criteria):** rebuild each claimed fix with inputs of your own (other containers, codecs, seek points, populations) in the scratch copy and measure the numbers there; the implementer's fixtures prove only the constructions the implementer had in mind (WF-001).
 
 An AC whose only tests fail this checklist is unevidenced, which is blocking.
 

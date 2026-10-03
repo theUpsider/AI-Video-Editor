@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -33,7 +33,9 @@ The implementing agent shall integrate this specification into the existing boot
 - [ ] AC-4 Requirement implementation status starts unverified; package validation is not product verification.
 
 ## Edge cases
-- A baseline file edited, added or removed → package validation fails (AC-1).
+- A baseline file edited, added or removed, the package's own validator included → the baseline check fails
+  with "baseline changed": the checker verifies the manifest's inventory and every file's size and SHA-256 itself
+  before it runs the package validator (AC-1, AC-3).
 - MANIFEST.json edited, removed or duplicated inside the package, or a baseline edit with a re-hashed
   MANIFEST.json → the baseline check fails with "baseline changed": the checker pins the manifest's SHA-256
   outside the package (AC-1, AC-3).
@@ -51,15 +53,15 @@ The implementing agent shall integrate this specification into the existing boot
 None.
 
 ## Verification strategy
-- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (hash and inventory checks; the manifest hash pinned outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json fails with "baseline changed"), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
+- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, and a file edited, added or removed behind an edited validator fail with "baseline changed"), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
 - AC-2 — inspection — the six documents are populated from the baseline and keep their bootstrap content (Git history of each file since `f605c6c`); automation cannot judge "meaningful content".
-- AC-3 — integration — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, rewording a criterion or the Description without a logged reason, or weakening a criterion in the baseline, its JSON and the working file with a re-hashed manifest all fail; a reworded Description with a logged `Description changed: <reason>` line is reported.
+- AC-3 — integration — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, rewording a criterion or the Description without a logged reason, or weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, all fail; a reworded Description with a logged `Description changed: <reason>` line is reported.
 - AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
-- `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; validated by its own `ai-video-editor-requirements/tools/validate_package.py` and MANIFEST.json hashes (AC-1)
-- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), package validation, and working-file integrity (identity, Description, criteria, statuses, mapping) (AC-1, AC-3, AC-4)
+- `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; its MANIFEST.json lists every file's size and SHA-256, and its `tools/validate_package.py` checks package consistency (AC-1)
+- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (identity, Description, criteria, statuses, mapping) (AC-1, AC-3, AC-4)
 - `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, 131 `docs/requirements/AVE-*.md` — idempotent import and the ID mapping (AC-1, AC-4)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `docs/TRACEABILITY.md` — populated from the baseline, bootstrap content kept (AC-2)
 - `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — package checks never certify completion (AC-4)
@@ -77,3 +79,5 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-02 — in-progress — verification levels recorded per criterion; AT-29/AT-30 run at the final review (lead)
 - 2026-10-02 — verification — implementation evidence complete; independent verification requested (lead)
 - 2026-10-02 — in-progress — verify-requirement FAIL at `4d9ef9a` (workflow `wf_b0c34bba-a20`); blocking findings and fixes in [the fix brief](../briefs/2026-10-02-m0-process-verification-fixes.md) (lead)
+- 2026-10-03 — in-progress — verify-requirement FAIL at `d4d3883` (workflow `wf_ed1f5104-63a`): the file hashes were verified only by `tools/validate_package.py`, a package file, so editing it disabled the check; `scripts/check_baseline.py` now verifies the inventory and every hash itself before running the validator, with suite cases for an edited validator (lead)
+- 2026-10-03 — verification — fix in place, `scripts/tests/test-check-baseline.sh` 79 of 79; independent verification requested again (lead)

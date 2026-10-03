@@ -5,9 +5,11 @@ Usage:  python3 scripts/check_baseline.py      (no arguments; run by ./scripts/v
 
 Checks (rules: docs/requirements/README.md § Baseline import and integrity):
   a  the SHA-256 of ai-video-editor-requirements/MANIFEST.json equals BASELINE_MANIFEST_SHA256,
-     the trust anchor this script keeps outside the package ("baseline changed" otherwise), and
-     ai-video-editor-requirements/tools/validate_package.py passes: package consistency and the
-     manifest's SHA-256 hash of every file; together they prove the baseline is unchanged;
+     the trust anchor this script keeps outside the package; this script then verifies the
+     manifest's inventory and the size and SHA-256 of every listed file itself, and only then runs
+     ai-video-editor-requirements/tools/validate_package.py (package consistency) when that file's
+     own bytes verified; together they prove the baseline is unchanged ("baseline changed"
+     otherwise), and no package file takes part in proving it;
   b  every baseline epic, feature and requirement has exactly one working file in docs/requirements/
      with the same ID and title; requirements keep the mapped type, priority and source, and their
      scope, parent, dependencies, origins, scenarios and baseline path equal the baseline; scope
@@ -21,7 +23,7 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity):
      added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
   e  a summary: requirements by status and by gate, acceptance criteria ticked.
 Output: "ERROR: <path>: <message>" per violation, then the summary and "OK: ..." or "FAILED: ...".
-Exit:   0 no violations · 1 violations found · 2 usage or unreadable baseline.
+Exit:   0 no violations · 1 violations found · 2 usage, or a baseline unreadable before any violation.
 Read-only; Python 3.8+ standard library only.
 """
 
@@ -29,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -209,6 +212,59 @@ def check_manifest_pin(pkg: Path) -> None:
         )
     else:
         print("Baseline manifest: PASS (SHA-256 equals the value pinned in check_baseline.py)")
+
+
+def check_package_files(pkg: Path) -> bool:
+    """Verify the manifest's inventory and every file's size and SHA-256 from outside the package.
+
+    The package validator repeats this check, but it is a package file itself: an edited validator
+    must fail here, before it runs (AVE-REQ-093 AC-1, AC-3). Returns whether the validator's own
+    bytes equal its manifest entry, so the caller runs only an unchanged validator.
+    """
+    manifest = pkg / "MANIFEST.json"
+    try:
+        inventory = json.loads(manifest.read_text(encoding="utf-8"))["files"]
+        entries = {str(item["path"]): (int(item["bytes"]), str(item["sha256"])) for item in inventory}
+    except (OSError, ValueError, KeyError, TypeError):
+        error(manifest, "baseline changed: the manifest is unreadable or lists no files")
+        return False
+    if len(entries) != len(inventory):
+        error(manifest, "baseline changed: the manifest lists a path twice")
+    root = pkg.resolve()
+    on_disk = {
+        p.relative_to(pkg).as_posix()
+        for p in pkg.rglob("*")
+        if p.is_file() and p.name != "MANIFEST.json"
+    }
+    for name in sorted(entries.keys() - on_disk):
+        error(pkg / name, "baseline changed: the file is missing from the package")
+    for name in sorted(on_disk - entries.keys()):
+        error(pkg / name, "baseline changed: the file is absent from the manifest")
+    verified = 0
+    validator_ok = False
+    for name in sorted(entries.keys() & on_disk):
+        path = pkg / name
+        try:
+            path.resolve().relative_to(root)
+        except ValueError:
+            error(path, "baseline changed: the manifest path leaves the package")
+            continue
+        size, digest = entries[name]
+        data = path.read_bytes()
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != digest:
+            error(path, f"baseline changed: SHA-256 {actual} differs from the manifest entry {digest}")
+        elif len(data) != size:
+            error(path, f"baseline changed: size {len(data)} differs from the manifest entry {size}")
+        else:
+            verified += 1
+            validator_ok = validator_ok or name == "tools/validate_package.py"
+    if verified == len(entries) == len(on_disk):
+        print(
+            f"Baseline files: PASS (check_baseline.py verified the size and SHA-256 of all {verified}"
+            " manifest entries and found no other file)"
+        )
+    return validator_ok
 
 
 def run_package_validator(pkg: Path) -> None:
@@ -477,13 +533,14 @@ def main() -> int:
         )
         return 2
     check_manifest_pin(importer.PKG)
-    run_package_validator(importer.PKG)
+    if check_package_files(importer.PKG):
+        run_package_validator(importer.PKG)
     try:
         base = importer.load_baseline()
     except (importer.BaselineError, KeyError, TypeError, ValueError, OSError) as exc:
         print("\n".join(errors))
         print(f"ERROR: {importer.PKG_NAME}: unreadable baseline: {exc}", file=sys.stderr)
-        return 2
+        return 1 if any(line.startswith("ERROR:") for line in errors) else 2
     files = load_working()
     check_epics_features(base, files)
     totals = check_requirements(importer, base, files)

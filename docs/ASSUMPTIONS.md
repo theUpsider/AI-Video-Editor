@@ -186,9 +186,13 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-011 — The baseline is anchored by the pinned SHA-256 of its manifest
 - **Date:** 2026-10-03
 - **Assumption:** `scripts/check_baseline.py` pins `BASELINE_MANIFEST_SHA256`, the SHA-256 of
-  `ai-video-editor-requirements/MANIFEST.json`; the manifest's own file hashes then cover every file of the package.
+  `ai-video-editor-requirements/MANIFEST.json`, and verifies the manifest's inventory and every listed file's
+  size and SHA-256 itself before it runs the package's own validator; no package file takes part in proving the
+  package unchanged.
 - **Reason:** Of the two anchors the fix brief offered (manifest hash, Git tree), the hash works in every checkout
-  and in the test suite's fixture copies outside Git, with the standard library alone.
+  and in the test suite's fixture copies outside Git, with the standard library alone. The re-verification of
+  2026-10-03 (`wf_ed1f5104-63a`) showed that a hash check delegated to a package file is disabled by editing that
+  file, so the checker verifies the hashes itself.
 - **Impact:** Adopting a new baseline version from the human needs a commit that updates the pin and cites the
   human's input.
 - **Status:** open

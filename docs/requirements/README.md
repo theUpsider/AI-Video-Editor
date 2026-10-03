@@ -378,10 +378,12 @@ When the lead implements directly, the lead also fills Implementation evidence.
 
 The human's requirements package lives unchanged in
 [ai-video-editor-requirements/](../../ai-video-editor-requirements/README.md); its `MANIFEST.json`
-pins the SHA-256 hash of every file, and `BASELINE_MANIFEST_SHA256` in
-[check_baseline.py](../../scripts/check_baseline.py) pins the SHA-256 of `MANIFEST.json` itself:
-the trust anchor lives outside the package, so a baseline edit fails with "baseline changed" even
-when the manifest is re-hashed. The working files in this directory carry the lifecycle.
+lists the size and SHA-256 hash of every file, `BASELINE_MANIFEST_SHA256` in
+[check_baseline.py](../../scripts/check_baseline.py) pins the SHA-256 of `MANIFEST.json` itself,
+and check_baseline.py verifies the inventory and every listed hash before it runs the package's
+own validator: the trust anchor and the hash check both live outside the package, so a baseline
+edit fails with "baseline changed" even when the manifest is re-hashed or the package's validator
+is edited. The working files in this directory carry the lifecycle.
 
 1. **Never edit the baseline.** A requirement change happens in the working file, with a logged
    reason; a new baseline version comes only from the human, and the commit that adopts it
