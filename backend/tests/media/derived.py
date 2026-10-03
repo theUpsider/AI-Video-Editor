@@ -29,6 +29,14 @@ times) and the stated transformation - never from the compiler under test:
 * ``audio_jitter`` - A's audio alone as PCM in Matroska with every audio frame's timestamp moved
   by a pseudo-random amount within +-:data:`AUDIO_JITTER` (FFmpeg's seeded ``random``): the samples
   are contiguous, only their timestamps wobble, so a chirp at ``e`` stays at ``e``.
+* ``audio_jitter_ts`` - A's audio alone, re-encoded as AAC into MPEG-TS with one AAC frame per PES
+  packet (``-pes_payload_size 0``), so every packet keeps its own timestamp. The decoded frames'
+  timestamps move :data:`WIDE_JITTER` earlier (even frames, the first included) and later (odd
+  frames); each AAC packet carries the offset of the frame it codes, and the encoder's priming
+  packet that of the first frame. Counted from the first packet, every packet sits 0 or 9 ms
+  after its contiguous position: a peak-to-peak spread of 9 ms, just below the 10 ms tolerance.
+  The samples are contiguous, so a chirp at ``e`` sits at ``e + AAC_PRIMING`` from the first
+  packet.
 
 :func:`audio_gap_media` derives the timestamp-gap variants on demand: A's audio alone with every
 timestamp from :data:`AUDIO_GAP_AT` on moved a given gap later, as PCM in Matroska or re-encoded
@@ -63,6 +71,8 @@ LONG_GOP_FRAMES = 1200
 AUDIO_GAP_AT = Fraction(8)
 """Content time where the gap variants of :func:`audio_gap_media` move every later timestamp."""
 AUDIO_JITTER = Fraction(2, 1000)
+WIDE_JITTER = Fraction(9, 2000)
+"""Timestamp offset of ``audio_jitter_ts`` each way (4.5 ms): a peak-to-peak spread of 9 ms."""
 INTRA_SECONDS = 21
 """Length of the intra-only variants: long enough for a cut at 19.99 s."""
 INTRA_TS_OFFSET = "0.033333"
@@ -84,6 +94,7 @@ class DerivedMedia:
     late_aac_ts: Path
     long_gop_ts: Path
     audio_jitter: Path
+    audio_jitter_ts: Path
     intra_ts: Path
     intra_ts_offset: Path
 
@@ -147,6 +158,16 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
             "-c:a", "pcm_s16le", "-f", "matroska",
         ],
     )  # fmt: skip
+    # N counts the samples before the frame (1024 per decoded AAC frame); the offset is rounded
+    # to whole samples, so every timestamp stays exact.
+    wide = f"round({WIDE_JITTER.numerator}/{WIDE_JITTER.denominator}/TB)"
+    audio_jitter_ts = _make(
+        directory / "a-audio-jitter.ts",
+        [
+            "-i", source, "-vn", "-af", f"asetpts='PTS+if(mod(N/1024,2),1,-1)*{wide}'",
+            "-c:a", "aac", "-b:a", "256k", "-pes_payload_size", "0", "-f", "mpegts",
+        ],
+    )  # fmt: skip
     intra = [
         "-i", source, "-an", "-t", str(INTRA_SECONDS), "-c:v", "libx264", "-preset", "veryfast",
         "-crf", "12", "-g", "1", "-bf", "0", "-pix_fmt", "yuv420p",
@@ -164,6 +185,7 @@ def derived_media(std: StandardFixtures, directory: Path) -> DerivedMedia:
         late_aac_ts=late_aac_ts,
         long_gop_ts=long_gop_ts,
         audio_jitter=audio_jitter,
+        audio_jitter_ts=audio_jitter_ts,
         intra_ts=intra_ts,
         intra_ts_offset=intra_ts_offset,
     )

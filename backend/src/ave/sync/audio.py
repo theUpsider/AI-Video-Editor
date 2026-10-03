@@ -281,8 +281,8 @@ def extract_analysis_audio(
     the origin of every source time): the input is read with raw timestamps (``-copyts``) and the
     decoded samples are placed by them (:func:`ave.media.audio_timing.audio_placement_filter`),
     so a stream that starts after the container start begins with silence and a timestamp gap of
-    10 ms or more inside the stream stays a gap (smaller deviations are jitter and leave the
-    samples contiguous), in every container (MPEG-TS included).
+    10 ms or more inside the stream stays a gap (smaller deviations, measured from the first
+    packet, are jitter and leave the samples contiguous), in every container (MPEG-TS included).
 
     ``stream_index`` is the absolute container index; the default is the first audio stream.
     The stream is read from the original file regardless of its mute state in any edit. Samples

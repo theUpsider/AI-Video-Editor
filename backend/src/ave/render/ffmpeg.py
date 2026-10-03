@@ -17,8 +17,9 @@ files that never contain file paths):
 2. **Audio** - one run renders the range's audio: inputs read with ``-copyts`` and samples placed
    by their presentation timestamps relative to the exact container start plus the seek point
    (:func:`ave.media.audio_timing.audio_placement_filter`: silence before a late stream start and
-   in timestamp gaps of 10 ms or more; smaller deviations are jitter and leave the samples
-   contiguous), sample-accurate trims, resampling to 48 kHz with SoX,
+   in timestamp gaps of 10 ms or more; smaller deviations, measured from the first decoded
+   packet, are jitter and leave the samples contiguous), sample-accurate trims, resampling to
+   48 kHz with SoX,
    pitch-preserving time scaling (Rubber Band) when the clip speed is not 1, gain, exact sample
    delay and an un-normalized mix, written as 32-bit float PCM.
 3. **Assembly** - the segments are concatenated by stream copy (concat demuxer) and muxed with the

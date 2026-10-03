@@ -44,6 +44,7 @@ from tests.media.derived import (
     LATE_AAC_DELAY,
     LONG_GOP_FRAMES,
     VIDEO_DELAY,
+    WIDE_JITTER,
     DerivedMedia,
     audio_gap_media,
     derived_media,
@@ -300,11 +301,9 @@ def test_stream_without_presentation_timestamps_gets_an_empty_keyframe_index(
     assert layer.seek == 0
 
 
-def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
-    """``(time, gap)`` wherever an audio packet starts more than :data:`MATROSKA_PRECISION` after
-    the previous packet ends; ``time`` is that packet's start relative to the first packet
-    (FFprobe's packet table in exact time-base ticks: the file's own timestamps, independent of
-    the code under test)."""
+def _packet_table(path: Path) -> list[tuple[Fraction, Fraction]]:
+    """``(start, duration)`` of every audio packet in seconds, from FFprobe's packet table in
+    exact time-base ticks (the file's own timestamps, independent of the code under test)."""
     completed = run_tool(
         "ffprobe",
         [
@@ -316,7 +315,24 @@ def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
     data = json.loads(completed.stdout)
     (stream,) = data["streams"]
     tick = Fraction(stream["time_base"])
-    packets = [(int(p["pts"]) * tick, int(p["duration"]) * tick) for p in data["packets"]]
+    return [(int(p["pts"]) * tick, int(p["duration"]) * tick) for p in data["packets"]]
+
+
+def _contiguity_deviations(packets: list[tuple[Fraction, Fraction]]) -> list[Fraction]:
+    """Each packet's start minus its position in a contiguous stream that begins at the first
+    packet (the sum of the earlier packets' durations)."""
+    deviations, position = [], packets[0][0]
+    for start, duration in packets:
+        deviations.append(start - position)
+        position += duration
+    return deviations
+
+
+def _packet_gaps(path: Path) -> list[tuple[Fraction, Fraction]]:
+    """``(time, gap)`` wherever an audio packet starts more than :data:`MATROSKA_PRECISION` after
+    the previous packet ends (:func:`_packet_table`); ``time`` is that packet's start relative to
+    the first packet."""
+    packets = _packet_table(path)
     first = packets[0][0]
     return [
         (start - first, start - (previous + length))
@@ -426,11 +442,7 @@ def _packet_deviations(path: Path) -> list[Fraction]:
     bytes_per_second = 2 * int(stream["channels"]) * int(stream["sample_rate"])
     packets = [(Fraction(p["pts_time"]), Fraction(int(p["size"]), bytes_per_second))
                for p in data["packets"]]  # fmt: skip
-    deviations, position = [], packets[0][0]
-    for pts, duration in packets:
-        deviations.append(pts - position)
-        position += duration
-    return deviations
+    return _contiguity_deviations(packets)
 
 
 def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
@@ -450,18 +462,20 @@ def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
 
 
 JITTER_PLACEMENT_BOUND = Fraction(1, 100)
-"""ASM-008: a rendered clip of a jittered source sits less than the 10 ms jitter tolerance from
-the analysis placement."""
+"""ASM-008: while the peak-to-peak spread of the timestamp jitter stays below the 10 ms tolerance,
+a rendered clip of a jittered source sits less than 10 ms from the analysis placement: the
+deviation of its anchor packet from the stream's first packet, at most that spread."""
 
 
 @pytest.mark.parametrize("source_in", [Fraction(15, 2), Fraction(33, 2)], ids=["7.5", "16.5"])
 def test_render_of_a_jittered_source_inserts_no_silence(
     derived: DerivedMedia, artifacts_dir: Path, tmp_path: Path, source_in: Fraction
 ) -> None:
-    """AVE-REQ-012 AC-4 (ASM-008): a rendered clip of the jittered stream is placed from the
-    packet its seek lands on: its float PCM audio stage (the render's kept work directory) holds
-    no inserted silence, and every chirp of the decoded export lies within the largest packet
-    deviation of the file (plus two samples of detection) and below 10 ms of its time."""
+    """AVE-REQ-012 AC-4 (ASM-008): a rendered clip of the jittered stream (a spread of at most
+    5 ms) is anchored on the first decoded packet that ends after its seek point: its float PCM
+    audio stage (the render's kept work directory) holds no inserted silence, and every chirp of
+    the decoded export lies within the file's largest packet deviation from its first packet
+    (plus two samples of detection) and below 10 ms of its time."""
     largest = max(abs(d) for d in _packet_deviations(derived.audio_jitter))
     asset = describe_asset(derived.audio_jitter, asset_id="jitter")
     duration = Fraction(8)
@@ -490,6 +504,81 @@ def test_render_of_a_jittered_source_inserts_no_silence(
     errors = _chirp_errors(audio, expected)
     assert max(errors) <= float(largest) + 2 / 48000
     assert max(errors) < float(JITTER_PLACEMENT_BOUND)
+
+
+def test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis(
+    derived: DerivedMedia,
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): AAC packets in MPEG-TS whose timestamps sit alternately
+    4.5 ms early (the first packet included) and 4.5 ms late spread 9 ms peak to peak, just
+    below the 10 ms tolerance. Deviations count from the first decoded packet, an early one, so
+    every late packet deviates the full 9 ms from the anchor of the analysis extraction, which
+    keeps the samples contiguous: no inserted silence anywhere, every chirp sample-exact."""
+    path = derived.audio_jitter_ts
+    deviations = _contiguity_deviations(_packet_table(path))
+    assert set(deviations) == {Fraction(0), 2 * WIDE_JITTER}  # the file's own timestamps
+    samples = extract_analysis_audio(path)
+    interior = samples[: len(samples) - 48000 // 10]  # the stream's end is padded
+    assert _zero_runs(interior, 8) == []
+    expected = [float(Fraction(frame, 60) + AAC_PRIMING) for frame in REFERENCE_EVENT_FRAMES]
+    assert max(_chirp_errors(samples, expected)) <= 2 / 48000
+
+
+@pytest.mark.parametrize(
+    ("source_in", "anchor"),
+    [
+        pytest.param(Fraction(2), 2 * WIDE_JITTER, id="late-anchor"),
+        pytest.param(Fraction(25, 2), Fraction(0), id="early-anchor"),
+    ],
+)
+def test_render_of_a_jitter_spread_just_below_10_ms_inserts_no_silence(
+    derived: DerivedMedia,
+    artifacts_dir: Path,
+    tmp_path: Path,
+    source_in: Fraction,
+    anchor: Fraction,
+) -> None:
+    """AVE-REQ-012 AC-4 (ASM-008): a rendered clip of the same 9 ms spread stream is anchored on
+    the first decoded packet that ends after its seek point; each case's seek point lies in one
+    packet only, which is then the anchor wherever the demuxer's seek lands: a late packet
+    (every early packet then deviates 9 ms the other way) or an early one. The clip's float PCM
+    audio stage holds no inserted silence, and every chirp of the decoded export sits exactly
+    the anchor's deviation from the first packet (0 or 9 ms, at most the peak-to-peak spread)
+    after its analysis placement."""
+    path = derived.audio_jitter_ts
+    packets = _packet_table(path)
+    deviations = _contiguity_deviations(packets)
+    asset = describe_asset(path, asset_id="jitter-ts")
+    assert asset.probe.container_start_time == packets[0][0]  # source time 0: the first packet
+    duration = Fraction(6)
+    clip = Clip(
+        id="snd", track_id="a", asset_id=asset.id, kind="audio", timeline_start=Fraction(0),
+        source_in=source_in, source_out=source_in + duration,
+    )  # fmt: skip
+    sequence = Sequence(
+        id="jitter-ts", fps=FPS, canvas=Canvas(width=640, height=360), tracks=TRACKS, clips=(clip,)
+    )
+    plan = compile_render_plan(sequence, {asset.id: asset}, profile=FAST)
+    (planned,) = plan.audio
+    seek = packets[0][0] + planned.seek
+    holding = [
+        deviation
+        for (start, length), deviation in zip(packets, deviations, strict=True)
+        if start <= seek < start + length
+    ]
+    assert holding == [anchor]  # one packet holds the seek point, of the kind the id names
+    output = artifacts_dir / f"jitter-ts-{source_in.numerator}-{source_in.denominator}.mp4"
+    report = render(plan, output, work_dir=tmp_path, keep_work_dir=True)
+    assert report.succeeded, report.error
+    (stage,) = tmp_path.glob("render-*/audio.wav")
+    pcm = decode_audio(stage, sample_rate=48000, channels=2)[:, 0]
+    assert len(pcm) == duration * 48000
+    assert _zero_runs(pcm, 8) == []
+    audio = decode_audio(output, sample_rate=48000, channels=1)[:, 0]
+    content = [Fraction(frame, 60) + AAC_PRIMING - source_in for frame in REFERENCE_EVENT_FRAMES]
+    expected = [float(time + anchor) for time in content if 0 <= time < duration]
+    assert len(expected) == 2
+    assert max(_chirp_errors(audio, expected)) <= 2 / 48000
 
 
 def test_vfr_gap_longer_than_the_seek_margin_keeps_the_frame_rule(

@@ -66,7 +66,8 @@ point, :mod:`ave.media.audio_timing`), not by counting samples from the first on
 stream that starts after ``S0`` is preceded by silence up to its first timestamp, and timestamp
 gaps or overlaps of :data:`ave.media.audio_timing.AUDIO_TIMESTAMP_TOLERANCE_S` (10 ms) or more
 inside the stream are filled with silence or dropped, to the input sample, whatever the container
-(MPEG-TS included); smaller deviations are jitter and leave the samples contiguous.
+(MPEG-TS included); smaller deviations, measured from the first decoded packet, are jitter and
+leave the samples contiguous.
 """
 
 from __future__ import annotations

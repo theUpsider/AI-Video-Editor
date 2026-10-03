@@ -206,3 +206,118 @@ file, no partial record (AC-4)"), with AC-3 above as an edge case of AVE-REQ-072
   `Claude-Session` line; the session's attribution instruction asks for one `Co-Authored-By` line naming the
   model that wrote the commits and no further attribution lines. The commits follow the session instruction.
   Recommended: the workflow script derives the trailer from the model it launches.
+
+## Review round 1
+
+### Result
+COMPLETE. One blocking finding (real-media lens, item 5): confirmed by measurement and fixed with its second
+option, the real bound stated in the docstrings and tested on both anchor kinds just below it. The optional
+robust anchor stays out (reason below). The run resumed an interrupted attempt: every uncommitted hunk was judged
+against the briefs and kept (none was a leftover mutation); this run added the shared packet-table helpers and
+two docstring precisions, and re-ran every measurement and mutation itself.
+
+### Finding: the jitter bound of item 5
+Confirmed. `aresample` measures each packet's timestamp deviation from the contiguous continuation of the first
+decoded packet (the anchor; after a correction, from the corrected packet), so the 10 ms tolerance bounds the
+peak-to-peak spread of the jitter, which holds for an amplitude below 5 ms. The analysis extraction anchors on the
+stream's first packet; a render anchors on the first decoded packet that ends after its seek point.
+
+Measured in the development container (FFmpeg 6.1.1) with a scratch script outside the repository, on fixture A's
+audio as AAC in MPEG-TS, one frame per PES packet, frame timestamps alternately J early (the first frame included)
+and J late in whole samples (the recipe of `audio_jitter_ts`); 6 s renders from 2, 4.7, 7.5, 12.03, 12.5, 16.5
+and 20.01 s:
+- J = 5 ms: packet table 705 packets at their contiguous position counted from the first packet and 703 exactly
+  10 ms late (spread 10 ms). Analysis extraction: 701 zero runs of 480 samples; chirps 480, 0, 0, 480, 0, 480
+  and 0 samples late. Every render: 141 zero runs (480 samples each; from 4.7 s 140 of them and one of 160),
+  whichever packet holds the seek point; one chirp 480 samples late in six of the seven renders.
+- J = 4.5 ms: 705 packets at 0, 703 exactly 9 ms late (spread 9 ms). Analysis extraction: no zero run, all 7
+  chirps exact. Renders: no zero run; chirps 432 samples (9 ms) late from 2, 4.7 and 20.01 s (seek point in a
+  late packet), exact from 12.03 and 12.5 s (seek point in an early packet) and from 7.5 and 16.5 s (seek point
+  in the 9 ms overlap of a late packet and the next early one: the early packet anchors, the late one is never
+  decoded after the seek).
+
+Robust anchor (placement from a fit of packet timestamps): out. It replaces the placement rule of every decode
+(analysis extraction and render) and needs each source's packet timestamps around every seek point, read per
+render or stored with the probe record; the brief marks it optional and the finding accepts the stated bound.
+Proposed below as a follow-up requirement.
+
+### Changes
+- `backend/src/ave/media/audio_timing.py` — module description: the anchor rule (analysis: the stream's first
+  packet; render: the first decoded packet that ends after the seek point; after a correction, the corrected
+  packet), the bound (jitter stays uncorrected while its peak-to-peak spread is below 10 ms, an amplitude below
+  5 ms; a rendered clip then sits its anchor's deviation, at most the spread, from the analysis placement) and the
+  behavior above it (silence inserted and samples dropped wherever a packet deviates 10 ms or more from the
+  current anchor; the analysis and each render can correct different packets). `AUDIO_TIMESTAMP_TOLERANCE_S`:
+  deviations count from the anchor; the bound with the ±5 ms and ±4.5 ms measurements above.
+- `backend/src/ave/render/ffmpeg.py`, `backend/src/ave/render/compiler.py`, `backend/src/ave/sync/audio.py` — the
+  item 7 sentences measure the smaller deviations from the first decoded packet.
+- `backend/tests/media/derived.py` — new variant `audio_jitter_ts` (`WIDE_JITTER` = 4.5 ms): AAC in MPEG-TS with
+  `-pes_payload_size 0`, frame timestamps 4.5 ms early (even frames, the first included) and 4.5 ms late (odd
+  frames), in whole samples.
+- `backend/tests/media/test_source_timing.py` — `JITTER_PLACEMENT_BOUND` and
+  `test_render_of_a_jittered_source_inserts_no_silence` docstrings state the bound and the render anchor; helpers
+  `_packet_table` (the exact packet table) and `_contiguity_deviations`, shared with `_packet_gaps` and
+  `_packet_deviations`; two new tests (below).
+
+### Tests
+- `test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis` (AVE-REQ-012 AC-4, ASM-008): the file's
+  packet deviations are exactly {0, 9 ms}; the analysis extraction, anchored on an early packet with every late
+  packet 9 ms from it, holds no zero run of 8 samples (the padded last 0.1 s excluded) and all 7 chirps within
+  2 samples.
+- `test_render_of_a_jitter_spread_just_below_10_ms_inserts_no_silence[late-anchor]`, `[early-anchor]`
+  (AVE-REQ-012 AC-4, ASM-008; `source_in` 2 s and 12.5 s, seek points 1 s and 11 s): the packet table shows the
+  seek point inside one packet only, a late one and an early one, so the anchor is the same wherever the
+  demuxer's seek lands; the render's float PCM audio stage holds no zero run, and both chirps of the export sit
+  exactly the anchor's deviation (9 ms, 0) after their analysis placement, within 2 samples: an error at most the
+  peak-to-peak spread.
+
+Mutations (every `__pycache__` deleted first, WF-004; each reverted with the inverse edit; the `git diff` checksum
+`a6898c00163a538df3e1915e2081097c` was equal before and after each run):
+- `AUDIO_TIMESTAMP_TOLERANCE_S = Fraction(9, 1000)` (`-k jitter`, 14 tests) → the three new tests FAIL (zero runs
+  of 432 samples in the analysis and in both renders); the other 11 PASS (the ±2 ms jitter tests and the eight gap
+  cases), so only the new tests cover tolerances above 5 ms and up to 9 ms.
+- Render placement 5 ms later (`_audio_chain`: `clip.origin + clip.seek + Fraction(1, 200)`;
+  `-k render_of_a_jitter`, 4 tests) → both new render cases FAIL (chirps 5.0 ms off); the two ±2 ms render cases
+  PASS (their offsets stay within the file's largest deviation of 208 samples).
+- Render placement 5 ms earlier (`- Fraction(1, 200)`) → all four FAIL (new cases 5.0 ms off; ±2 ms cases 7.3 ms
+  and 9.0 ms off, above 4.4 ms).
+
+### Commands
+- `./scripts/dev-container.sh bash -c 'cd backend && uv run --frozen ruff check src tests && uv run --frozen ruff
+  format --check src tests && uv run --frozen mypy src tests'` — PASS.
+- `./scripts/dev-container.sh flock /tmp/ave-heavy-media.lock uv run --frozen --directory backend pytest -q -p
+  no:cacheprovider tests/media/test_source_timing.py -k jitter` — PASS (14 passed).
+- The three mutation runs above — FAIL as listed, each reverted.
+- `./scripts/dev-container.sh flock /tmp/ave-heavy-media.lock ./scripts/verify.sh --tier media` on the final code
+  and tests (this section written, its media-tier line added afterwards) — PASS: 10 of 10 steps, unit tests 108
+  passed, media and population tests 84 passed in 307 s, evidence run `20261003T011253Z-591749`.
+- `./scripts/verify.sh` (fast tier) on the final tree, this file included — PASS.
+
+### Proposed lead updates
+- `docs/ASSUMPTIONS.md` ASM-008 — title: "Audio timestamp deviations below 10 ms are jitter" (the text and FFmpeg
+  correct exactly 10 ms). Assumption, replacing its last sentence: a deviation is measured from the contiguous
+  continuation of the first decoded packet (the analysis extraction: the stream's first packet; a render: the first
+  decoded packet that ends after its seek point; after a correction, the corrected packet); jitter therefore stays
+  uncorrected while its peak-to-peak spread is below 10 ms (an amplitude below 5 ms), and a rendered clip then sits
+  its anchor's deviation from the stream's first packet (at most the spread) from the analysis placement of the
+  same source. Impact, added: a source whose timestamp jitter reaches 5 ms each way gets dropouts, silence
+  inserted and samples dropped wherever a packet lies 10 ms or more from the current anchor, at different packets
+  in the analysis extraction and in each render (AAC in MPEG-TS alternating ±5 ms: 701 silence runs of 10 ms in the
+  30 s analysis extraction, 141 in every 6 s render, chirps 10 ms late wherever their packet is). Links: add
+  `backend/tests/media/test_source_timing.py`.
+- `docs/requirements/AVE-REQ-012-canonical-rational-timing-and-temporal-invariants.md` § Implementation evidence —
+  AC-4: add `test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis` and
+  `test_render_of_a_jitter_spread_just_below_10_ms_inserts_no_silence` (`backend/tests/media/test_source_timing.py`,
+  variant `audio_jitter_ts` in `backend/tests/media/derived.py`).
+- `docs/TRACEABILITY.md` — AVE-REQ-012 row: Tests list `backend/tests/media/test_source_timing.py` (when not
+  listed).
+- New proposed requirement (next free ID): "Robust audio placement for timestamp jitter of 5 ms or more" — parent
+  AVE-FEAT-002 — rationale: placement from a fit of the packet timestamps gives the analysis extraction and every
+  render one reference and keeps sources with a jitter amplitude between 5 and 10 ms free of dropouts; today such
+  sources get silence inserted at about every other packet.
+
+### Open questions
+- Commit trailers: the commit ends with the session's own `Co-Authored-By` line as the launch prompt asks; the
+  session's attribution instruction lists that line alone and asks for no further attribution lines, so the
+  `Claude-Session` line stays out, as in the first two commits of this branch.
+- Robust anchor: recommended default none until a source with a jitter amplitude of 5 ms or more matters to a user.
