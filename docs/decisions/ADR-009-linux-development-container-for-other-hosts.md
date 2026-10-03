@@ -22,10 +22,15 @@ hook and CI, and parallel agents work in Git worktrees under `.claude/worktrees/
   main checkout at `/workspace` and runs the command in the directory that corresponds to the caller's. Each
   worktree gets its own backend environment on a named state volume beside the shared uv cache.
 - On a Windows host (`uname -s` reports MINGW, MSYS or CYGWIN) `./scripts/verify.sh` re-executes itself through
-  that script, so the Stop gate and every agent run the same tiers there. On Linux and in CI nothing changes.
-- A checkout used with the container sets, in its local Git configuration, `core.autocrlf false`,
-  `core.eol lf` (LF working files) and `worktree.useRelativePaths true` (worktree links that resolve on the host
-  and inside the container).
+  that script, so the Stop gate and every agent run the same tiers there. A macOS host runs each check through
+  the explicit `./scripts/dev-container.sh` prefix. On Linux and in CI nothing changes.
+- The container's idle process (`sleep infinity`) is a keep-alive for `docker exec`: it runs nothing, holds no
+  lock, and `./scripts/dev-container.sh --stop` removes it.
+- `.gitattributes` checks every text file out with LF (`* text=auto eol=lf`), so a fresh clone holds the bytes
+  the container and the baseline hashes expect on any host. A checkout used with the container also sets, in
+  its local Git configuration, `core.autocrlf false`, `core.eol lf` and `worktree.useRelativePaths true`
+  (worktree links that resolve on the host and inside the container); `scripts/dev-container.sh` refuses a
+  checkout with CRLF files.
 
 ## Alternatives considered
 - Native Windows support — rejected: it adds a second platform to the product and its tests (path semantics,

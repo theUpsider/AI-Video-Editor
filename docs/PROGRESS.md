@@ -59,9 +59,9 @@ from the drafts.
 
 ## Next recommended work
 
-1. `verify-requirement` for AVE-REQ-093 → 094 → 096/097/098 in private clones with a skeptic per PASS; on PASS tick
-   the ACs, fill § Test evidence (tests from the release manifest, inspection lines from the part-4 handback), set
-   `done`, update TRACEABILITY.md, commit, push; fast-forward `main` after green CI.
+1. Record the pending verdicts (§ In progress names each re-run command); on every upheld PASS tick the ACs,
+   fill § Test evidence, set `done` in the order 093 → 094 → 096/097/098, update TRACEABILITY.md, commit, push;
+   then `git push origin <commit>:main` after green CI.
 2. `milestone-review` M0; record the result in ROADMAP.md.
 3. Launch M1 backend core ‖ M2 synchronization in isolated worktrees from the commit that closes M0 (finalize the
    drafts with that hash first).
@@ -88,4 +88,5 @@ None.
 
 `./scripts/verify.sh --tier release` PASS at `cd21812` in the development container (arm64; 12 of 12 steps; 108
 unit, 84 media and population tests; 6 tooling suites on every installed awk); CI (x86_64) release tier green
-through `cd21812`. The fast tier passes on the AVE-REQ-093 fix (Stop gate).
+at `12dbb9d`, the newest commit CI had verified when this file was written; GitHub holds the state of later
+pushes. The fast tier passes on every commit of this branch (Stop gate).

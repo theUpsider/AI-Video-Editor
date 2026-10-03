@@ -27,9 +27,10 @@ Commands:
       suite, and exit 1 when any file fails. A file fails when a test fails or errors, is skipped,
       is expected to fail or passes unexpectedly, or when no test ran (the --forbid-skips rule of
       the pytest plugin). With DIR (default $AVE_EVIDENCE_DIR), write each file's suite result.
-  record-suite --dir DIR --file FILE --exit STATUS
-      Write DIR/suite-<file name>.json: the file, its exit status and the criterion tags of its
-      comment lines with their line numbers (used by scripts/tests/run.sh for each shell suite).
+  record-suite --dir DIR --file FILE --exit STATUS --checks N
+      Write DIR/suite-<file name>.json: the file, its exit status, the number of checks it ran and
+      the criterion tags of its comment lines with their line numbers (used by scripts/tests/run.sh
+      for each shell suite). A suite passes only with exit status 0 and N >= 1.
 
 Evidence rules (docs/requirements/README.md, Definition of Done):
   * a criterion is evidenced by a test that carries its tag and passed in the run, or by an
@@ -39,8 +40,9 @@ Evidence rules (docs/requirements/README.md, Definition of Done):
     interface only and never evidence a criterion on their own;
   * the tooling tests in scripts/tests/ (shell suites and Python unit tests) tag their cases with
     ``# AVE-REQ-NNN AC-n`` comment lines; those tags count only through a suite result of the run,
-    with the exit status of that file: a file that never ran gives no evidence, and a failing one
-    counts against its criteria;
+    with the exit status and the check count of that file: a file that never ran gives no
+    evidence, and a failing one, or a shell suite that exited 0 without running a check, counts
+    against its criteria;
   * every tooling tag names an existing criterion: one that does not stops ``record`` and
     ``check-done`` with the file and line.
 
@@ -210,9 +212,10 @@ def comment_tags(path: Path) -> list[tuple[int, str]]:
     return found
 
 
-def write_suite_result(run_dir: Path, suite: Path, exitstatus: int) -> Path:
-    """Records that ``suite`` ran in this run with ``exitstatus``: ``run_dir/suite-<name>.json``
-    holds the file, the exit status and the tags of its comment lines."""
+def write_suite_result(run_dir: Path, suite: Path, exitstatus: int, checks: int = 0) -> Path:
+    """Records that ``suite`` ran in this run with ``exitstatus`` and ``checks`` executed checks:
+    ``run_dir/suite-<name>.json`` holds the file, the exit status, the check count and the tags of
+    its comment lines. A suite with exit status 0 and no check counts as failed when collected."""
     if not run_dir.is_dir():
         raise EvidenceError(f"run directory {run_dir} does not exist")
     if not suite.is_file():
@@ -221,6 +224,7 @@ def write_suite_result(run_dir: Path, suite: Path, exitstatus: int) -> Path:
         "schema": SCHEMA,
         "file": _shown(suite),
         "exitstatus": int(exitstatus),
+        "checks": int(checks),
         "tags": [{"line": line, "tag": tag} for line, tag in comment_tags(suite)],
     }
     target = run_dir / f"suite-{suite.name}.json"
@@ -286,8 +290,12 @@ def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evide
             "tooling test tags that name no existing criterion:\n  " + "\n  ".join(problems)
         )
     for result in results:
-        outcome = "passed" if result["exitstatus"] == 0 else "failed"
-        evidence.suites.append({"file": result["file"], "exitstatus": result["exitstatus"]})
+        checks = int(result.get("checks", 0))
+        # AVE-REQ-097 AC-4: a suite that exited 0 but ran no check is a placeholder and fails.
+        outcome = "passed" if result["exitstatus"] == 0 and checks >= 1 else "failed"
+        evidence.suites.append(
+            {"file": result["file"], "exitstatus": result["exitstatus"], "checks": checks}
+        )
         for tag in sorted({entry["tag"] for entry in result["tags"]}):
             item = {
                 "test": result["file"],
@@ -337,7 +345,7 @@ def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
             for problem in problems:
                 print(f"  {problem}")
         if run_dir is not None:
-            write_suite_result(run_dir, path, 1 if problems else 0)
+            write_suite_result(run_dir, path, 1 if problems else 0, result.testsRun)
     if failed:
         print(f"evidence.py unittest: FAIL ({len(failed)} of {len(files)} file(s))")
         return 1
@@ -547,7 +555,7 @@ def cmd_unittest(args: argparse.Namespace) -> int:
 
 
 def cmd_record_suite(args: argparse.Namespace) -> int:
-    write_suite_result(Path(args.dir), Path(args.file), args.exit)
+    write_suite_result(Path(args.dir), Path(args.file), args.exit, args.checks)
     return 0
 
 
@@ -576,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
     suite.add_argument("--dir", required=True)
     suite.add_argument("--file", required=True)
     suite.add_argument("--exit", required=True, type=int)
+    suite.add_argument("--checks", required=True, type=int, help="checks the suite ran (TOTAL pass=N)")
     suite.set_defaults(handler=cmd_record_suite)
     args = parser.parse_args(argv)
     try:

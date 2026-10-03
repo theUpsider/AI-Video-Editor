@@ -212,7 +212,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Date:** 2026-10-03
 - **Assumption:** A tooling test file's `# AVE-REQ-NNN AC-n` tags count only through a suite result of the run
   (`scripts/tests/run.sh` for the shell suites it lists, `scripts/evidence.py unittest` for `test_*.py`), each tag
-  with the file's exit status; `evidence.py unittest` fails a file in which no test ran; tooling tags are validated
+  with the file's exit status and check count (`run.sh` fails a listed suite that exited 0 without a
+  `TOTAL: pass=N fail=M` line with N ≥ 1, and `collect` counts such a result against its tags); `evidence.py
+  unittest` fails a file in which no test ran; tooling tags are validated
   by scanning every tooling test file at `record` and `check-done`; `show --require-complete` exits 1 for a failed
   run while `--require-fresh` alone checks freshness.
 - **Reason:** The shell suites have no per-case runner; a never-collected test gives no evidence; a bad tag must
@@ -229,6 +231,8 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   match `startup`, `resume` and `compact`, while `clear` and `fork` stay optional.
 - **Reason:** The checker runs without Claude Code; AVE-REQ-098 AC-2 names compaction and a new session.
 - **Impact:** An exotic regex construct can differ between the two engines; a matcher without `clear` passes.
+  Only `|`-separated names form a list; a comma-separated list is a regular expression that matches no source,
+  and check 12 rejects it (found by the AVE-REQ-098 skeptic, 2026-10-03).
 - **Status:** open
 - **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
 
@@ -291,3 +295,28 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Impact:** A lead that resumes a parallel workflow plans for the rerun or writes the continuation.
 - **Status:** confirmed — 2026-10-03 — `wf_df2de811-039` completed the run from the embedded facts
 - **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md), [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-021 — Provider fakes carry the contract marker by hand until the adapters land
+- **Date:** 2026-10-03
+- **Assumption:** A test that runs a provider fake carries `pytest.mark.contract` by hand; the first
+  provider-adapter requirement makes its fake fixtures apply the marker automatically, as a Definition-of-Ready
+  item of that requirement.
+- **Reason:** No provider adapter exists in M0; the marker rule (AVE-REQ-097 AC-4) is enforced by review until a
+  fixture can carry it. Noted by the AVE-REQ-097 re-review of 2026-10-03.
+- **Impact:** A fake-based test without the marker could credit a criterion; reviewers check every provider test
+  for it until the fixtures apply it.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-022 — Evidence written to the bind mount persists after the run
+- **Date:** 2026-10-03
+- **Assumption:** A run's directory under `var/verify/runs/` and `latest-<tier>.json` persist once
+  `scripts/evidence.py record` wrote them; `record` validates nothing after writing.
+- **Reason:** One reviewer clone observed a release run's directory absent about 40 s after the run on the Docker
+  Desktop bind mount, while its harness had run the launch twice; the lead has not reproduced it
+  ([ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § Limits item 6).
+- **Impact:** A manifest absent after a PASS means the tier is rerun before any transition cites it. The follow-up
+  (`record` re-reads the manifest it wrote and names it in the summary line) joins the next change of the evidence
+  tooling.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
