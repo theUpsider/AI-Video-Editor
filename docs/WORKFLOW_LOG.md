@@ -166,7 +166,8 @@ Not an improvement entry: the measured starting point that later entries compare
   line when they overlap.
 - Independent review result: review of this log entry: 2026-10-03, workflow `wf_ed1f5104-63a`: SUPPORTED (suite
   23 of 23 with every lock case; mutations L1 and L5 reproduced). The re-verification of AVE-REQ-096 AC-4:
-  pending (the lead records it).
+  PASS at `d4d3883` in the same run (suite 23 of 23, the lock removed → 11 failures, one waiting line observed
+  live while four reviewer clones queued on the shared lock); the skeptic's challenge was upheld.
 - Measured before/after result: before, nothing stopped a second heavy job (four at once on 2026-10-02).
   After, in the suite, a media run started while the lock was held printed the waiting line, gave no
   output for 2 s and ran its steps after the release. Seven mutations of the lock in `scripts/verify.sh`

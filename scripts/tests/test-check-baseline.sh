@@ -68,6 +68,7 @@ expect() { run_case check "$@"; }
 # expect_import <name> <exit> <expected substring> <mutation...> — runs import_baseline.py --check.
 expect_import() { run_case import "$@"; }
 
+# NOT_WANT=<extended regex> before a call: the case also fails when the output matches it.
 run_case() {
   local tool="$1" name="$2" want_exit="$3" want="$4" out code
   shift 4
@@ -78,7 +79,8 @@ run_case() {
   else
     out="$(cd "$C" && python3 scripts/requirements/import_baseline.py --check 2>&1)"; code=$?
   fi
-  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | grep -qF -- "$want"; }; then
+  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | grep -qF -- "$want"; } &&
+    { [ -z "${NOT_WANT:-}" ] || ! printf '%s\n' "$out" | grep -Eq -- "$NOT_WANT"; }; then
     PASS=$((PASS + 1)); printf '  ok   %-50s %s\n' "$name" "$(printf '%s\n' "$out" | grep -F -m1 -- "${want:-OK:}" | cut -c1-150)"
   else
     FAIL=$((FAIL + 1)); printf '  FAIL %-50s exit=%s (want %s)\n%s\n' "$name" "$code" "$want_exit" "$(printf '%s\n' "$out" | tail -25)"
@@ -141,6 +143,9 @@ expect "edited package validator fails"             1 "$B/tools/validate_package
 expect "weakened baseline behind an edited validator fails" 1 "$B/spec/requirements/AVE-REQ-001.md: baseline changed: SHA-256" "$NEUTERED && sub $B/spec/requirements/AVE-REQ-001.md 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub $B/spec/requirements.json 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.'"
 expect "file added behind an edited validator fails" 1 "$B/spec/NOTES.md: baseline changed: the file is absent from the manifest" "$NEUTERED && printf 'x\n' > $B/spec/NOTES.md"
 expect "removed baseline file fails"                1 "$B/spec/requirements/AVE-REQ-001.md: baseline changed: the file is missing from the package" "rm $B/spec/requirements/AVE-REQ-001.md"
+NOT_WANT="Baseline package: PASS|package validation failed" expect "edited package validator is never run" 1 "$B/tools/validate_package.py: baseline changed: SHA-256" "$NEUTERED"
+expect "symbolic link added fails"                   1 "$B/spec/dangling: baseline changed: a symbolic link was added" "ln -s nowhere $B/spec/dangling"
+expect "symlinked directory added fails"             1 "$B/spec/linkdir: baseline changed: a symbolic link was added" "mkdir -p outside && printf 'x\n' > outside/f && ln -s ../../outside $B/spec/linkdir"
 # (b) one working file per baseline item, same identity
 # AVE-REQ-093 AC-1: every baseline ID maps to exactly one working file.
 # AVE-REQ-093 AC-3: priority, scope, type, source and exclusions cannot be demoted or rewritten.
@@ -186,6 +191,16 @@ expect "additional criterion is reported"            0 "Additional criterion: AV
 - [ ] AC-5 Added behavior.'"
 expect "duplicate criterion ID"                      1 "duplicate acceptance criterion AC-2" "sub '$R001' '$AC2' '$AC2
 $AC2'"
+# AVE-REQ-093 AC-3: the criteria section holds criterion lines only, so no note can qualify or waive one.
+expect "continuation line under a criterion fails"   1 "Acceptance criteria holds a line that is no criterion ('Waived for version one" "sub '$R001' '$AC2' '$AC2
+  Waived for version one: best-effort persistence is enough.'"
+expect "fenced block in the criteria section fails"  1 "Acceptance criteria holds a line that is no criterion ('~~~')" "sub '$R001' '$AC2' '$AC2
+~~~
+AC-1 to AC-4 are informational for M1.
+~~~'"
+expect "sub-heading in the criteria section fails"   1 "Acceptance criteria holds a line that is no criterion ('### Informational" "sub '$R001' '## Acceptance criteria' '## Acceptance criteria
+### Informational for version one'"
+expect "note in a derived criteria section fails"    1 "AVE-REQ-102-derived-stub.md: § Acceptance criteria holds a line that is no criterion" "printf '%s\n' '$DERIVED' | sed 's/^- \[ \] AC-1 Something$/- [ ] AC-1 Something\n  Informational./' > $R/AVE-REQ-102-derived-stub.md"
 # AVE-REQ-093 AC-3: the Description stays the baseline statement unless a reasoned change is logged.
 expect "rewritten description without log line"      1 "Description differs from the baseline statement and the Status log has no 'Description changed: <reason>' line" "sub '$R001' '$STATEMENT' 'The application may keep projects.'"
 expect "extended description without log line"       1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' '$STATEMENT

@@ -411,6 +411,9 @@ is edited. The working files in this directory carry the lifecycle.
    [Changing requirements](#changing-requirements)). A baseline AC whose text changes, or which
    is removed, needs a Status-log line containing `AC-n changed: <reason>`; check_baseline.py
    reports it as a recorded change. Added ACs take the next unused AC number and are reported.
+   `## Acceptance criteria` holds criterion lines only: a continuation line under a criterion, a
+   fenced block or a sub-heading there fails the check, so no note can qualify or waive a criterion
+   in place; a note belongs in Edge cases or the Description with a logged reason.
    The Description (the baseline statement verbatim), `scope`, `parent`, `dependencies`,
    `origins`, `scenarios`, `baseline`, the title, the type, the priority and the source stay
    equal to the baseline (mapped); a different value fails the check. Of these, only the

@@ -17,8 +17,10 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity):
      current;
   c  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
      unless the file's Status log records "AC-n changed: <reason>" (reported as a recorded change);
-     additional working criteria are allowed and reported; the Description equals the baseline
-     statement unless the Status log records "Description changed: <reason>" (reported likewise);
+     additional working criteria are allowed and reported; the Acceptance criteria section of every
+     working requirement holds criterion lines only (a continuation line, a fenced block or a
+     sub-heading there fails); the Description equals the baseline statement unless the Status log
+     records "Description changed: <reason>" (reported likewise);
   d  no deferred requirement is a dependency of a version-one working requirement; requirements
      added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
   e  a summary: requirements by status and by gate, acceptance criteria ticked.
@@ -32,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -161,6 +164,14 @@ class Working:
             found[ac_id] = (match.group(1) in "xX", match.group(3))
         return found
 
+    def criteria_extras(self):
+        """Non-blank lines of ## Acceptance criteria that are no criterion line, fenced lines included."""
+        return [
+            line
+            for line in self.raw_sections.get("Acceptance criteria", [])
+            if line.strip() and not AC_LINE.match(line)
+        ]
+
     def log(self):
         return [line for line in self.sections.get("Status", []) if LOG_LINE.match(line)]
 
@@ -231,11 +242,15 @@ def check_package_files(pkg: Path) -> bool:
     if len(entries) != len(inventory):
         error(manifest, "baseline changed: the manifest lists a path twice")
     root = pkg.resolve()
-    on_disk = {
-        p.relative_to(pkg).as_posix()
-        for p in pkg.rglob("*")
-        if p.is_file() and p.name != "MANIFEST.json"
-    }
+    on_disk = set()
+    for dirpath, dirnames, filenames in os.walk(pkg, followlinks=False):
+        here = Path(dirpath)
+        for name in sorted(dirnames + filenames):
+            entry = here / name
+            if entry.is_symlink():
+                error(entry, "baseline changed: a symbolic link was added")
+            elif name in filenames and name != "MANIFEST.json":
+                on_disk.add(entry.relative_to(pkg).as_posix())
     for name in sorted(entries.keys() - on_disk):
         error(pkg / name, "baseline changed: the file is missing from the package")
     for name in sorted(on_disk - entries.keys()):
@@ -452,6 +467,13 @@ def check_all_requirements(base, files):
     imported = {r["id"] for r in base["reqs"]}
     reqs = {item_id: found[0] for item_id, found in files.items() if found[0].kind == "REQ"}
     for item_id, item in sorted(reqs.items()):
+        for line in item.criteria_extras():
+            error(
+                item.path,
+                "§ Acceptance criteria holds a line that is no criterion"
+                f" ('{line.strip()[:60]}'); the section holds '- [ ] AC-n <text>' lines only, and"
+                " a note belongs in Edge cases or the Description with a logged reason",
+            )
         scope, gate, status = item.get("scope"), item.get("primary_gate"), item.get("status")
         if scope not in ("v1", "future"):
             error(item.path, f"frontmatter scope '{scope}' must be v1 or future")
