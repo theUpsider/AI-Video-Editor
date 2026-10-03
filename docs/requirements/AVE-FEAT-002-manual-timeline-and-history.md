@@ -23,6 +23,7 @@ Baseline feature [AVE-FEAT-002 — Manual timeline and history](../../ai-video-e
 - [AVE-REQ-015 — Undo, redo, autosave, and revisions](AVE-REQ-015-undo-redo-autosave-and-revisions.md)
 - [AVE-REQ-016 — Concurrent user and AI edit safety](AVE-REQ-016-concurrent-user-and-ai-edit-safety.md)
 - [AVE-REQ-017 — Usable synchronized preview](AVE-REQ-017-usable-synchronized-preview.md)
+- [AVE-REQ-104 — Robust audio placement for timestamp jitter of 5 ms or more](AVE-REQ-104-robust-audio-placement-for-timestamp-jitter.md)
 
 ## Out of scope
 - Object and motion tracking and advanced continuous video understanding, deferred to a later version ([scope](../../ai-video-editor-requirements/spec/SCOPE_AND_ASSUMPTIONS.md)).

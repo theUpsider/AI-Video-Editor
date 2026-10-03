@@ -278,8 +278,10 @@ In effect since bootstrap
    tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
    every installed awk) and the check that every `done` requirement is evidenced by this run. Component steps
    live in [scripts/verify.d/](../scripts/verify.d/); each is a required file, so none can go missing silently.
-3. **Evidence.** Each run records `var/verify/runs/<run-id>/`: the step log, one pytest report per test step
-   and `manifest.json`, which ties the results to the commit, the tree fingerprint, the toolchain, the
+   The media and release tiers hold the heavy-media lock for their whole run (§ Testing strategy item 6); in the
+   development container the lock file lives on the shared state volume (`AVE_HEAVY_LOCK`).
+3. **Evidence.** Each run records `var/verify/runs/<run-id>/`: the step log, one pytest report per test step,
+   one suite result per tooling test file that ran, and `manifest.json`, which ties the results to the commit, the tree fingerprint, the toolchain, the
    configuration hashes and every criterion and scenario tag ([scripts/evidence.py](../scripts/evidence.py);
    `var/verify/latest-<tier>.json` holds the newest of each tier). `evidence.py show` reports a manifest
    STALE once the tree changes: stale evidence certifies nothing. The steps "Working tree unchanged by
@@ -291,7 +293,8 @@ In effect since bootstrap
    warning. `CLAUDE_VERIFY_GATE=off` disables it for humans. Results and the full log live in
    `.git/claude-verify/` (one per worktree).
 5. **Session start.** [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh)
-   reports the last verification result and whether it matches the current tree. Both hooks
+   reports the uncommitted paths (a bounded list), the last verification result and whether it matches the
+   current tree. Both hooks
    activate after workspace trust ([ASM-001](ASSUMPTIONS.md)) and are thin adapters over
    [scripts/lib/verify-state.sh](../scripts/lib/verify-state.sh), which holds the working-tree
    fingerprint and the state records; verify.sh and the evidence manifest use the same fingerprint.

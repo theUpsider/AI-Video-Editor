@@ -135,18 +135,30 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Status:** open
 - **Links:** [AVE-REQ-024](requirements/AVE-REQ-024-audio-based-offset-estimation.md), [WORKFLOW_LOG WF-001](WORKFLOW_LOG.md)
 
-### ASM-008 — Audio timestamp deviations up to 10 ms are jitter
-- **Date:** 2026-10-02
+### ASM-008 — Audio timestamp deviations below 10 ms are jitter
+- **Date:** 2026-10-02 (revised 2026-10-03 after the follow-up review measured the boundary)
 - **Assumption:** Decoded audio is placed by its timestamps; deviations from a contiguous stream below 10 ms are
   treated as container rounding or muxer jitter (samples stay contiguous), deviations of 10 ms or more as real
   gaps or overlaps (filled with silence or dropped in full; FFmpeg's threshold is a float option, so exactly
-  10 ms is corrected). A rendered clip of a jittered source sits up to the jitter of its seek packet (below
-  the threshold) from the analysis placement of the same source.
+  10 ms is corrected). A deviation is measured from the contiguous continuation of the first decoded packet:
+  the stream's first packet in the analysis extraction, the first decoded packet that ends after the seek
+  point in a render, and the corrected packet after a correction. Jitter therefore stays uncorrected while
+  its peak-to-peak spread is below 10 ms (an amplitude below 5 ms), and a rendered clip then sits its
+  anchor's deviation from the stream's first packet (at most the spread) from the analysis placement of the
+  same source. Measured: gaps of 5 ms stay (chirps 240 samples early, no zero run), gaps of 12, 21 and 50 ms
+  are corrected exactly, in Matroska/PCM and MPEG-TS/AAC; the ±2 ms jitter fixture renders 112 and 192
+  samples from its analysis placement, within the file's largest deviation of 208 samples.
 - **Reason:** A 1 ms threshold inserted hundreds of dropouts into a stream with 2 ms jitter; one lost AAC frame is
   21.3 ms at 48 kHz, so real gaps stay above the threshold.
-- **Impact:** A genuine gap shorter than 10 ms stays uncorrected (an error below one frame at 60 fps).
+- **Impact:** A genuine gap shorter than 10 ms stays uncorrected (an error below one frame at 60 fps). A source
+  whose timestamp jitter reaches 5 ms each way gets dropouts: silence inserted and samples dropped wherever a
+  packet lies 10 ms or more from the current anchor, at different packets in the analysis extraction and in
+  each render (AAC in MPEG-TS alternating ±5 ms: 701 silence runs of 10 ms in the 30 s analysis extraction,
+  141 in every 6 s render); AVE-REQ-104 proposes a fitted reference for such sources. A stream without its
+  own duration can lose up to its end-packet jitter (below 10 ms) at the end of the analysis extraction.
 - **Status:** open
-- **Links:** [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), `backend/src/ave/media/audio_timing.py`
+- **Links:** [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), `backend/src/ave/media/audio_timing.py`,
+  `backend/tests/media/test_source_timing.py`, [AVE-REQ-104](requirements/AVE-REQ-104-robust-audio-placement-for-timestamp-jitter.md)
 
 ### ASM-009 — Output before a source's first video frame shows that first frame
 - **Date:** 2026-10-02
@@ -157,3 +169,121 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Impact:** Up to the stream's start offset (typically a few milliseconds) shows a held first frame.
 - **Status:** open
 - **Links:** [ADR-004](decisions/ADR-004-exact-time-and-composition-model.md), `backend/src/ave/render/compiler.py`
+
+### ASM-010 — Background colors are coded with the BT.709 limited-range matrix in Python
+- **Date:** 2026-10-03
+- **Assumption:** The renderer computes the 8-bit Y'CbCr values of a sequence background from its RGB value with the
+  BT.709 limited-range matrix in exact rationals (half up) and draws them directly, so the stored values match the
+  BT.709 tag of the output. FFmpeg's `color` source converts with BT.601 when the link colorspace is unset.
+- **Reason:** Measured on FFmpeg 6.1: `#204060` through the `color` source stores Y 66, U 147, V 112 (its BT.601
+  encoding) and decodes as (30, 63, 98) under the BT.709 tag; the Python coding decodes within one level.
+- **Impact:** A later change of the output matrix (BT.2020 outputs) changes the coding function as well.
+- **Status:** confirmed — 2026-10-03 — `test_background_decodes_to_its_color_under_the_tagged_bt709_matrix` and the
+  round-2 real-media review (ten colors, two decoders, spec math)
+- **Links:** [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md), `backend/src/ave/render/ffmpeg.py`,
+  [AVE-REQ-019](requirements/AVE-REQ-019-aspect-preserving-composition-and-transforms.md), [AVE-REQ-020](requirements/AVE-REQ-020-two-perspective-split-screen-layout.md)
+
+### ASM-011 — The baseline is anchored by the pinned SHA-256 of its manifest
+- **Date:** 2026-10-03
+- **Assumption:** `scripts/check_baseline.py` pins `BASELINE_MANIFEST_SHA256`, the SHA-256 of
+  `ai-video-editor-requirements/MANIFEST.json`; the manifest's own file hashes then cover every file of the package.
+- **Reason:** Of the two anchors the fix brief offered (manifest hash, Git tree), the hash works in every checkout
+  and in the test suite's fixture copies outside Git, with the standard library alone.
+- **Impact:** Adopting a new baseline version from the human needs a commit that updates the pin and cites the
+  human's input.
+- **Status:** open
+- **Links:** [ADR-003](decisions/ADR-003-requirements-baseline-import.md), [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-012 — A requirement's Description is compared with the baseline as a whole section
+- **Date:** 2026-10-03
+- **Assumption:** The baseline check compares the whole `## Description` section of an imported requirement with the
+  baseline statement, fenced blocks included, ignoring trailing whitespace on each line and blank lines around the
+  section; a difference needs a Status-log line `Description changed: <reason>`.
+- **Reason:** Text added in a fenced block changes the statement as much as plain text does.
+- **Impact:** Every visible edit of an imported Description needs its logged reason.
+- **Status:** open
+- **Links:** [ADR-003](decisions/ADR-003-requirements-baseline-import.md), [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-013 — Tooling evidence is credited per suite file that ran
+- **Date:** 2026-10-03
+- **Assumption:** A tooling test file's `# AVE-REQ-NNN AC-n` tags count only through a suite result of the run
+  (`scripts/tests/run.sh` for the shell suites it lists, `scripts/evidence.py unittest` for `test_*.py`), each tag
+  with the file's exit status; `evidence.py unittest` fails a file in which no test ran; tooling tags are validated
+  by scanning every tooling test file at `record` and `check-done`; `show --require-complete` exits 1 for a failed
+  run while `--require-fresh` alone checks freshness.
+- **Reason:** The shell suites have no per-case runner; a never-collected test gives no evidence; a bad tag must
+  stop every tier although the fast tier runs no shell suite; certifying completeness needs a passing run.
+- **Impact:** One failing case fails every criterion its file tags; a shell-suite tag counts only in the release
+  tier; an empty `test_*.py` in `scripts/tests/` fails the fast tier; a reviewer certifies with both flags.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), `scripts/evidence.py`, `scripts/tests/run.sh`
+
+### ASM-014 — Hook matchers are checked with Python's regex engine
+- **Date:** 2026-10-03
+- **Assumption:** Check 12 of `scripts/check-project-control.sh` evaluates hook matchers by Claude Code's documented
+  rules with Python's `re.search` standing in for JavaScript's unanchored `RegExp.test`; the SessionStart hook must
+  match `startup`, `resume` and `compact`, while `clear` and `fork` stay optional.
+- **Reason:** The checker runs without Claude Code; AVE-REQ-098 AC-2 names compaction and a new session.
+- **Impact:** An exotic regex construct can differ between the two engines; a matcher without `clear` passes.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-015 — The probe counts accelerators by device nodes and nvidia-smi
+- **Date:** 2026-10-03
+- **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from device nodes under `/dev`
+  (`nvidia*`, `dri`) and from a GPU that `nvidia-smi` reports; FFmpeg's built-in hardware encoders never count.
+- **Reason:** AVE-REQ-094 edge case: a compiled-in encoder says nothing about a device.
+- **Impact:** A host with `/dev/dri` nodes reports `present` before any hardware encode is tested; AVE-REQ-076
+  still needs a test encode.
+- **Status:** open
+- **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
+
+### ASM-016 — .env.example lists the product's variables only
+- **Date:** 2026-10-03
+- **Assumption:** `.env.example` documents the product's runtime and credential variables; development-tool
+  variables (`VERIFY_TIER`, `CLAUDE_VERIFY_*`, `AVE_EVIDENCE_DIR`, `AVE_HEAVY_LOCK`, `AVE_PROBE_DEV_DIR`) stay
+  documented in their scripts.
+- **Reason:** The fix brief asks for the product variables with their purposes.
+- **Impact:** None on the product.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-017 — The heavy-media lock serializes jobs that share one lock file
+- **Date:** 2026-10-03
+- **Assumption:** `flock` works per file: agents serialize their media and release tiers only when they share the
+  lock file. In the development container `scripts/dev-container.sh` sets `AVE_HEAVY_LOCK` to
+  `/state/ave-heavy-media.lock` on the state volume every container of the host mounts; CI runs one job per runner.
+- **Reason:** A reviewer's private clone runs in its own container, and the lock must still cover it.
+- **Impact:** A host with another isolation scheme needs the same shared path.
+- **Status:** open
+- **Links:** [ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md), [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md), `scripts/verify.sh`
+
+### ASM-018 — Check 11 reads a commit as lowercase hex
+- **Date:** 2026-10-03
+- **Assumption:** A brief's Input revision names a commit as a delimited token of 7 to 40 lowercase hex digits (Git's
+  own output) or as the self-reference `git log -1 --format=%h -- <this brief>`; an English word of seven or more
+  hex letters (for example "defaced") also counts.
+- **Reason:** The rule stays mechanical and awk-portable.
+- **Impact:** Negligible; the brief's reviewer reads the input revision.
+- **Status:** open
+- **Links:** [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)
+
+### ASM-019 — PROGRESS.md claims no ongoing execution
+- **Date:** 2026-10-03
+- **Assumption:** Check 7 rejects the words "running", "underway" and "in flight" in PROGRESS.md outside comments,
+  fences and code spans, and allows the negations ("nothing is running", "not running", "no longer running").
+- **Reason:** AVE-REQ-098 AC-3 forbids claiming that unfinished work keeps executing after the session stops.
+- **Impact:** Other uses of the words in PROGRESS.md need rephrasing.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-020 — Workflow resume caches depend on call order
+- **Date:** 2026-10-03
+- **Assumption:** A resumed Workflow run replays a cached agent result only while the sequence of `agent()` calls
+  before it is unchanged; parallel tracks interleave differently per run, so a resume after a session restart can
+  rerun completed stages. A restart therefore continues through a hand-written continuation script that embeds
+  the completed stages' results as facts (`docs/workflows/`).
+- **Reason:** Observed on 2026-10-03: the resume of `wf_164de68e-23b` restarted the completed review stages.
+- **Impact:** A lead that resumes a parallel workflow plans for the rerun or writes the continuation.
+- **Status:** confirmed — 2026-10-03 — `wf_df2de811-039` completed the run from the embedded facts
+- **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md), [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)

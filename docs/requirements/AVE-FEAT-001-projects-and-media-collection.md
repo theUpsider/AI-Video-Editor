@@ -26,6 +26,7 @@ Baseline feature [AVE-FEAT-001 — Projects and media collection](../../ai-video
 - [AVE-REQ-008 — Reviewable accidental-recording detection](AVE-REQ-008-reviewable-accidental-recording-detection.md)
 - [AVE-REQ-009 — Broken media and relinking](AVE-REQ-009-broken-media-and-relinking.md)
 - [AVE-REQ-010 — Portable project backups](AVE-REQ-010-portable-project-backups.md)
+- [AVE-REQ-103 — Clear probe error for video without presentation timestamps](AVE-REQ-103-clear-probe-error-for-video-without-presentation-timestamps.md)
 
 ## Out of scope
 - Object and motion tracking and advanced continuous video understanding, deferred to a later version ([scope](../../ai-video-editor-requirements/spec/SCOPE_AND_ASSUMPTIONS.md)).
