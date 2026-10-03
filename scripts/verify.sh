@@ -30,6 +30,13 @@
 # tied to the commit, the tree fingerprint, the toolchain, the configuration and every requirement
 # tag. Inspect it with
 # `python3 scripts/evidence.py show [AVE-REQ-NNN ...]`.
+#
+# One heavy media job at a time (AVE-REQ-096 AC-4): a media or release tier run holds an exclusive
+# flock on the heavy-media lock file ${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock} from its
+# first step to its summary, prints one line while it waits for the lock, and exports
+# AVE_HEAVY_LOCK_HELD=1 to its steps. A caller that already holds the lock sets
+# AVE_HEAVY_LOCK_HELD=1, and the run takes no second lock. Every other heavy media command runs as
+# `flock <lock file> <command>`. The fast tier takes no lock.
 # ==================================================================================================
 # shellcheck source-path=SCRIPTDIR
 
@@ -41,6 +48,7 @@ STEPS_FAILED=0
 FAILED_STEPS=""
 TIER="${VERIFY_TIER:-fast}"
 AVE_EVIDENCE_DIR=""
+HEAVY_LOCK="${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}"
 
 usage() {
   printf 'Usage: ./scripts/verify.sh [--tier fast|media|release]\n'
@@ -48,13 +56,15 @@ usage() {
 }
 
 # run_step "<name>" <command> [args...] — runs one check, records its result, never aborts the run.
+# The step gets no copy of the heavy-media lock descriptor (9), so no process a step leaves behind
+# keeps the lock after the run.
 run_step() {
   local name="$1" started status
   shift
   STEPS_RUN=$((STEPS_RUN + 1))
   printf '\n==> %s\n' "$name"
   started=$SECONDS
-  "$@" </dev/null
+  "$@" </dev/null 9>&-
   status=$?
   if [ -n "$AVE_EVIDENCE_DIR" ]; then
     printf '%s\t%s\t%s\n' "$name" "$([ "$status" -eq 0 ] && echo PASS || echo FAIL)" \
@@ -78,6 +88,32 @@ tier_includes() {
     release:release) return 0 ;;
   esac
   return 1
+}
+
+# hold_heavy_lock — in the media and release tiers, takes the heavy-media lock on file descriptor 9
+# for the rest of the run (header: one heavy media job at a time). Returns 1 when it cannot.
+hold_heavy_lock() {
+  tier_includes media || return 0
+  [ "${AVE_HEAVY_LOCK_HELD:-}" = 1 ] && return 0
+  if ! command -v flock >/dev/null 2>&1; then
+    printf 'verify.sh: FAIL — tier %s needs flock (util-linux) to hold the heavy-media lock %s\n' \
+      "$TIER" "$HEAVY_LOCK"
+    return 1
+  fi
+  if ! exec 9>>"$HEAVY_LOCK"; then
+    printf 'verify.sh: FAIL — cannot open the heavy-media lock %s\n' "$HEAVY_LOCK"
+    return 1
+  fi
+  if ! flock -n 9; then
+    printf 'verify.sh: waiting for the heavy-media lock %s (%s)\n' "$HEAVY_LOCK" \
+      "another media or release run holds it; a caller that holds it sets AVE_HEAVY_LOCK_HELD=1"
+    if ! flock 9; then
+      printf 'verify.sh: FAIL — cannot take the heavy-media lock %s\n' "$HEAVY_LOCK"
+      return 1
+    fi
+  fi
+  AVE_HEAVY_LOCK_HELD=1
+  export AVE_HEAVY_LOCK_HELD
 }
 
 # Step registration helpers used by scripts/verify.d/*.sh.
@@ -129,6 +165,7 @@ record_evidence() {
 main() {
   local before step_file
   cd "$ROOT" || return 2
+  hold_heavy_lock || return 1
   before="$(tree_state)"
   AVE_EVIDENCE_DIR="$ROOT/var/verify/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
   mkdir -p "$AVE_EVIDENCE_DIR" || return 2

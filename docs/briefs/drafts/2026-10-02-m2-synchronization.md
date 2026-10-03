@@ -14,7 +14,7 @@ full):
   offset versus drift, inconsistent anchors flagged, a single uncertain match never becomes a speed change).
 - AVE-REQ-030 Manual synchronization tools, backend part (anchors, one-frame and audio-sample nudges, re-fit with
   residuals; a user-supplied mapping survives re-analysis unless explicitly reset).
-- AVE-REQ-024 AC-3 hardening ([ASM-007](../ASSUMPTIONS.md)): the onset-timing gates cannot separate sparse genuine
+- AVE-REQ-024 AC-3 hardening ([ASM-007](../../ASSUMPTIONS.md)): the onset-timing gates cannot separate sparse genuine
   evidence from unrelated recordings on a shared rhythmic grid. Add a waveform-level discriminator between the
   chosen and the competing alignments (the same scene shares the whole waveform; unrelated music shares at most
   transient shapes). Targets on seeded populations: 0 wrong offsets on unrelated grid music over grid steps

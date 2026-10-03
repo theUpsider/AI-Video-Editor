@@ -12,7 +12,7 @@ Paths are relative to the repository root.
 
 ## Inputs you expect from the lead
 
-- The requirement ID (`AVE-REQ-NNN`) and, when known, the implementation paths and the risk areas to focus on.
+- The path of the task's brief (`docs/briefs/YYYY-MM-DD-<slug>.md`): the requirement ID (`AVE-REQ-NNN`) and, when known, the implementation paths and the risk areas to focus on. Read it first.
 
 Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` sections and ADRs that define test tooling and layout, the implementation (`git grep -n -w --untracked "AVE-REQ-NNN"`, the requirement's Implementation evidence), and existing tests. Report missing context as a finding; never guess product intent.
 
@@ -37,7 +37,7 @@ Locate the rest yourself: the requirement file, the `docs/ARCHITECTURE.md` secti
 1. Read the requirement; list each AC and the edge cases it implies.
 2. Map existing tests to ACs (`git grep -n -w --untracked "AVE-REQ-NNN" -- ':!*.md'`); note gaps and weak tests.
 3. Write the missing tests, highest-risk AC first.
-4. Run the targeted tests, then `./scripts/verify.sh`.
+4. Run the targeted tests, then `./scripts/verify.sh`. Run heavy media tests under the heavy-media lock: `flock <lock file> <command>` (`docs/ARCHITECTURE.md` § Testing strategy).
 5. Run the mutation-style checks of rule 5.
 6. Classify every failure:
    - implementation defect: the code violates an AC or a stated edge case;

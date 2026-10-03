@@ -4,7 +4,7 @@
 #   test-check-baseline.sh  scripts/check_baseline.py and scripts/requirements/import_baseline.py
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
-#   test-verify-tiers.sh    tier selection and exit codes of scripts/verify.sh
+#   test-verify-tiers.sh    tier selection, exit codes and heavy-media lock of scripts/verify.sh
 #   test-probe-environment.sh  scripts/probe-environment.sh (offline: measured resources, accelerator
 #                           verdict, Claude Code version, OS user, writability; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through

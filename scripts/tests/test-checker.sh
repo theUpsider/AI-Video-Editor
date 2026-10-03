@@ -205,8 +205,49 @@ expect "brief with a repeated heading"     1 "ERROR: $B: heading '## Requirement
 expect "brief requirements without an ID"  1 "ERROR: $B: section '## Requirements' names no requirement ID (AVE-REQ-NNN)" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/Fix the findings./' > $B"
 expect "brief ID outside Requirements"     1 "section '## Requirements' names no requirement ID" "printf '$BRIEF' | sed -e 's/^AVE-REQ-001 AC-1\$/Fix the findings./' -e 's/^None\\.\$/After AVE-REQ-002./' > $B"
 expect "brief with an extra section after the template" 0 "OK:" "printf '${BRIEF}\n## Notes\nFree text.\n' > $B"
+# AVE-REQ-096 AC-1, AVE-REQ-096 AC-2: the input revision names a commit: a delimited hash of 7 to 40
+# hex digits, or the self-reference to the commit that adds the brief.
+NO_COMMIT="ERROR: $B: section '## Input revision' names no commit"
+expect "input revision without a commit"   1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/The commit that closes M0; the launching prompt names it./' > $B"
+expect "input revision: branch name only"  1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief./' > $B"
+expect "input revision: six hex digits"    1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/\`abc123\` on the working branch./' > $B"
+expect "input revision: 41 hex digits"     1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/0123456789abcdef0123456789abcdef012345678/' > $B"
+expect "input revision: abbreviated hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/\`6736401\` on \`ccr-af7078da-q8r8mf\`; isolated worktree./' > $B"
+expect "input revision: full hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/a62e197b41ebd83adb000349347ca9fd0209b7eb, main working tree./' > $B"
+expect "input revision: self-reference accepted" 0 "OK:" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief (\`git log -1 --format=%h -- $B\`).|' > $B"
+expect "input revision: self-reference to another brief" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` (\`git log -1 --format=%h -- docs/briefs/2026-10-01-other.md\`).|' > $B"
+# AVE-REQ-096 AC-1: a handback persists in docs/briefs/handbacks/, named after the brief it answers.
+HB=docs/briefs/handbacks
+expect "handback and part handback of a brief accepted" 0 "OK:" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.md && printf '# Handback, part 2\n' > $HB/2026-10-02-stub.part-2.md"
+expect "handback without its brief"        1 "ERROR: $HB/2026-10-02-other.md: names no brief: docs/briefs/2026-10-02-other.md is missing" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-other.md"
+expect "handback part without a number"    1 "ERROR: $HB/2026-10-02-stub.part-x.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.part-x.md"
+expect "handback that is no Markdown file" 1 "ERROR: $HB/2026-10-02-stub.txt: a handback is named" "printf '$BRIEF' > $B && mkdir -p $HB && printf 'x\n' > $HB/2026-10-02-stub.txt"
+expect "handback named after the README"   1 "ERROR: $HB/README.md: names no brief" "mkdir -p $HB && printf '# Handbacks\n' > $HB/README.md"
+# AVE-REQ-098 AC-3: PROGRESS.md never claims that work is running; in-flight work is recorded
+# stop-safe ("launched <date>; verdict not recorded; … re-run <exact command>").
+P=docs/PROGRESS.md
+expect "PROGRESS: review running"          1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- Review of AVE-REQ-001 running as a workflow.'"
+for claim in 'Running: the release tier of the merge.' '- Implementer in flight on branch x.' \
+  '- Implementer in-flight on branch x.' '- Media-tier run underway.' '- The review is still RUNNING.'; do
+  expect "PROGRESS claim: $claim" 1 "claims ongoing execution" "sub $P '## In progress' '## In progress
+$claim'"
+done
+expect "PROGRESS: stop-safe in-flight line accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Review of AVE-REQ-001: launched 2026-10-02; verdict not recorded. On resume without a recorded verdict nothing is running: re-run \`/verify-requirement AVE-REQ-001\`.'"
+expect "PROGRESS: claim words in comments, fences and code spans accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+<!-- never write that a review is running -->
+<!--
+a run underway
+-->
+Use \`running\` only in code.
+\`\`\`
+review running
+\`\`\`'"
+expect "PROGRESS: rerunning and not running accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Next: rerunning the media tier; the old job is not running and no longer running.'"
 # AVE-REQ-098 AC-4: settings start no permission bypass; hook commands start no loop, sleep or
-# background job.
+# background job, and no hook runs asynchronously.
 expect "settings: bypassPermissions default mode" 1 "ERROR: .claude/settings.json: permissions.defaultMode 'bypassPermissions' runs tools without permission prompts" "jedit \"d['permissions']['defaultMode'] = 'bypassPermissions'\""
 expect "settings: dontAsk default mode"    1 "permissions.defaultMode 'dontAsk' runs tools without permission prompts" "jedit \"d['permissions']['defaultMode'] = 'dontAsk'\""
 expect "settings: auto default mode accepted" 0 "OK:" "jedit \"d['permissions']['defaultMode'] = 'auto'\""
@@ -219,6 +260,8 @@ for cmd in 'while true; do .claude/hooks/stop-verify.sh; done' 'sleep 600' 'nohu
   expect "hook command: $cmd" 1 "starts a loop, a sleep, a background job or a permission bypass" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '$cmd'\""
 done
 expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh 2>&1 && true'\""
+expect "hook entry with async true"        1 "ERROR: .claude/settings.json: hooks.Stop[0] runs a hook asynchronously (\"async\": true), which escapes its timeout" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['async'] = True\""
+expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['hooks'][0]['async'] = False\""
 # AVE-REQ-098 AC-2: the SessionStart hook runs at startup, after resume and after compaction.
 expect "SessionStart matcher startup only" 1 "ERROR: .claude/settings.json: the SessionStart hook .claude/hooks/session-start.sh does not run on resume, compact" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup'\""
 expect "SessionStart matcher without compact" 1 "does not run on compact: its matcher excludes them" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup|resume|clear'\""

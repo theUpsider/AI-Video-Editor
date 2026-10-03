@@ -85,26 +85,24 @@ grep -H -E '^(status|priority):' docs/requirements/AVE-REQ-*.md
 1. Record the transition `ready → in-progress`.
 2. Read the requirement file completely, its parent FEAT/EPIC, the requirements under its Dependencies, and the ADRs it cites or that cite it (`grep -rl "AVE-REQ-NNN" docs/decisions/`).
 3. Read the `docs/ARCHITECTURE.md` sections that govern the affected components; locate the code involved (`git grep -n -w --untracked "AVE-REQ-NNN"`, entry points, existing tests).
-4. **Research needed** (unfamiliar library, API, format or standard; fast-changing technology): delegate to the `researcher` with the question, the decision it feeds and the constraints. Record a result that drives a decision as an assumption or ADR.
-5. **Significant architecture decision needed** (architecture, data model, integration boundary, infrastructure, major dependency, long-term maintainability): consult the `architect` with the decision, the IDs it serves and the constraints. Review its Proposed ADR and the updates it proposes. Accept it per `docs/decisions/README.md` § Who writes (plus § Superseding when it replaces an ADR) and cite it in the requirement's `## Dependencies`, or return it with reasons. Escalate only under the criteria in section 14.
+4. **Research needed** (unfamiliar library, API, format or standard; fast-changing technology): delegate to the `researcher` through a brief (section 4) holding the question, the decision it feeds and the constraints. Record a result that drives a decision as an assumption or ADR.
+5. **Significant architecture decision needed** (architecture, data model, integration boundary, infrastructure, major dependency, long-term maintainability): consult the `architect` through a brief (section 4) holding the decision, the IDs it serves and the constraints. Review its Proposed ADR and the updates it proposes. Accept it per `docs/decisions/README.md` § Who writes (plus § Superseding when it replaces an ADR) and cite it in the requirement's `## Dependencies`, or return it with reasons. Escalate only under the criteria in section 14.
 
 ## 4. Implement — delegate or implement directly
 
 **Delegate to the `implementer`** when the work is bounded (one Ready requirement or a tight set under one parent, unambiguous ACs) and isolatable (clear ownership of a set of files), or when the work is substantial enough to crowd your own context, or your context is already heavy.
 **Implement directly** by invoking the `implement-requirement` skill with `AVE-REQ-NNN` when the change is small, cross-cutting, touches files other work also touches, or needs design iteration.
 
-Brief every subagent with the requirement ID, file paths and constraints only. Subagents read the files themselves; never paste requirement text, documents or conversation history.
+**Brief first.** Before spawning any delegated task (implementer, tester, researcher, architect, workflow run), write its brief `docs/briefs/YYYY-MM-DD-<slug>.md` from the template in `docs/briefs/README.md`: requirement IDs and the ACs in scope, allowed and forbidden paths (the files of parallel work are forbidden), constraints, test commands, handback schema, and the input revision: the current commit (`git rev-parse --short HEAD`) plus the commit that adds the brief (`git log -1 --format=%h -- docs/briefs/<this file's name>`), followed by "isolated worktree" or "main working tree" (naming any uncommitted changes the task builds on); check 11 of `scripts/check-project-control.sh` fails on an input revision that names no commit. A brief written ahead of its launch waits in `docs/briefs/drafts/` (`docs/briefs/README.md` § Drafts). Commit the brief before the launch, without the task's work (`docs: brief <task>`; with the transitions of § Parallel work step 1; inside an uncommitted merge of § Parallel work step 4 it joins the merge commit), then note `git rev-parse HEAD` as the task's base commit. The prompt passes the brief path and the base commit and adds nothing the brief lacks; subagents read the files themselves. Never paste requirement text, documents or conversation history. Skills that fork their own agent (`verify-requirement`, `architecture-review`) take no brief.
 
 ```text
-Implement AVE-REQ-NNN.
-Files in scope: <paths or globs>. Leave untouched: <paths owned by parallel work, or "none">.
-Constraints: <ADR-NNN, interfaces to honor, decisions already made, or "none">.
-Worktree: <no | yes — base commit <hash>; confirm `git merge-base --is-ancestor <hash> HEAD` first, else return BLOCKED>.
+Implement AVE-REQ-NNN as briefed in docs/briefs/YYYY-MM-DD-<slug>.md; read the brief first.
+Worktree: <no — main working tree | yes — base commit <full hash>; before changing anything confirm that `git rev-parse HEAD` prints exactly that hash, else return BLOCKED>.
 Commit: <no | yes, after ./scripts/verify.sh passes, message "AVE-REQ-NNN: <imperative summary>">.
 Return the implement-requirement report.
 ```
 
-When the report returns:
+When the report returns, persist it first as the task's handback, `docs/briefs/handbacks/<brief-slug>.md` (`<brief-slug>.part-<n>.md` for a task run in parts), unless the task wrote that file itself because its brief's handback schema names it; it is committed with the work it reports. Then:
 1. `COMPLETE`: inspect the diff yourself (`git diff`, or `git diff HEAD...<branch>` for a worktree branch); apply the "Shared-document updates for the lead" you agree with (proposed assumptions and follow-up requirements go through section 10); run `./scripts/verify.sh`. The status stays `in-progress` until section 6 step 2.
 2. `PARTIAL` or `BLOCKED`: classify the cause (section 7), resolve it (decide the ambiguity, consult the architect, remove the blocker), then re-delegate with the resolution as a constraint or finish directly.
 3. The report is a claim; `verify-requirement` decides.
@@ -112,30 +110,40 @@ When the report returns:
 ### Parallel work
 
 Use it when two or more selected requirements are independent of each other and touch disjoint files.
-1. Record the `in-progress` transition of each and commit it (`AVE-REQ-NNN, AVE-REQ-NNN: start implementation`). Worktrees branch from the current `HEAD` (`worktree.baseRef: "head"` in `.claude/settings.json`) and carry no uncommitted changes; note `git rev-parse HEAD` as the base commit.
-2. Spawn one implementer per requirement in a single message: Agent tool with `subagent_type: implementer` and `isolation: "worktree"`, brief with `Worktree: yes` and `Commit: yes`; each brief's "Leave untouched" names the files of the others.
+1. Record the `in-progress` transition of each, write each implementer's brief (Brief first above), and commit them together (`AVE-REQ-NNN, AVE-REQ-NNN: start implementation`). Worktrees branch from the current `HEAD` (`worktree.baseRef: "head"` in `.claude/settings.json`) and carry no uncommitted changes; note `git rev-parse HEAD` as the base commit.
+2. Spawn one implementer per requirement in a single message: Agent tool with `subagent_type: implementer` and `isolation: "worktree"`, each prompt with its brief, `Worktree: yes — base commit <full hash>` and `Commit: yes`; each brief's Forbidden paths name the files of the others.
 3. While they run, touch none of their files.
 4. Integrate one branch at a time, in priority order, keeping each merge uncommitted until its review passes:
    1. `git merge --no-ff --no-commit <branch>`; resolve conflicts yourself, preserving the behavior of both sides;
    2. run `./scripts/verify.sh`;
    3. record the `verification` transition and run `verify-requirement` (section 6) on the uncommitted merge;
-   4. on PASS complete it (section 8), then commit the merge with its evidence, traceability and progress updates (section 9, message `AVE-REQ-NNN: integrate <branch>`) before merging the next branch;
+   4. on PASS complete it (section 8), then commit the merge with its evidence, traceability, progress updates and handback (section 9, message `AVE-REQ-NNN: integrate <branch>`) and push the working branch (`CLAUDE.md` § Git) before merging the next branch;
    5. on FAIL repair it in the main working tree (section 7); a re-delegated implementer gets `Worktree: no` and `Commit: no`, since a new worktree starts from the pre-merge `HEAD` and any commit concludes the merge;
-   6. when it ends `blocked`: note its findings, run `git merge --abort` (this also discards the merge's uncommitted document updates), record the `blocked` transition with the findings and the branch name, commit those document updates, and keep the branch.
+   6. when it ends `blocked`: note its findings, run `git merge --abort` (this also discards the merge's uncommitted document updates), record the `blocked` transition with the findings and the branch name, commit those document updates with the handback, keep the branch, and push it alongside the working branch before PROGRESS.md names it.
 5. After integrating a branch, remove its worktree and branch: `git worktree remove <path>` and `git branch -d <branch>`. For a blocked branch, remove only the worktree.
 
+Every commit and file that PROGRESS.md names is reachable from the remote first (`CLAUDE.md` § Git): a worktree branch reaches it through the merged and pushed working branch, or, while it stays unmerged after its handback (blocked, interrupted, awaiting review), through its own push (`git push origin <branch>`).
+
 When an implementer reports that the base check failed (its worktree did not start from the base commit, e.g. a local settings override of `worktree.baseRef`), implement the remaining requirements sequentially in the main working tree.
+
+### Concurrency limits
+
+At most two writing agents (implementer, tester, architect, writing workflow agents) run at once, counted across every workflow and subagent the lead has launched, plus one heavy media job (a media or release tier run, a targeted `-m "media or slow"` pytest run, a reviewer's or tester's media reproduction). Concurrent writers always run in worktrees; one writing task may use the main working tree only while no other agent writes (the tester of section 5, a repair inside an uncommitted merge); read-only reviews need no worktree.
+- Writing agents: the lead counts them before every launch, workflows included, and launches a third only after one has returned.
+- Heavy media jobs: they serialize on the heavy-media lock (`docs/ARCHITECTURE.md` § Testing strategy). `./scripts/verify.sh --tier media|release` holds it for its whole run and waits while another job holds it; every other heavy command runs as `flock <lock file> <command>`, and each brief that runs one names that form. Concurrent workflows therefore queue their heavy jobs; within one workflow, heavy review lenses run in sequence, since a queued job keeps its agent idle.
+- Raising a limit needs a measurement first (WORKFLOW_LOG entry: CPU time, wall time and test stability with the higher count).
 
 ## 5. Tests — "add/update tests"
 
 1. The implementer or `implement-requirement` writes tests for every AC, tagged `AVE-REQ-NNN AC-n`.
-2. For complex or risky requirements (parsing, state machines, concurrency, security, data integrity, media and file-format edge cases), delegate to the `tester` before verification. Brief: requirement ID, implementation paths, risk areas. Spawn it in the main working tree (no `isolation`): the implementation stays uncommitted until section 9, and a worktree holds only committed code. Handle its `DEFECTS FOUND` items through section 7 and keep the failing tests it adds.
+2. For complex or risky requirements (parsing, state machines, concurrency, security, data integrity, media and file-format edge cases), delegate to the `tester` before verification. Write its brief first (section 4): requirement ID, implementation paths, risk areas; input revision `<HEAD>` plus the brief's commit and the uncommitted implementation, main working tree. Spawn it in the main working tree (no `isolation`): the implementation stays uncommitted until section 9, and a worktree holds only committed code. Handle its `DEFECTS FOUND` items through section 7 and keep the failing tests it adds.
 
 ## 6. Verify — "run relevant verification", "independently review requirement"
 
 1. Run `./scripts/verify.sh`; it must pass. Repair failures through section 7.
 2. Record the transition `in-progress → verification` (TRACEABILITY.md Implementation and Tests from the requirement's Implementation evidence).
 3. Invoke the `verify-requirement` skill with argument `AVE-REQ-NNN` (Skill tool, or `/verify-requirement AVE-REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
+   - Without subagents (the sequential fallback of `CLAUDE.md` § Delegation): the requirement stays `verification` and the lead continues other work. The review runs in a fresh session, or a context holding nothing of the implementation work, that follows `.claude/skills/verify-requirement/SKILL.md` from the repository alone (the requirement file, its brief, `git diff`). Its verdict is recorded with the note `sequential review in a fresh session` in the Status-log line; until then the requirement stays `verification`.
 4. Read the verdict. It counts as PASS only when the first line is `VERDICT: PASS`, every AC row is PASS with evidence, and § Blocking says "None."; treat everything else as FAIL.
 5. PASS → section 8. FAIL → section 7.
 
@@ -154,7 +162,7 @@ When an implementer reports that the base check failed (its worktree did not sta
 4. Re-run the targeted tests, then `./scripts/verify.sh`, then section 6 from step 2. Each `verify-requirement` run is a fresh fork.
 
 **Non-convergence.** After 3 failed cycles on one requirement (count the `cycle <n>` log lines since the last step-back or reopening), or 3 failed repair attempts on the same `./scripts/verify.sh` failure, stop repairing and step back:
-1. Brief the `architect`: requirement ID, the blocking findings of each cycle (its `cycle <n>` Status-log lines and the current list in PROGRESS.md § In progress), the paths involved; ask whether the requirement or the design is at fault.
+1. Write the `architect`'s brief (section 4): requirement ID, the blocking findings of each cycle (its `cycle <n>` Status-log lines and the current list in PROGRESS.md § In progress), the paths involved; ask whether the requirement or the design is at fault.
 2. Decide: redesign (ADR accepted per section 3 step 5, then re-implement); change the requirement (logged change, split or supersede as needed, escalation for `source: human` intent changes); or record `blocked` when the cause lies outside your control.
 3. Record the outcome as a Status-log line `- <date> — <status> — non-convergence review: <outcome> (lead)`, where `<status>` is the status after the review: `in-progress` when work continues (`docs/requirements/README.md` § Status lifecycle rule 2), or `blocked` with the prior state when the outcome is a block (§ Blocked below). Add an ADR or `docs/ASSUMPTIONS.md` entry when the outcome carries a decision.
 4. Continue the requirement (the cycle count restarts) or, when blocked, return to section 2.
@@ -200,6 +208,8 @@ Before a refactor that moves a module boundary, changes a shared interface, the 
 ## 13. Context hygiene
 
 - Update PROGRESS.md at every transition; the SessionStart hook and `resume-project` recover from it after compaction.
+- Record delegated work in flight stop-safe in PROGRESS.md: `launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>` (with the brief path). A later session cannot see a task of this one, so PROGRESS.md never says that work is running; `scripts/check-project-control.sh` check 7 rejects "running", "underway" and "in flight" there.
+- PROGRESS.md names only commits, branches and files the remote holds (`CLAUDE.md` § Git, § Parallel work above).
 - Persist decisions the moment you make them: ADRs, assumptions, Status-log lines. Conversation context is volatile.
 - Load only what the current step needs: the current milestone entry, the requirement, its parent and dependencies, the governing ADRs and ARCHITECTURE.md sections. Prefer `grep` and single sections to whole documents.
 - Delegate exploration and long investigations to subagents and keep only their reports.

@@ -244,9 +244,21 @@ In effect:
 5. `./scripts/verify.sh` never needs credentials or paid services. External services run on
    their fakes (tests marked `contract`, which never evidence a criterion alone); live-service checks run
    through a separate command documented here.
+6. One heavy media job runs at a time on a host (AVE-REQ-096 AC-4; `develop` § 4 Concurrency limits). The
+   heavy-media lock is the file `${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}`. A media or
+   release tier run of `./scripts/verify.sh` holds an exclusive `flock` on it from its first step to its
+   summary, prints one line `verify.sh: waiting for the heavy-media lock …` while another job holds it,
+   and exports `AVE_HEAVY_LOCK_HELD=1` to its steps; the fast tier takes no lock. Every other heavy media
+   command (a targeted `-m "media or slow"` run, a reproduction that renders or decodes media) runs as
+   `flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" <command>` in the environment that runs
+   the checks (on a host that verifies in the development container:
+   `./scripts/dev-container.sh bash -c 'flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" <command>'`).
+   A command that already holds the lock and starts verify.sh's media or release tier sets
+   `AVE_HEAVY_LOCK_HELD=1`, so the run takes no second lock. `scripts/tests/test-verify-tiers.sh` tests the lock.
 
 Commands: `cd backend && uv run pytest -m "not media and not slow"` (fast),
-`uv run pytest -m "media or slow"` (media and population), `uv run pytest tests/path::name` (one test),
+`flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" uv run pytest -m "media or slow"` (media and
+population, under the heavy-media lock of item 6), `uv run pytest tests/path::name` (one test),
 `uv run pytest -m req -k …` or `python3 scripts/evidence.py show AVE-REQ-NNN` after a verify.sh run (the
 criteria of one requirement with their tests and outcomes), `python3 -B scripts/evidence.py unittest` (the
 evidence tooling unit tests), `scripts/tests/run.sh` (the tooling regression suites),

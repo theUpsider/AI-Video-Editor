@@ -3,14 +3,17 @@
 #
 # Usage:  ./scripts/check-project-control.sh      (run by ./scripts/verify.sh; no arguments)
 # Checks: 1 required files exist                    6 relative Markdown links resolve
-#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings
-#         3 .claude/settings.json is valid JSON     8 requirement files (docs/requirements/README.md)
-#         4 agent frontmatter                       9 ADR files (docs/decisions/README.md)
-#         5 skill frontmatter                      10 requirement matrix in docs/TRACEABILITY.md
+#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings; no line claims
+#         3 .claude/settings.json is valid JSON       that work is running
+#         4 agent frontmatter                       8 requirement files (docs/requirements/README.md)
+#         5 skill frontmatter                       9 ADR files (docs/decisions/README.md)
+#                                                  10 requirement matrix in docs/TRACEABILITY.md
 #        11 task briefs (docs/briefs/README.md): every heading once and in template order, no empty
-#           section, an AVE-REQ ID under Requirements
+#           section, an AVE-REQ ID under Requirements, a commit under Input revision; each handback
+#           in docs/briefs/handbacks/ is named after its brief
 #        12 .claude/settings.json policy: no permission bypass, the SessionStart hook runs on
-#           startup, resume and compact, hook commands start no loop, sleep or background job
+#           startup, resume and compact, hook commands start no loop, sleep or background job and
+#           none runs asynchronously
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
@@ -199,6 +202,49 @@ function in_fence(line,   indent, rest, ch, run) {
   return 1
 }
 
+# Removes HTML comments; in_comment carries an unterminated "<!--" over to the next lines.
+function strip_comments(s,   out, i) {
+  out = ""
+  while (s != "") {
+    if (in_comment) {
+      if (!(i = index(s, "-->"))) return out
+      s = substr(s, i + 3)
+      in_comment = 0
+    } else {
+      if (!(i = index(s, "<!--"))) return out s
+      out = out substr(s, 1, i - 1)
+      s = substr(s, i + 4)
+      in_comment = 1
+    }
+  }
+  return out
+}
+
+# Removes inline code spans (a backtick run up to the next run of equal length).
+function strip_code_spans(s,   out, i, n, rest, closing) {
+  out = ""
+  while ((i = index(s, "`")) > 0) {
+    out = out substr(s, 1, i - 1)
+    n = run_length(substr(s, i), "`")
+    rest = substr(s, i + n)
+    closing = backtick_run_at(rest, n)
+    s = closing ? substr(rest, closing + n) : rest
+  }
+  return out s
+}
+
+# Position of the first run of exactly n backticks in s, or 0.
+function backtick_run_at(s, n,   offset, i, len) {
+  offset = 0
+  while ((i = index(s, "`")) > 0) {
+    len = run_length(substr(s, i), "`")
+    if (len == n) return offset + i
+    offset += i + len - 1
+    s = substr(s, i + len)
+  }
+  return 0
+}
+
 # Frontmatter: one "key: value" per line between "---" lines at the top of the file. Values are
 # unquoted; indented continuation lines (block scalars, folded text) join the previous key.
 function fm_parse(fi, line,   key, val) {
@@ -291,49 +337,6 @@ function destination(s,   j) {
   match(s, /^[^ \t)]*/)
   return substr(s, 1, RLENGTH)
 }
-
-# Removes HTML comments; in_comment carries an unterminated "<!--" over to the next lines.
-function strip_comments(s,   out, i) {
-  out = ""
-  while (s != "") {
-    if (in_comment) {
-      if (!(i = index(s, "-->"))) return out
-      s = substr(s, i + 3)
-      in_comment = 0
-    } else {
-      if (!(i = index(s, "<!--"))) return out s
-      out = out substr(s, 1, i - 1)
-      s = substr(s, i + 4)
-      in_comment = 1
-    }
-  }
-  return out
-}
-
-# Removes inline code spans (a backtick run up to the next run of equal length).
-function strip_code_spans(s,   out, i, n, rest, closing) {
-  out = ""
-  while ((i = index(s, "`")) > 0) {
-    out = out substr(s, 1, i - 1)
-    n = run_length(substr(s, i), "`")
-    rest = substr(s, i + n)
-    closing = backtick_run_at(rest, n)
-    s = closing ? substr(rest, closing + n) : rest
-  }
-  return out s
-}
-
-# Position of the first run of exactly n backticks in s, or 0.
-function backtick_run_at(s, n,   offset, i, len) {
-  offset = 0
-  while ((i = index(s, "`")) > 0) {
-    len = run_length(substr(s, i), "`")
-    if (len == n) return offset + i
-    offset += i + len - 1
-    s = substr(s, i + len)
-  }
-  return 0
-}
 AWK
 
 # Check 7. Variables: path, headings ("|"-separated exact heading lines).
@@ -349,9 +352,29 @@ END {
 }
 AWK
 
+# Check 7: docs/PROGRESS.md claims no ongoing execution (AVE-REQ-098 AC-3). Variable: path. A later
+# session cannot check that work "is running"; delegated work in flight is recorded stop-safe
+# ("launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact
+# command>"). Outside fenced blocks, HTML comments and code spans, a line with the word "running",
+# "underway" or "in flight" fails; "nothing is running", "not running" and "no longer running" pass.
+IFS= read -r -d '' AWK_PROGRESS_CLAIMS <<'AWK' || true
+FNR == 1 { fence_char = ""; in_comment = 0 }
+{
+  sub(/\r$/, "")
+  if (!in_comment && in_fence($0)) next
+  line = " " tolower(strip_comments(strip_code_spans($0))) " "
+  gsub(/nothing is running|no longer running|not running/, "", line)
+  if (line ~ /[^a-z]running[^a-z]/ || line ~ /[^a-z]underway[^a-z]/ || line ~ /[^a-z]in[ -]flight[^a-z]/)
+    err(path, "line " FNR ": claims ongoing execution ('running', 'underway' or 'in flight'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
+}
+AWK
+
 # Check 11. Variables: path, headings ("|"-separated exact heading lines in template order). Each
-# heading appears once and in that order, each section holds a non-blank line, and the
-# Requirements section names an AVE-REQ ID. An H1 or another H2 ends a section.
+# heading appears once and in that order, each section holds a non-blank line, the Requirements
+# section names an AVE-REQ ID, and the Input revision section names a commit: a token of 7 to 40
+# lowercase hex digits with no letter, digit, "_" or "-" on either side (so the "af7078da" inside
+# the branch name ccr-af7078da-q8r8mf counts as none), or the self-reference
+# "git log -1 --format=%h -- <path of this brief>". An H1 or another H2 ends a section.
 IFS= read -r -d '' AWK_BRIEF <<'AWK' || true
 BEGIN {
   count = split(headings, want, "|")
@@ -374,6 +397,7 @@ BEGIN {
   if (current == "" || t !~ /[^ \t]/) next
   filled[current] = 1
   if (current == "## Requirements" && t ~ /AVE-REQ-[0-9][0-9][0-9]/) names_id = 1
+  if (current == "## Input revision" && names_commit(t)) commit_named = 1
 }
 END {
   for (i = 1; i <= count; i++) {
@@ -382,6 +406,32 @@ END {
   }
   if (("## Requirements" in seen) && !names_id)
     err(path, "section '## Requirements' names no requirement ID (AVE-REQ-NNN)")
+  if (("## Input revision" in filled) && !commit_named)
+    err(path, "section '## Input revision' names no commit (a hash of 7 to 40 hex digits, or the self-reference 'git log -1 --format=%h -- " path "')")
+}
+
+function word_char(ch) {
+  return ch != "" && index("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-", ch) > 0
+}
+
+# True when s holds a delimited hex token of 7 to 40 digits or the self-reference to this brief.
+function names_commit(s,   ref, i, after, rest, off, start, len, before) {
+  ref = "git log -1 --format=%h -- " path
+  if ((i = index(s, ref)) > 0) {
+    after = substr(s, i + length(ref), 1)
+    if (!word_char(after) && after != "." && after != "/") return 1
+  }
+  rest = s
+  off = 0
+  while (match(rest, /[0-9a-f]+/)) {
+    start = off + RSTART
+    len = RLENGTH
+    before = start > 1 ? substr(s, start - 1, 1) : ""
+    if (len >= 7 && len <= 40 && !word_char(before) && !word_char(substr(s, start + len, 1))) return 1
+    off = start + len - 1
+    rest = substr(s, off + 1)
+  }
+  return 0
 }
 AWK
 
@@ -462,7 +512,14 @@ for event, groups in hooks.items():
         if not isinstance(group, dict):
             continue
         for handler in as_list(group.get("hooks")):
-            if not isinstance(handler, dict) or handler.get("type") != "command":
+            if not isinstance(handler, dict):
+                continue
+            if handler.get("async") not in (None, False):
+                error(
+                    f"hooks.{event}[{number}] runs a hook asynchronously (\"async\": "
+                    f"{json.dumps(handler.get('async'))}), which escapes its timeout (AVE-REQ-098 AC-4)"
+                )
+            if handler.get("type") != "command":
                 continue
             command = str(handler.get("command", ""))
             found = UNBOUNDED.search(command)
@@ -875,6 +932,7 @@ check_progress_headings() {
   [ -f "$file" ] || return 0
   run_awk "PROGRESS.md heading" -v path="$file" -v headings="$PROGRESS_HEADINGS" \
     "$AWK_LIB$AWK_HEADINGS" "$file"
+  run_awk "PROGRESS.md claim" -v path="$file" "$AWK_LIB$AWK_PROGRESS_CLAIMS" "$file"
 }
 
 check_briefs() {
@@ -883,6 +941,34 @@ check_briefs() {
     [ -f "$file" ] && [ "$file" != docs/briefs/README.md ] || continue
     run_awk "task brief" -v path="$file" -v headings="$BRIEF_HEADINGS" \
       "$AWK_LIB$AWK_BRIEF" "$file"
+  done
+  check_handbacks
+}
+
+# Check 11, handbacks: each file in docs/briefs/handbacks/ is named <brief-slug>.md or
+# <brief-slug>.part-<n>.md after the brief docs/briefs/<brief-slug>.md it answers.
+check_handbacks() {
+  local file name base slug rule="a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md"
+  for file in docs/briefs/handbacks/*; do
+    [ -e "$file" ] || continue
+    name="${file##*/}"
+    base="${name%.md}"
+    slug="$base"
+    if [ "$base" = "$name" ]; then
+      error "$file" "$rule"
+      continue
+    fi
+    case "$base" in
+      *.part-*)
+        slug="${base%.part-*}"
+        case "${base##*.part-}" in
+          "" | 0* | *[!0-9]*) error "$file" "$rule (n = 1, 2, …)"; continue ;;
+        esac
+        ;;
+    esac
+    if [ -z "$slug" ] || [ "$slug" = README ] || [ ! -f "docs/briefs/$slug.md" ]; then
+      error "$file" "names no brief: docs/briefs/$slug.md is missing ($rule)"
+    fi
   done
 }
 
