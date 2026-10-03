@@ -91,6 +91,7 @@ def _barcodes(
     ]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_vfr_source_is_mapped_by_presentation_timestamps(
     timing_fixtures: dict[str, Fixture], artifacts_dir: Path
 ) -> None:
@@ -113,6 +114,7 @@ def test_vfr_source_is_mapped_by_presentation_timestamps(
     assert len(set(expected)) < 240  # the VFR source really repeats frames on the 60 fps grid
 
 
+@pytest.mark.req("AVE-REQ-012 AC-3", "AVE-REQ-012 AC-4", "AVE-REQ-018 AC-2")
 @pytest.mark.parametrize(
     "fps", [Fraction(60000, 1001), Fraction(30), Fraction(24)], ids=["60000-1001", "30", "24"]
 )
@@ -136,6 +138,7 @@ def test_output_rate_conversion_keeps_playback_speed(
     assert observed == expected
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4", "AVE-REQ-075 AC-2")
 def test_speed_change_retimes_video_and_audio_with_pitch_kept(
     std: StandardFixtures, artifacts_dir: Path
 ) -> None:
@@ -162,6 +165,7 @@ def test_speed_change_retimes_video_and_audio_with_pitch_kept(
     assert tone_amplitude(quiet, 48000, PILOT_HZ["a"] * 1.25) < 0.005
 
 
+@pytest.mark.req("AVE-REQ-075 AC-2", "AVE-REQ-075 AC-3")
 def test_still_image_clip_and_silent_audio(
     timing_fixtures: dict[str, Fixture], artifacts_dir: Path
 ) -> None:
@@ -185,6 +189,7 @@ def test_still_image_clip_and_silent_audio(
     assert not [m for m in sys.modules if m.split(".")[0] in forbidden]
 
 
+@pytest.mark.req("AVE-REQ-018 AC-1")
 @pytest.mark.parametrize(("width", "height"), [(360, 360), (360, 640)], ids=["1x1", "9x16"])
 def test_square_and_vertical_canvases(
     std: StandardFixtures, width: int, height: int, artifacts_dir: Path
@@ -213,6 +218,7 @@ def _tiny_plan(timing_fixtures: dict[str, Fixture]) -> tuple[MediaAsset, Sequenc
     return asset, sequence
 
 
+@pytest.mark.req("AVE-REQ-072 AC-4")
 def test_failed_validation_never_publishes(
     timing_fixtures: dict[str, Fixture], artifacts_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -238,6 +244,7 @@ def test_failed_validation_never_publishes(
     assert sorted(p.name for p in target_dir.iterdir()) == ["export.mp4"]
 
 
+@pytest.mark.req("AVE-REQ-072 AC-4", "AVE-REQ-075 AC-4")
 def test_validator_rejects_damaged_output(
     timing_fixtures: dict[str, Fixture], artifacts_dir: Path
 ) -> None:
@@ -259,6 +266,7 @@ def test_validator_rejects_damaged_output(
     assert {"r_frame_rate", "avg_frame_rate"} <= failures
 
 
+@pytest.mark.req("AVE-REQ-020 AC-3", "AVE-REQ-019 AC-1")
 def test_gaps_and_bars_show_the_configured_background(
     std: StandardFixtures, artifacts_dir: Path
 ) -> None:
@@ -311,6 +319,7 @@ def _bt709_round_trip(rgb: tuple[int, int, int]) -> np.ndarray:
     return np.array([min(255, max(0, _nearest(255 * value))) for value in (red, green, blue)])
 
 
+@pytest.mark.req("AVE-REQ-020 AC-3", "AVE-REQ-019 AC-1")
 @pytest.mark.parametrize("background", ["#204060", "#C03020", "#30A040", "#E0C020"])
 def test_background_decodes_to_its_color_under_the_tagged_bt709_matrix(
     std: StandardFixtures, artifacts_dir: Path, background: str

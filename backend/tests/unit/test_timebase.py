@@ -39,6 +39,7 @@ class _Holder(BaseModel):
     value: Rational
 
 
+@pytest.mark.req("AVE-REQ-012 AC-1")
 def test_time_domains_are_explicit_and_mapped_by_the_spec_convention() -> None:
     """AVE-REQ-012 AC-1: source, reference, project, section and output time are distinct.
 
@@ -73,6 +74,7 @@ def test_time_domains_are_explicit_and_mapped_by_the_spec_convention() -> None:
     assert clip.project_time_of(SourceTime(Fraction(11))) == 15
 
 
+@pytest.mark.req("AVE-REQ-012 AC-1")
 def test_affine_map_with_clock_scale_round_trips_exactly() -> None:
     """AVE-REQ-012 AC-1: drift scale b maps source and reference intervals exactly."""
     clock = AffineClockMap(a=Fraction(-7, 3), b=Fraction(1001, 1000))
@@ -82,6 +84,7 @@ def test_affine_map_with_clock_scale_round_trips_exactly() -> None:
     assert clock.source_interval(span) == Interval.of(0, 25)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 def test_intervals_are_half_open() -> None:
     """AVE-REQ-012 AC-2: [3, 6) holds 3 but not 6; frames 180..359 at 60 fps."""
     overlay = Interval.of(3, 6)
@@ -93,6 +96,7 @@ def test_intervals_are_half_open() -> None:
     assert samples_in(Interval.of(0, 1), 48000) == range(48000)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 @pytest.mark.parametrize(("start", "end"), [(5, 5), (6, 3), (0, -1)])
 def test_empty_and_negative_intervals_are_rejected(start: int, end: int) -> None:
     """AVE-REQ-012 AC-2: negative durations and empty intervals are invalid."""
@@ -100,6 +104,7 @@ def test_empty_and_negative_intervals_are_rejected(start: int, end: int) -> None
         Interval.of(start, end)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 @pytest.mark.parametrize(
     "value",
     [
@@ -125,6 +130,7 @@ def test_invalid_time_values_are_rejected(value: object) -> None:
         _Holder.model_validate({"value": value})
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 def test_floats_need_an_explicit_resolution() -> None:
     """AVE-REQ-012 AC-2: floats enter only through explicit conversion on a declared grid."""
     assert rational_from_float(2.0000000245, 48000) == 2
@@ -135,6 +141,7 @@ def test_floats_need_an_explicit_resolution() -> None:
         rational_from_float(1.0, 0)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 def test_invalid_source_bounds_and_time_transforms_are_rejected() -> None:
     """AVE-REQ-012 AC-2: source_out <= source_in, negative points, zero speed or scale fail."""
     base = {"id": "c", "track_id": "v", "asset_id": "a", "kind": "video", "timeline_start": 0}
@@ -148,6 +155,7 @@ def test_invalid_source_bounds_and_time_transforms_are_rejected() -> None:
         AffineClockMap.model_validate({"a": 0, "b": {"num": -1, "den": 2}})
 
 
+@pytest.mark.req("AVE-REQ-012 AC-2")
 def test_json_form_is_reduced_num_den() -> None:
     """AVE-REQ-012 AC-2: canonical JSON {"num", "den"} with reduced positive denominator."""
     holder = _Holder.model_validate({"value": {"num": 120000, "den": 2002}})
@@ -159,6 +167,7 @@ def test_json_form_is_reduced_num_den() -> None:
     assert parse_ffmpeg_rational("60/1") == 60
 
 
+@pytest.mark.req("AVE-REQ-012 AC-3")
 def test_60000_over_1001_is_not_60() -> None:
     """AVE-REQ-012 AC-3: the NTSC rate stays distinct from 60 and frame times are exact."""
     assert NTSC60 != 60
@@ -171,6 +180,7 @@ def test_60000_over_1001_is_not_60() -> None:
     assert frame_start(10**6, NTSC60) != frame_start(10**6, Fraction(60))
 
 
+@pytest.mark.req("AVE-REQ-012 AC-3")
 def test_long_timeline_frame_grid_is_exact() -> None:
     """AVE-REQ-012 AC-3: 10**6 frames at 60000/1001 keep exact times and indices."""
     n = 10**6
@@ -191,6 +201,7 @@ def test_long_timeline_frame_grid_is_exact() -> None:
     assert frame_at(t, Fraction(60)) != n
 
 
+@pytest.mark.req("AVE-REQ-012 AC-3")
 def test_repeated_edits_do_not_accumulate_error() -> None:
     """AVE-REQ-012 AC-3: 20,000 random moves, trims and splits at 60000/1001 stay exact.
 
@@ -240,6 +251,7 @@ def test_repeated_edits_do_not_accumulate_error() -> None:
     assert (clip.duration * NTSC60).denominator == 1  # still a whole number of frames
 
 
+@pytest.mark.req("AVE-REQ-012 AC-3")
 def test_sample_grid_follows_the_same_rule() -> None:
     """AVE-REQ-012 AC-3: audio samples use k / rate with the half-open grid rule."""
     assert sample_count(Fraction(22), 48000) == 1_056_000

@@ -40,6 +40,7 @@ def _clip(clip_id: str, track: str, start: int, source: tuple[int, int], **extra
     )
 
 
+@pytest.mark.req("AVE-REQ-021 AC-1", "AVE-REQ-021 AC-2", "AVE-REQ-021 AC-4")
 def test_standard_composition_matches_the_specification_table() -> None:
     """AVE-REQ-021 AC-1 / AC-2 / AC-4: split [0,8), full [8,14), split [14,22) with routing."""
     sequence = standard_sequence(sync_group(B_TRUE))
@@ -64,6 +65,7 @@ def test_standard_composition_matches_the_specification_table() -> None:
     assert clips["full-c.video"].region.w == 1
 
 
+@pytest.mark.req("AVE-REQ-020 AC-4", "AVE-REQ-031 AC-1")
 def test_split_layout_binds_sync_members_without_changing_audio() -> None:
     """AVE-REQ-020 AC-4 / AVE-REQ-031 AC-1: B's audio stays available but is not in the mix."""
     group = sync_group(B_TRUE)
@@ -82,6 +84,7 @@ def test_split_layout_binds_sync_members_without_changing_audio() -> None:
     assert next(c for c in swapped if c.id == "s.right.audio").enabled is True
 
 
+@pytest.mark.req("AVE-REQ-020 AC-4")
 def test_default_coverage_is_the_common_overlap() -> None:
     """AVE-REQ-020 AC-4 / spec example: A [0,30), B [0,25) at a=2 overlap on reference [2,27)."""
     group = sync_group(B_TRUE)
@@ -104,6 +107,7 @@ def test_default_coverage_is_the_common_overlap() -> None:
         )  # fmt: skip
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_clock_drift_maps_to_source_speed_without_changing_duration() -> None:
     """AVE-REQ-012 AC-4: clip speed 1/b keeps the reference duration on the project timeline."""
     member = SyncMember(
@@ -118,6 +122,7 @@ def test_clock_drift_maps_to_source_speed_without_changing_duration() -> None:
     assert clip.source_in == (12 - 2) / Fraction(1001, 1000)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4", "AVE-REQ-012 AC-2")
 def test_editorial_speed_is_separate_from_drift_correction() -> None:
     """AVE-REQ-012 AC-4, AVE-REQ-012 AC-2: t = source_in + (T - timeline_start) * source_speed
     * editorial_speed (ADR-004 decision 4); duration and the inverse mapping use the product;
@@ -141,6 +146,7 @@ def test_editorial_speed_is_separate_from_drift_correction() -> None:
         _clip("c", "v-b", 10, (3, 7), editorial_speed=0)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_synced_builders_apply_editorial_speed_to_every_perspective() -> None:
     """AVE-REQ-012 AC-4: a split-screen segment at editorial speed 2 keeps drift correction
     1 / b in source_speed, halves the project duration of every clip and shows the same

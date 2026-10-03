@@ -41,6 +41,7 @@ def _first_video(info: Any) -> VideoStreamInfo:
     return stream
 
 
+@pytest.mark.req("AVE-REQ-004 AC-1", "AVE-REQ-004 AC-2")
 def test_exact_rates_and_durations_are_rationals() -> None:
     """AVE-REQ-004 AC-1/AC-2: 60000/1001 is kept exactly and durations come from ticks."""
     video = _first_video(_parse(_video()))
@@ -50,6 +51,7 @@ def test_exact_rates_and_durations_are_rationals() -> None:
     assert video.time_base == Fraction(1, 60000)
 
 
+@pytest.mark.req("AVE-REQ-004 AC-4")
 def test_missing_optional_tags_stay_unknown() -> None:
     """AVE-REQ-004 AC-4: absent color tags, SAR or rates are None, never invented."""
     video = _first_video(_parse(_video(r_frame_rate="0/0", avg_frame_rate="0/0")))
@@ -63,6 +65,7 @@ def test_missing_optional_tags_stay_unknown() -> None:
     assert not info.has_audio
 
 
+@pytest.mark.req("AVE-REQ-004 AC-1", "AVE-REQ-004 AC-4")
 def test_rotation_swaps_display_dimensions() -> None:
     """AVE-REQ-004 AC-1/AC-4: display-matrix and legacy rotate tags give portrait display size."""
     matrix = _first_video(_parse(_video(side_data_list=[{"rotation": -90}])))
@@ -76,6 +79,7 @@ def test_rotation_swaps_display_dimensions() -> None:
     assert (upside_down.display_width, upside_down.display_height) == (1920, 1080)
 
 
+@pytest.mark.req("AVE-REQ-004 AC-1")
 def test_sample_aspect_ratio_scales_display_width() -> None:
     """AVE-REQ-004 AC-1: anamorphic 1440x1080 with SAR 4:3 displays as 1920x1080."""
     video = _first_video(_parse(_video(width=1440, sample_aspect_ratio="4:3")))
@@ -83,6 +87,7 @@ def test_sample_aspect_ratio_scales_display_width() -> None:
     assert (video.display_width, video.display_height) == (1920, 1080)
 
 
+@pytest.mark.req("AVE-REQ-004 AC-2")
 def test_frame_timing_comes_from_presentation_timestamps() -> None:
     """AVE-REQ-004 AC-2: equal PTS deltas are CFR, irregular deltas VFR, even if rates agree."""
     cfr = _first_video(_parse(_video(), pts={0: [0, 2002, 1001, 3003, 4004]}))
@@ -97,6 +102,7 @@ def test_frame_timing_comes_from_presentation_timestamps() -> None:
     assert by_metadata.frame_timing == "vfr"
 
 
+@pytest.mark.req("AVE-REQ-004 AC-4")
 def test_multiple_audio_streams_are_listed_in_order() -> None:
     """AVE-REQ-004 AC-4: every audio stream is kept with its own properties."""
     audio = [
@@ -144,6 +150,7 @@ def _audio(**overrides: Any) -> dict[str, Any]:
     return stream
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_container_start_is_recovered_exactly_from_the_rounded_print() -> None:
     """AVE-REQ-012 AC-4: FFprobe prints the TS start 129000/90000 s as 1.433333; the origin of
     source time is the exact stream start, never the rounded print (which would put every frame
@@ -153,6 +160,7 @@ def test_container_start_is_recovered_exactly_from_the_rounded_print() -> None:
     assert info.warnings == ()
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_container_start_takes_the_earliest_matching_stream() -> None:
     """AVE-REQ-012 AC-4: two streams whose starts both round to the printed microsecond (here
     0.3333331 s and 1/3 s) - the container start is the earlier one, as in FFmpeg, in either
@@ -165,6 +173,7 @@ def test_container_start_takes_the_earliest_matching_stream() -> None:
         assert info.warnings == ()
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4", "AVE-REQ-004 AC-4")
 def test_unmatched_container_start_falls_back_with_a_warning() -> None:
     """AVE-REQ-012 AC-4, AVE-REQ-004 AC-4: when no stream start rounds to the printed value
     (129001/90000 s prints as 1.433344, not 1.433333) the printed value is used and the probe
@@ -175,6 +184,7 @@ def test_unmatched_container_start_falls_back_with_a_warning() -> None:
     assert "approximate" in info.warnings[0]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4", "AVE-REQ-004 AC-4")
 @pytest.mark.parametrize("missing", ["start_pts", "time_base"])
 def test_stream_start_known_only_as_printed_never_defines_the_origin(missing: str) -> None:
     """AVE-REQ-012 AC-4, AVE-REQ-004 AC-4: a stream that reports its start only as printed
@@ -190,6 +200,7 @@ def test_stream_start_known_only_as_printed_never_defines_the_origin(missing: st
     assert "approximate" in info.warnings[0]
 
 
+@pytest.mark.req("AVE-REQ-004 AC-4")
 def test_missing_container_start_is_zero_without_a_warning() -> None:
     """AVE-REQ-004 AC-4: a container without a start time starts source time at 0."""
     info = _with_start(None, _video())

@@ -52,6 +52,7 @@ def recording(
     return signal + noise * np.random.default_rng(seed).standard_normal(count)
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_positive_offset_with_gain_noise_and_rate_mismatch() -> None:
     """AVE-REQ-024 AC-2: B starts 2 s after A at 44.1 kHz with -10 dB gain and noise."""
     reference = recording(0.0, 30.0, 48000)
@@ -64,6 +65,7 @@ def test_positive_offset_with_gain_noise_and_rate_mismatch() -> None:
     assert result.offset == 2
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_negative_offset_when_the_reference_starts_later() -> None:
     """AVE-REQ-024 AC-2: swapping roles gives a = -2 (target started before the reference)."""
     reference = recording(2.0, 25.0, 44100, gain=0.3, noise=0.01, seed=3)
@@ -73,6 +75,7 @@ def test_negative_offset_when_the_reference_starts_later() -> None:
     assert result.offset == -2
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_sub_frame_offset_is_resolved_to_the_sample() -> None:
     """AVE-REQ-024 AC-2: a non-integer offset (3.4567 s) is found within two samples."""
     reference = recording(0.0, 30.0, 48000)
@@ -83,6 +86,7 @@ def test_sub_frame_offset_is_resolved_to_the_sample() -> None:
     assert abs(result.offset_s - 3.4567) < 2 / 48000
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_partial_overlap() -> None:
     """AVE-REQ-024 AC-2: only 9 s of a 15 s target overlap the reference."""
     reference = recording(0.0, 30.0, 48000)
@@ -95,6 +99,7 @@ def test_partial_overlap() -> None:
     assert result.reference_overlap.end == 30
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_evidence_is_reported() -> None:
     """AVE-REQ-024 AC-3: method, confidence, chance probability of the coinciding onsets,
     residual/anchors and aligned intervals."""
@@ -122,6 +127,7 @@ def test_evidence_is_reported() -> None:
     assert len(member.anchors) == len(result.anchors)
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_unrelated_audio_is_insufficient_evidence() -> None:
     """AVE-REQ-024 AC-3: recordings of different scenes do not produce a confident offset."""
     reference = recording(0.0, 30.0, 48000)
@@ -135,6 +141,7 @@ def test_unrelated_audio_is_insufficient_evidence() -> None:
     assert error.value.code == "INSUFFICIENT_SYNC_EVIDENCE"
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_silent_audio_is_insufficient_evidence() -> None:
     """AVE-REQ-024 AC-3: a silent track cannot be synchronized by sound."""
     reference = recording(0.0, 30.0, 48000)
@@ -145,6 +152,7 @@ def test_silent_audio_is_insufficient_evidence() -> None:
     assert "silent" in result.reason
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_periodic_audio_is_ambiguous_with_alternatives() -> None:
     """AVE-REQ-024 AC-3: a metronome-like signal has many equally good offsets."""
     clicks = tuple(0.25 + 0.5 * i for i in range(80))
@@ -156,6 +164,7 @@ def test_periodic_audio_is_ambiguous_with_alternatives() -> None:
     assert len(result.alternatives) >= 2
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_offset_bounds_exclude_implausible_lags() -> None:
     """AVE-REQ-024 AC-3: a plausibility bound that excludes the true offset prevents a match:
     the bounded search reports insufficient evidence instead of some offset inside the bound."""
@@ -172,6 +181,7 @@ def test_offset_bounds_exclude_implausible_lags() -> None:
 _RATE = 48000
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_analysis_runs_on_float32_copies_without_full_length_float64() -> None:
     """AVE-REQ-024 AC-2: a 60 s / 50 s pair with a known +2 s offset is still found within
     0.1 ms while the estimation allocates at most 8 bytes per input sample (the two float32
@@ -193,6 +203,7 @@ def test_analysis_runs_on_float32_copies_without_full_length_float64() -> None:
     assert np.array_equal(target, before[1])
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_block_highpass_matches_the_reference_zero_phase_filter() -> None:
     """AVE-REQ-024 AC-2: the in-place block high-pass equals scipy's sosfiltfilt (odd padding,
     steady-state initial conditions) across block boundaries, so the analysis method and its

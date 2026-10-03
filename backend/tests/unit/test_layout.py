@@ -16,6 +16,7 @@ from ave.render.profile import OutputProfile
 HD = Canvas()
 
 
+@pytest.mark.req("AVE-REQ-020 AC-1")
 def test_contain_split_of_square_sources_is_960_at_y60() -> None:
     """AVE-REQ-020 AC-1: two square sources in contain mode are 960x960 with 60 px bars."""
     left, right = split_regions()
@@ -28,6 +29,7 @@ def test_contain_split_of_square_sources_is_960_at_y60() -> None:
         assert geometry.region.height - geometry.crop.height == 120  # 60 px above and below
 
 
+@pytest.mark.req("AVE-REQ-020 AC-2", "AVE-REQ-019 AC-1")
 def test_cover_split_crops_instead_of_stretching() -> None:
     """AVE-REQ-020 AC-2 / AVE-REQ-019 AC-1: cover fills 960x1080 by cropping a 1080x1080 image."""
     left, right = split_regions()
@@ -40,6 +42,7 @@ def test_cover_split_crops_instead_of_stretching() -> None:
         assert geometry.scale_x == geometry.scale_y == 1
 
 
+@pytest.mark.req("AVE-REQ-019 AC-4", "AVE-REQ-020 AC-2")
 @pytest.mark.parametrize(
     ("focus", "crop_x"), [(Fraction(0), 0), (Fraction(1, 4), 30), (Fraction(1), 120)]
 )
@@ -50,6 +53,7 @@ def test_cover_crop_follows_the_focus_point(focus: Fraction, crop_x: int) -> Non
     assert geometry.crop.x == crop_x
 
 
+@pytest.mark.req("AVE-REQ-021 AC-1")
 def test_full_width_16_9_source_fills_the_canvas() -> None:
     """AVE-REQ-021 AC-1 geometry: a 1920x1080 source contained full-frame fills 1920x1080."""
     geometry = compute_layer_geometry(HD, FULL_FRAME, 1920, 1080, "contain")
@@ -58,6 +62,7 @@ def test_full_width_16_9_source_fills_the_canvas() -> None:
     assert geometry.position == (0, 0)
 
 
+@pytest.mark.req("AVE-REQ-019 AC-1", "AVE-REQ-019 AC-2")
 def test_fit_never_changes_aspect_beyond_rounding() -> None:
     """AVE-REQ-019 AC-1/AC-2: contain and cover keep the source aspect (property test)."""
     rng = random.Random(19)
@@ -92,6 +97,7 @@ def test_fit_never_changes_aspect_beyond_rounding() -> None:
                 assert 0 <= g.crop.y <= g.scaled_height - g.crop.height
 
 
+@pytest.mark.req("AVE-REQ-019 AC-2")
 def test_default_fit_is_contain_and_stretch_is_explicit() -> None:
     """AVE-REQ-019 AC-2: no default operation stretches a source."""
     clip = Clip(
@@ -108,6 +114,7 @@ def test_default_fit_is_contain_and_stretch_is_explicit() -> None:
     assert stretched.scale_x != stretched.scale_y  # only an explicit request distorts
 
 
+@pytest.mark.req("AVE-REQ-019 AC-3")
 def test_normalized_regions_map_to_even_pixels() -> None:
     """AVE-REQ-019 AC-3: transforms use normalized canvas coordinates with documented rounding."""
     rect = region_pixels(
@@ -118,6 +125,7 @@ def test_normalized_regions_map_to_even_pixels() -> None:
         NormRect(x=Fraction(3, 4), w=Fraction(1, 2))
 
 
+@pytest.mark.req("AVE-REQ-020 AC-3")
 def test_split_divider_and_gap_are_configurable() -> None:
     """AVE-REQ-020 AC-3: the divider position and a background gap are adjustable."""
     left, right = split_regions(divider=Fraction(2, 5), gap=Fraction(1, 48))
@@ -129,6 +137,7 @@ def test_split_divider_and_gap_are_configurable() -> None:
         split_regions(divider=Fraction(1, 100), gap=Fraction(1, 10))
 
 
+@pytest.mark.req("AVE-REQ-018 AC-1")
 def test_canvas_defaults_and_presets() -> None:
     """AVE-REQ-018 AC-1: 1920x1080 by default; 1:1, 9:16 and custom sizes are selectable."""
     assert (HD.width, HD.height) == (1920, 1080)
@@ -138,6 +147,7 @@ def test_canvas_defaults_and_presets() -> None:
     assert Canvas(width=2560, height=1440).aspect == Fraction(16, 9)
 
 
+@pytest.mark.req("AVE-REQ-018 AC-4")
 def test_odd_canvas_is_rejected_with_an_explanation() -> None:
     """AVE-REQ-018 AC-4: encoder constraints are explained, never silently fixed by stretching."""
     with pytest.raises(RenderPlanningError) as error:

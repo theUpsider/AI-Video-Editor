@@ -29,6 +29,7 @@ def _video(info: ProbeInfo) -> VideoStreamInfo:
     return stream
 
 
+@pytest.mark.req("AVE-REQ-004 AC-3")
 def test_exact_2560x1440_at_60(std: StandardFixtures) -> None:
     """AVE-REQ-004 AC-3: a "2K/60" input reports its exact pixels and exact 60/1 rate."""
     info = probe(std.qhd.path)
@@ -42,6 +43,7 @@ def test_exact_2560x1440_at_60(std: StandardFixtures) -> None:
     assert video.duration == 4
 
 
+@pytest.mark.req("AVE-REQ-004 AC-1")
 def test_stream_properties_are_persistable(std: StandardFixtures) -> None:
     """AVE-REQ-004 AC-1: dimensions, SAR, rotation, time base, rates, codec, pixel format, color
     tags and audio properties are recorded and survive a JSON round trip."""
@@ -61,6 +63,7 @@ def test_stream_properties_are_persistable(std: StandardFixtures) -> None:
     assert ProbeInfo.model_validate_json(info.model_dump_json()) == info
 
 
+@pytest.mark.req("AVE-REQ-004 AC-2")
 def test_rate_matrix_keeps_exact_rates(timing_fixtures: dict[str, Fixture]) -> None:
     """AVE-REQ-004 AC-2: 24, 25, 30, 30000/1001, 60 and 60000/1001 are distinct exact rates."""
     measured = {}
@@ -76,6 +79,7 @@ def test_rate_matrix_keeps_exact_rates(timing_fixtures: dict[str, Fixture]) -> N
     assert measured["rate-30"] != measured["rate-30000-1001"]
 
 
+@pytest.mark.req("AVE-REQ-004 AC-2")
 def test_variable_frame_rate_is_detected_from_timestamps(
     timing_fixtures: dict[str, Fixture],
 ) -> None:
@@ -90,6 +94,7 @@ def test_variable_frame_rate_is_detected_from_timestamps(
     assert pts == fixture.manifest["vfr_frame_ticks"]
 
 
+@pytest.mark.req("AVE-REQ-004 AC-4")
 def test_rotation_sar_and_audio_layouts(timing_fixtures: dict[str, Fixture]) -> None:
     """AVE-REQ-004 AC-4: rotation metadata, anamorphic pixels, several/no/only audio streams."""
     rotated = _video(probe(timing_fixtures["rotated"].path))

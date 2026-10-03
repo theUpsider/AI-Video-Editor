@@ -66,6 +66,7 @@ def _single_clip_sequence(
     )
 
 
+@pytest.mark.req("AVE-REQ-021 AC-1", "AVE-REQ-021 AC-3")
 def test_standard_composition_plans_three_segments_on_the_frame_grid() -> None:
     """AVE-REQ-021 AC-1/AC-3: split/full/split cut exactly at frames 480 and 840 of 1320."""
     plan = compile_render_plan(standard_sequence(sync_group(B_TRUE)), _assets())
@@ -89,6 +90,7 @@ def test_standard_composition_plans_three_segments_on_the_frame_grid() -> None:
     assert plan.duration == 22
 
 
+@pytest.mark.req("AVE-REQ-031 AC-1", "AVE-REQ-031 AC-3", "AVE-REQ-021 AC-2")
 def test_audio_routing_follows_segments_and_skips_muted_sources() -> None:
     """AVE-REQ-031 AC-1/AC-3 / AVE-REQ-021 AC-2: A, then C, then A; B never enters the mix."""
     plan = compile_render_plan(standard_sequence(sync_group(B_TRUE)), _assets())
@@ -103,6 +105,7 @@ def test_audio_routing_follows_segments_and_skips_muted_sources() -> None:
     assert sum(a.output_samples for a in plan.audio) == plan.sample_count
 
 
+@pytest.mark.req("AVE-REQ-031 AC-4", "AVE-REQ-031 AC-2")
 def test_unavailable_reference_audio_is_reported_not_substituted() -> None:
     """AVE-REQ-031 AC-4 / AC-2: a missing audio stream is a visible planning error."""
     assets = _assets() | {"A": fake_asset("A", duration=Fraction(30), audio=None)}
@@ -213,6 +216,7 @@ TIMING_CASES = [
 ]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize("case", TIMING_CASES, ids=[c.name for c in TIMING_CASES])
 def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
     """AVE-REQ-012 AC-4: output frame k shows the latest source frame with PTS <= t_k.
@@ -263,6 +267,7 @@ def test_timestamp_map_reproduces_the_frame_rule(case: TimingCase) -> None:
         assert expected[:3] == [120, 121, 122]  # exact ties pick the frame at exactly t
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_fake_asset_prints_the_container_start_the_way_ffmpeg_does() -> None:
     """AVE-REQ-012 AC-4: the planning fixture derives the printed format start time from its
     stream starts (the earliest one, rounded half away from zero to microseconds), so the probe
@@ -284,6 +289,7 @@ def test_fake_asset_prints_the_container_start_the_way_ffmpeg_does() -> None:
     assert printed_start_time([Fraction(5, 10_000_000)]) == "0.000001"  # half away from zero
 
 
+@pytest.mark.req("AVE-REQ-072 AC-1", "AVE-REQ-072 AC-2", "AVE-REQ-075 AC-3")
 def test_segment_commands_use_identical_encoder_settings_and_no_shell() -> None:
     """AVE-REQ-072 AC-1/AC-2 / AVE-REQ-075 AC-3: one software profile for every segment."""
     plan = compile_render_plan(standard_sequence(sync_group(B_TRUE)), _assets())
@@ -313,6 +319,7 @@ def test_segment_commands_use_identical_encoder_settings_and_no_shell() -> None:
         OutputProfile(rate_control="bitrate")
 
 
+@pytest.mark.req("AVE-REQ-020 AC-3", "AVE-REQ-019 AC-1")
 def test_background_is_filled_with_its_bt709_limited_range_values() -> None:
     """AVE-REQ-020 AC-3 (background), AVE-REQ-019 AC-1: the segment graph fills the background
     with the BT.709 limited-range Y'CbCr of the configured color, the matrix the output is tagged
@@ -328,6 +335,7 @@ def test_background_is_filled_with_its_bt709_limited_range_values() -> None:
     assert "format=yuv420p,lutyuv=y=67:u=145:v=113[bg]" in script
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_editorial_speed_retimes_audio_with_pitch_kept_on_top_of_drift() -> None:
     """AVE-REQ-012 AC-4: an audio clip with drift correction 1000/1001 and editorial speed 2
     reads source seconds at 2000/1001 per output second, fills exactly its project duration and
@@ -369,6 +377,7 @@ def _image2_asset() -> MediaAsset:
     return MediaAsset(id="img", path="/media/photo%d.png", sha256="0" * 64, probe=probe)
 
 
+@pytest.mark.req("AVE-REQ-072 AC-3", "AVE-REQ-012 AC-4")
 def test_inputs_are_opened_literally_and_video_keeps_frames_before_the_seek() -> None:
     """AVE-REQ-072 AC-3, AVE-REQ-012 AC-4: an image2 still is opened with sequence patterns
     disabled (``%d`` in its name is literal); video inputs seek to a keyframe without discarding

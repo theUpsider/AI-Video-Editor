@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+import pytest
+
 from ave.domain.rates import PROVISIONAL_FPS, resolve_auto_frame_rate, update_auto_frame_rate
 from tests.assets import fake_asset
 
 NTSC60 = Fraction(60000, 1001)
 
 
+@pytest.mark.req("AVE-REQ-018 AC-3")
 def test_no_source_gives_a_provisional_30() -> None:
     """AVE-REQ-018 AC-3: without sources the project shows a provisional 30 fps."""
     resolution = resolve_auto_frame_rate([])
@@ -17,6 +20,7 @@ def test_no_source_gives_a_provisional_30() -> None:
     assert resolution.provisional
 
 
+@pytest.mark.req("AVE-REQ-018 AC-2")
 def test_reference_rate_is_kept_exactly() -> None:
     """AVE-REQ-018 AC-2: 60/1 stays 60/1 and 60000/1001 stays 60000/1001."""
     a60 = fake_asset("A", fps=Fraction(60))
@@ -29,6 +33,7 @@ def test_reference_rate_is_kept_exactly() -> None:
     assert resolve_auto_frame_rate([a60, b_ntsc]).fps == NTSC60
 
 
+@pytest.mark.req("AVE-REQ-018 AC-3")
 def test_resolved_rate_does_not_change_after_another_import() -> None:
     """AVE-REQ-018 AC-3: once resolved, a later import cannot silently change project timing."""
     provisional = update_auto_frame_rate(None, [])

@@ -35,6 +35,7 @@ def _drain(pipe_args: list[str], timeout: float) -> int:
     return received
 
 
+@pytest.mark.req("AVE-REQ-086 AC-3")
 def test_streamed_tool_never_stalls_on_a_flood_of_diagnostics() -> None:
     """AVE-REQ-086 AC-3: a child that writes megabytes of diagnostics to stderr while its stdout
     is read runs to completion well inside its timeout (stderr is drained concurrently); a full
@@ -50,6 +51,7 @@ def test_streamed_tool_never_stalls_on_a_flood_of_diagnostics() -> None:
     assert time.monotonic() - started < 60
 
 
+@pytest.mark.req("AVE-REQ-009 AC-4", "AVE-REQ-086 AC-4")
 def test_failing_streamed_tool_reports_a_bounded_diagnostic_tail(tmp_path: Path) -> None:
     """AVE-REQ-009 AC-4, AVE-REQ-086 AC-4: decoding an MP4 whose media data is cut off at 90 %
     (with ``-xerror``, after megabytes of per-frame diagnostics) raises MediaToolError with the
@@ -84,6 +86,7 @@ def test_failing_streamed_tool_reports_a_bounded_diagnostic_tail(tmp_path: Path)
     assert tail.rstrip().endswith("Conversion failed!")  # the end of the diagnostics is kept
 
 
+@pytest.mark.req("AVE-REQ-024 AC-1")
 def test_extraction_of_unknown_length_grows_one_float32_buffer() -> None:
     """AVE-REQ-024 AC-1: when the stream length is unknown the analysis reader grows a single
     float32 array in place: every delivered sample is kept exactly, and the peak memory stays

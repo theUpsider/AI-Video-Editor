@@ -63,6 +63,7 @@ def _unrelated_pairs() -> Iterator[tuple[int, FloatArray32, FloatArray32]]:
         yield seed, reference.astype(np.float32), target.astype(np.float32)
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_unrelated_recordings_never_yield_an_offset() -> None:
     """AVE-REQ-024 AC-3: on 400 seeded pairs of unrelated recordings no estimate is OK - chance
     coincidences of onsets (two or three at the best of all searched lags) are reported as
@@ -148,6 +149,7 @@ def _lattice_population(level: float, *, related: bool, pairs: int) -> dict[str,
     return counts
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_strong_lattice_noise_never_yields_a_wrong_offset() -> None:
     """AVE-REQ-024 AC-3: noise whose level changes on a shared 50 ms lattice makes onsets
     coincide at every lattice-aligned lag, against the independence assumption of the chance
@@ -162,6 +164,7 @@ def test_strong_lattice_noise_never_yields_a_wrong_offset() -> None:
     assert related["ambiguous"] >= LATTICE_PAIRS // 2  # the population exercises the rival check
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2", "AVE-REQ-024 AC-3")
 def test_mild_lattice_noise_keeps_the_true_offset() -> None:
     """AVE-REQ-024 AC-2, AVE-REQ-024 AC-3: with mild lattice noise the true alignment dominates:
     related pairs give the true offset (measured 94 of 100, the rest insufficient) and never a
@@ -174,6 +177,7 @@ def test_mild_lattice_noise_keeps_the_true_offset() -> None:
 FEW_EVENT_PAIRS = 200
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2", "AVE-REQ-024 AC-3")
 def test_few_shared_events_give_the_true_offset_or_no_offset() -> None:
     """AVE-REQ-024 AC-2, AVE-REQ-024 AC-3: pairs sharing only 3-4 transients over 20-30 s, each
     side with 2-6 events of its own, offsets within +-8 s, 44.1 or 48 kHz targets and varied gain:
@@ -228,6 +232,7 @@ def _grid_song(
     return (signal + 0.002 * rng.standard_normal(count)).astype(np.float32)
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_unrelated_music_on_a_shared_grid_never_yields_an_offset() -> None:
     """AVE-REQ-024 AC-3: two unrelated recordings whose notes fall on the same eighth-note grid
     (120 bpm, 15 % of slots played) coincide at many grid-aligned lags, against the uniform-time

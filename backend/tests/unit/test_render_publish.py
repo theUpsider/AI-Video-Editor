@@ -35,6 +35,7 @@ def _plan_for(video: Path, audio: Path) -> RenderPlan:
     return compile_render_plan(sequence, assets)
 
 
+@pytest.mark.req("AVE-REQ-072 AC-4")
 def test_render_refuses_every_destination_that_is_an_input(tmp_path: Path) -> None:
     """AVE-REQ-072 AC-4: a destination equal to an input file - by path, through ``..``, a
     symbolic link or a hard link, for picture and sound inputs - is refused before any work;

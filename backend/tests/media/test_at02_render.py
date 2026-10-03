@@ -136,6 +136,14 @@ def rendered(
     return Rendered(report, output, estimate.offset_s, scan(output), audio, before)
 
 
+@pytest.mark.scenario("AT-02")
+@pytest.mark.req(
+    "AVE-REQ-072 AC-1",
+    "AVE-REQ-072 AC-2",
+    "AVE-REQ-072 AC-4",
+    "AVE-REQ-075 AC-1",
+    "AVE-REQ-075 AC-4",
+)
 def test_export_is_real_validated_and_published(rendered: Rendered) -> None:
     """AVE-REQ-072 AC-1/AC-2/AC-4, AVE-REQ-075 AC-1/AC-4: CPU H.264/AAC MP4 with the default
     profile, validated by decoding and published atomically; duration 22 s within one frame."""
@@ -162,6 +170,7 @@ def test_export_is_real_validated_and_published(rendered: Rendered) -> None:
         assert accelerator not in commands
 
 
+@pytest.mark.req("AVE-REQ-020 AC-1", "AVE-REQ-019 AC-1", "AVE-REQ-019 AC-2")
 def test_contain_geometry_is_960_square_at_y60(rendered: Rendered) -> None:
     """AVE-REQ-020 AC-1 / AVE-REQ-019 AC-1/AC-2: undistorted 960x960 images, black bars."""
     for n in (30, 1000):
@@ -186,6 +195,7 @@ def test_contain_geometry_is_960_square_at_y60(rendered: Rendered) -> None:
     assert covered.all()  # C fills the whole canvas: no background anywhere
 
 
+@pytest.mark.req("AVE-REQ-021 AC-1", "AVE-REQ-021 AC-3", "AVE-REQ-020 AC-4", "AVE-REQ-024 AC-4")
 def test_decoded_source_frames_follow_the_timeline(rendered: Rendered) -> None:
     """AVE-REQ-021 AC-1/AC-3, AVE-REQ-020 AC-4, AVE-REQ-024 AC-4: both perspectives, then C,
     then both again; A and C exact, B within one frame under the estimated mapping."""
@@ -244,6 +254,7 @@ def _quiet_windows(events: list[float]) -> list[tuple[str, float, float]]:
     return windows
 
 
+@pytest.mark.req("AVE-REQ-031 AC-1", "AVE-REQ-031 AC-3", "AVE-REQ-021 AC-2", "AVE-REQ-024 AC-1")
 def test_audio_events_and_routing(rendered: Rendered) -> None:
     """AVE-REQ-031 AC-1, AVE-REQ-031 AC-3, AVE-REQ-021 AC-2, AVE-REQ-024 AC-1: on every output
     channel, A in the split segments and C in the full segment, B never audible although B's
@@ -280,6 +291,7 @@ def test_originals_are_unchanged(rendered: Rendered, std_assets: dict[str, Media
     assert after == {k: a.sha256 for k, a in std_assets.items()}
 
 
+@pytest.mark.req("AVE-REQ-021 AC-3", "AVE-REQ-012 AC-3")
 def test_ground_truth_range_is_frame_exact_across_cuts(
     std_assets: dict[str, MediaAsset], artifacts_dir: Path
 ) -> None:
@@ -319,6 +331,7 @@ def test_ground_truth_range_is_frame_exact_across_cuts(
     assert tone_amplitude(after, 48000, PILOT_HZ["a"]) < 0.002
 
 
+@pytest.mark.req("AVE-REQ-020 AC-2", "AVE-REQ-019 AC-1")
 def test_cover_mode_crops_without_changing_aspect(
     std_assets: dict[str, MediaAsset], artifacts_dir: Path
 ) -> None:

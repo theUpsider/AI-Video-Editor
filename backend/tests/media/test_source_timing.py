@@ -113,6 +113,7 @@ def _frame_rule(frames: list[int], times: list[Fraction], t: Fraction) -> int:
     return frames[max(0, bisect.bisect_right(times, t) - 1)]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_audio_follows_timestamps_when_the_audio_stream_starts_late(
     derived: DerivedMedia, artifacts_dir: Path
 ) -> None:
@@ -169,6 +170,7 @@ def _stream_start(path: Path, selector: str) -> Fraction:
     return int(stream["start_pts"]) * Fraction(stream["time_base"])
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize("variant", ["late_aac_mp4", "late_aac_ts"])
 @pytest.mark.parametrize("source_in", [Fraction(3, 4), Fraction(5, 2)], ids=["in-0.75", "in-2.5"])
 def test_late_aac_audio_follows_timestamps_in_mp4_and_mpegts(
@@ -199,6 +201,7 @@ def test_late_aac_audio_follows_timestamps_in_mp4_and_mpegts(
     assert max(_chirp_errors(audio, expected)) <= 2 / 48000
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_mpegts_video_follows_the_exact_container_start(
     derived: DerivedMedia, artifacts_dir: Path
 ) -> None:
@@ -213,6 +216,7 @@ def test_mpegts_video_follows_the_exact_container_start(
     assert _shown_frames(output) == [150 + k for k in range(60)]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_long_gop_mpegts_keeps_the_frame_rule(derived: DerivedMedia, artifacts_dir: Path) -> None:
     """AVE-REQ-012 AC-4: an MPEG-TS source (no keyframe index) with one keyframe every 20 s
     and B-frames, cut at 9.39 s in the middle of a group of pictures, shows the frame rule's
@@ -233,6 +237,7 @@ MATROSKA_PRECISION = Fraction(1, 1000)
 """Matroska stores timestamps in milliseconds."""
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize(
     ("variant", "origin"),
     [("intra_ts", Fraction(7, 5)), ("intra_ts_offset", Fraction(43, 30))],
@@ -261,6 +266,7 @@ def test_intra_only_mpegts_needs_no_keyframe_index(
     assert _shown_frames(output) == [first + k for k in range(30)]
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_stream_without_presentation_timestamps_gets_an_empty_keyframe_index(
     tmp_path: Path,
 ) -> None:
@@ -360,6 +366,7 @@ CHIRP_PRECISION = {"mkv": MATROSKA_PRECISION, "ts": Fraction(2, 48000)}
 the detection's two samples (MPEG-TS, whose 90 kHz gaps are whole 48 kHz samples)."""
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize("container", ["mkv", "ts"])
 @pytest.mark.parametrize(
     ("gap", "corrected"),
@@ -445,6 +452,7 @@ def _packet_deviations(path: Path) -> list[Fraction]:
     return _contiguity_deviations(packets)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_timestamp_jitter_never_inserts_silence(derived: DerivedMedia) -> None:
     """AVE-REQ-012 AC-4: audio packets whose timestamps wobble by up to 2 ms (with Matroska's
     millisecond rounding) are decoded as the contiguous stream they are: no silence is inserted
@@ -467,6 +475,7 @@ a rendered clip of a jittered source sits less than 10 ms from the analysis plac
 deviation of its anchor packet from the stream's first packet, at most that spread."""
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize("source_in", [Fraction(15, 2), Fraction(33, 2)], ids=["7.5", "16.5"])
 def test_render_of_a_jittered_source_inserts_no_silence(
     derived: DerivedMedia, artifacts_dir: Path, tmp_path: Path, source_in: Fraction
@@ -506,6 +515,7 @@ def test_render_of_a_jittered_source_inserts_no_silence(
     assert max(errors) < float(JITTER_PLACEMENT_BOUND)
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis(
     derived: DerivedMedia,
 ) -> None:
@@ -524,6 +534,7 @@ def test_jitter_spread_just_below_10_ms_stays_contiguous_in_the_analysis(
     assert max(_chirp_errors(samples, expected)) <= 2 / 48000
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 @pytest.mark.parametrize(
     ("source_in", "anchor"),
     [
@@ -581,6 +592,7 @@ def test_render_of_a_jitter_spread_just_below_10_ms_inserts_no_silence(
     assert max(_chirp_errors(audio, expected)) <= 2 / 48000
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_vfr_gap_longer_than_the_seek_margin_keeps_the_frame_rule(
     derived: DerivedMedia, artifacts_dir: Path
 ) -> None:
@@ -607,6 +619,7 @@ def test_vfr_gap_longer_than_the_seek_margin_keeps_the_frame_rule(
     assert _shown_frames(output) == expected
 
 
+@pytest.mark.req("AVE-REQ-012 AC-4")
 def test_output_before_the_first_video_frame_shows_the_first_frame(
     derived: DerivedMedia, artifacts_dir: Path
 ) -> None:
@@ -649,6 +662,7 @@ def literal_image(timing_fixtures: dict[str, Fixture], artifacts_dir: Path) -> P
     return named
 
 
+@pytest.mark.req("AVE-REQ-004 AC-3", "AVE-REQ-004 AC-4")
 def test_probe_reads_a_percent_name_as_that_file(literal_image: Path) -> None:
     """AVE-REQ-004 AC-3, AVE-REQ-004 AC-4: an untrusted name with ``%d`` never selects another
     file: the still image reports its own exact 640x360."""
@@ -658,6 +672,7 @@ def test_probe_reads_a_percent_name_as_that_file(literal_image: Path) -> None:
     assert asset.probe.format_name == "image2"
 
 
+@pytest.mark.req("AVE-REQ-072 AC-3")
 def test_render_reads_a_percent_name_as_that_file(literal_image: Path, artifacts_dir: Path) -> None:
     """AVE-REQ-072 AC-3: the rendered still is the named file (barcode 0 on the fixture's
     yellow background), not the 64x48 blue ``photo1.png``."""

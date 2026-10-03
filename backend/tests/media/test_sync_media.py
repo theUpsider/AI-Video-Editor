@@ -16,7 +16,7 @@ from ave.sync.audio import SyncStatus, estimate_offset, extract_analysis_audio
 from tests.media.derived import AUDIO_DELAY, LATE_AAC_DELAY, DerivedMedia, derived_media
 from tests.oracles import detect_chirps, match_events
 
-pytestmark = pytest.mark.media
+pytestmark = [pytest.mark.media, pytest.mark.scenario("AT-04")]
 
 ONE_FRAME_60 = Fraction(1, 60)
 
@@ -27,6 +27,7 @@ def derived(std: StandardFixtures, artifacts_dir: Path) -> DerivedMedia:
     return derived_media(std, artifacts_dir / "derived")
 
 
+@pytest.mark.req("AVE-REQ-024 AC-4", "AVE-REQ-024 AC-2", "AVE-REQ-024 AC-3")
 def test_known_offset_is_recovered_within_one_frame(std: StandardFixtures) -> None:
     """AVE-REQ-024 AC-4 / AC-2: a_B = 2 from AAC audio at 48 kHz (A) vs 44.1 kHz (B)."""
     assert probe(std.a.path).audio_streams[0].sample_rate == 48000
@@ -47,6 +48,7 @@ def test_known_offset_is_recovered_within_one_frame(std: StandardFixtures) -> No
     assert (result.target_source_interval.start, result.target_source_interval.end) == (0, 25)
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2")
 def test_negative_offset_with_swapped_reference(std: StandardFixtures) -> None:
     """AVE-REQ-024 AC-2: with B as reference, A maps with a = -2."""
     result = estimate_offset(std.b.path, std.a.path)
@@ -55,6 +57,7 @@ def test_negative_offset_with_swapped_reference(std: StandardFixtures) -> None:
     assert abs(result.offset + B_OFFSET) <= ONE_FRAME_60
 
 
+@pytest.mark.req("AVE-REQ-024 AC-3")
 def test_unrelated_recording_is_not_synchronized(std: StandardFixtures) -> None:
     """AVE-REQ-024 AC-3: the joint shot C shares no events with A."""
     result = estimate_offset(std.a.path, std.c.path)
@@ -62,6 +65,7 @@ def test_unrelated_recording_is_not_synchronized(std: StandardFixtures) -> None:
     assert result.offset is None
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2", "AVE-REQ-012 AC-4")
 def test_late_audio_start_is_part_of_the_offset(
     std: StandardFixtures, derived: DerivedMedia
 ) -> None:
@@ -76,6 +80,7 @@ def test_late_audio_start_is_part_of_the_offset(
     assert abs(result.offset_s + float(AUDIO_DELAY)) < 1e-4
 
 
+@pytest.mark.req("AVE-REQ-024 AC-2", "AVE-REQ-012 AC-4")
 @pytest.mark.parametrize("variant", ["late_aac_mp4", "late_aac_ts"])
 def test_late_aac_audio_offset_in_mp4_and_mpegts(
     std: StandardFixtures, derived: DerivedMedia, variant: str
@@ -89,6 +94,7 @@ def test_late_aac_audio_offset_in_mp4_and_mpegts(
     assert abs(result.offset_s + float(LATE_AAC_DELAY)) < 1e-4
 
 
+@pytest.mark.req("AVE-REQ-024 AC-1", "AVE-REQ-012 AC-4")
 def test_analysis_audio_follows_timestamps_in_float32_within_its_memory(
     derived: DerivedMedia,
 ) -> None:
