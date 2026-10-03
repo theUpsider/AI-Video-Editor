@@ -26,7 +26,12 @@ from the drafts.
 - AVE-REQ-093 `verification`: the re-verification at `d4d3883` (`wf_ed1f5104-63a`) FAILED on one blocking finding
   (the file hashes were verified only by a package file); fixed on this branch (the checker verifies the inventory
   and every hash itself; suite cases for an edited validator) and queued for a re-review.
-- AVE-REQ-094/096/097/098 `in-progress`: the fix brief (items 1–26) is implemented and integrated (`c084f7c`;
+- AVE-REQ-094 `in-progress`: its re-review PASS at `d4d3883` was refuted by the skeptic (probe suite checks
+  headings and formats, bandwidth-dependent network probe, browser tools unrecorded, no run with investigation
+  and testing stages). Repair from [the probe-evidence brief](briefs/2026-10-03-ave-req-094-probe-evidence.md)
+  in worktree `ave-req-094-probe-evidence`: researcher ‖ tester → implementer → review with a skeptic; the
+  persisted script in [docs/workflows/](workflows/README.md) names the re-run command.
+- AVE-REQ-096/097/098 `in-progress`: the fix brief (items 1–26) is implemented and integrated (`c084f7c`;
   handbacks under [docs/briefs/handbacks/](briefs/handbacks/)); their reviews in `wf_ed1f5104-63a` at `d4d3883`:
   launched 2026-10-03; verdict not recorded; on resume without a recorded verdict, re-run the script in
   [docs/workflows/](workflows/README.md) with `{commit: 'd4d3883'}`. The same run reviewed
