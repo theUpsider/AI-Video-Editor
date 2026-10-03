@@ -108,12 +108,15 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 | [tester](.claude/agents/tester.md) | Adversarial tests for complex or risky requirements before review |
 | [researcher](.claude/agents/researcher.md) | Libraries, APIs, formats, standards, alternatives; sourced findings |
 
-- Delegate bounded tasks with minimal context: requirement IDs, relevant file paths, constraints and the expected report. Subagents read the files themselves.
+- Brief before delegating: every task the `develop` loop delegates (implementer, tester, researcher, architect, workflow run, review workflows included) starts from a brief `docs/briefs/YYYY-MM-DD-<slug>.md` written from the template in [docs/briefs/README.md](docs/briefs/README.md) and committed before the launch (inside an uncommitted merge it joins the merge commit), whose input revision names a commit and "isolated worktree" or "main working tree"; the prompt passes the brief's path and the base commit (develop § 4). Subagents read the files themselves. `verify-requirement` and `architecture-review` fork their agent with the skill as its task and take no brief; the one-time setup skills `product-definition` and `technical-foundation` give their agents the task text the skill defines.
+- Handbacks persist: each delegated task's final report lands in `docs/briefs/handbacks/<brief-slug>.md` (`<brief-slug>.part-<n>.md` for a task run in parts) and is committed with the work it reports.
 - Send exploratory or long investigations to the researcher to keep the main context focused.
 - Verify independently: run `verify-requirement` for every requirement; an implementer never approves its own work.
 - Parallel work: spawn implementers with `isolation: worktree` on disjoint files. Worktrees branch from the current `HEAD` (`worktree.baseRef: "head"` in `.claude/settings.json`), so commit the state they build on first. Merge each branch with `--no-commit`, run `./scripts/verify.sh` and `verify-requirement`, and commit the merge only after a PASS.
+- Concurrency: at most two writing agents run at once across every workflow and subagent, plus one heavy media job; heavy media jobs serialize on the heavy-media lock (develop § 4 Concurrency limits).
 - The lead owns the shared documents (TRACEABILITY.md, PROGRESS.md, ROADMAP.md, ASSUMPTIONS.md), every status transition, AC ticks (only after a `verify-requirement` PASS) and ADR acceptance. Subagents report proposed updates in their final report.
 - Subagents cannot spawn subagents; the main session orchestrates.
+- Fallback without workflows or subagents: the main session runs the same lifecycle sequentially. Independent review then happens in a fresh session (or a context holding nothing of the implementation work) that follows `verify-requirement` from the repository alone; the Status log records it as a sequential review, and the requirement stays `verification` until that review is recorded (develop § 6).
 
 ## Git
 
@@ -122,6 +125,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
 - Inspect `git status` and `git diff` before every commit and before declaring a task complete.
 - Never rewrite shared history, force-push shared branches, or commit secrets.
 - Cloud sessions (`CLAUDE_CODE_REMOTE=true`) run in ephemeral containers: push the working branch after each commit.
+- PROGRESS.md names only what the remote holds. Before it names a commit, branch or file, push it as far as the session's push permission allows: the working branch after each commit, and each worktree branch after its handback (merged into the working branch, or pushed alongside it while it stays unmerged). Without push permission, PROGRESS.md § Blockers lists the local-only refs with the exact push command. Scratchpad files stay unnamed until they are committed and pushed.
 - `main` is the integration branch: work lands on the session's working branch first; once `./scripts/verify.sh` passes, CI is green for that commit and any required independent review passed, fast-forward `main` to it (`git push origin <commit>:main`; a merge commit when `main` moved). Never push unverified work to `main`.
 - Worktrees live under `.claude/worktrees/` (gitignored); create them only for real parallel work.
 

@@ -3,22 +3,33 @@
 
 Every ./scripts/verify.sh run records its evidence in ``var/verify/runs/<run-id>/`` (gitignored):
 ``steps.tsv`` (one line per verification step), one JSON report per pytest run (written by
-``backend/tests/evidence_plugin.py``) and ``manifest.json``, which ties the results to the commit,
-the tree fingerprint (``vstate_fingerprint`` in scripts/lib/verify-state.sh), the toolchain and
-configuration hashes, and maps every requirement criterion tag ``AVE-REQ-NNN AC-n`` and scenario
-tag ``AT-NN`` to the tests that carry it and their outcomes. ``var/verify/latest-<tier>.json`` is a
-copy of the newest manifest of each tier.
+``backend/tests/evidence_plugin.py``), one ``suite-<file>.json`` result per tooling test file that
+ran (written by scripts/tests/run.sh and by the ``unittest`` command) and ``manifest.json``, which
+ties the results to the commit, the tree fingerprint (``vstate_fingerprint`` in
+scripts/lib/verify-state.sh), the toolchain and configuration hashes, and maps every requirement
+criterion tag ``AVE-REQ-NNN AC-n`` and scenario tag ``AT-NN`` to the tests that carry it and their
+outcomes. ``var/verify/latest-<tier>.json`` is a copy of the newest manifest of each tier.
 
 Commands:
   record --dir DIR --tier TIER --fingerprint FP
-      Write DIR/manifest.json from DIR's step log and reports; refresh latest-<tier>.json.
+      Write DIR/manifest.json from DIR's step log, reports and suite results; refresh
+      latest-<tier>.json.
   show [AVE-REQ-NNN ...] [--tier TIER] [--require-fresh] [--require-complete]
       Per-criterion evidence from the newest manifest, with its freshness against the current
       tree. --require-fresh exits 1 when the tree changed since that run; --require-complete
-      exits 1 when a named requirement has a criterion without passing, non-contract evidence.
+      exits 1 when the run failed or a named requirement has a criterion without passing,
+      non-contract evidence.
   check-done --dir DIR
       Exit 1 when a requirement with status `done` has a criterion that this run's results do
       not evidence (used by verify.sh in the release tier).
+  unittest [--dir DIR] [DIRECTORY]
+      Run the Python unit tests of DIRECTORY (default scripts/tests), each test_*.py file as one
+      suite, and exit 1 when any file fails. A file fails when a test fails or errors, is skipped,
+      is expected to fail or passes unexpectedly, or when no test ran (the --forbid-skips rule of
+      the pytest plugin). With DIR (default $AVE_EVIDENCE_DIR), write each file's suite result.
+  record-suite --dir DIR --file FILE --exit STATUS
+      Write DIR/suite-<file name>.json: the file, its exit status and the criterion tags of its
+      comment lines with their line numbers (used by scripts/tests/run.sh for each shell suite).
 
 Evidence rules (docs/requirements/README.md, Definition of Done):
   * a criterion is evidenced by a test that carries its tag and passed in the run, or by an
@@ -27,10 +38,13 @@ Evidence rules (docs/requirements/README.md, Definition of Done):
   * tests marked ``contract`` replace an external provider with a fake: they prove the
     interface only and never evidence a criterion on their own;
   * the tooling tests in scripts/tests/ (shell suites and Python unit tests) tag their cases with
-    ``# AVE-REQ-NNN AC-n`` comment lines; those tags take the outcome of the verify.sh step that
-    runs the file (:data:`SUITE_STEPS`), so they count only in the tiers that run it.
+    ``# AVE-REQ-NNN AC-n`` comment lines; those tags count only through a suite result of the run,
+    with the exit status of that file: a file that never ran gives no evidence, and a failing one
+    counts against its criteria;
+  * every tooling tag names an existing criterion: one that does not stops ``record`` and
+    ``check-done`` with the file and line.
 
-Python standard library only; never writes outside var/verify/.
+Python standard library only; writes only into the run directory it is given and var/verify/.
 """
 
 from __future__ import annotations
@@ -43,6 +57,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unittest
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,11 +68,9 @@ REQUIREMENTS = ROOT / "docs" / "requirements"
 SCENARIOS_FILE = ROOT / "ai-video-editor-requirements" / "spec" / "ACCEPTANCE_TESTS.md"
 VERIFY_DIR = ROOT / "var" / "verify"
 TOOLING_TESTS = ROOT / "scripts" / "tests"
-SUITE_STEPS = {
-    "*.sh": "Verification tooling regression suites",
-    "test_*.py": "Evidence tooling unit tests",
-}
-"""Tooling test files (glob in scripts/tests/) and the verify.sh step that runs them."""
+TOOLING_PATTERNS = ("*.sh", "test_*.py")
+"""Tooling test files in scripts/tests/: shell suites and Python unit tests."""
+UNIT_PATTERN = "test_*.py"
 TIERS = ("fast", "media", "release")
 SCHEMA = 1
 KEEP_RUNS = 20
@@ -166,6 +179,7 @@ class Evidence:
     criteria: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     scenarios: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     tests: dict[str, int] = field(default_factory=dict)
+    suites: list[dict[str, Any]] = field(default_factory=list)
 
 
 def read_steps(run_dir: Path) -> list[dict[str, Any]]:
@@ -180,23 +194,73 @@ def read_steps(run_dir: Path) -> list[dict[str, Any]]:
     return steps
 
 
-def suite_tags(directory: Path) -> dict[str, list[tuple[str, str]]]:
-    """Criterion tags in comment lines of the tooling tests: tag -> [(file, step name)]."""
-    tags: dict[str, list[tuple[str, str]]] = {}
-    for pattern, step in SUITE_STEPS.items():
-        for suite in sorted(directory.glob(pattern)):
-            for line in suite.read_text(encoding="utf-8").splitlines():
-                stripped = line.strip()
-                if stripped.startswith("#"):
-                    for tag in _TAG_IN_TEXT.findall(stripped):
-                        entry = (str(suite.relative_to(ROOT)), step)
-                        if entry not in tags.setdefault(tag, []):
-                            tags[tag].append(entry)
-    return tags
+def _shown(path: Path) -> str:
+    """``path`` relative to the repository root, or absolute when it lies outside."""
+    resolved = path.resolve()
+    return str(resolved.relative_to(ROOT)) if resolved.is_relative_to(ROOT) else str(resolved)
 
 
-def collect(run_dir: Path) -> Evidence:
-    """Tagged results of the pytest reports and shell suites of one run directory."""
+def comment_tags(path: Path) -> list[tuple[int, str]]:
+    """Criterion tags in the comment lines of a tooling test file: (line number, tag)."""
+    found = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            found.extend((number, tag) for tag in _TAG_IN_TEXT.findall(stripped))
+    return found
+
+
+def write_suite_result(run_dir: Path, suite: Path, exitstatus: int) -> Path:
+    """Records that ``suite`` ran in this run with ``exitstatus``: ``run_dir/suite-<name>.json``
+    holds the file, the exit status and the tags of its comment lines."""
+    if not run_dir.is_dir():
+        raise EvidenceError(f"run directory {run_dir} does not exist")
+    if not suite.is_file():
+        raise EvidenceError(f"suite {suite} does not exist")
+    result = {
+        "schema": SCHEMA,
+        "file": _shown(suite),
+        "exitstatus": int(exitstatus),
+        "tags": [{"line": line, "tag": tag} for line, tag in comment_tags(suite)],
+    }
+    target = run_dir / f"suite-{suite.name}.json"
+    _write_json(target, result)
+    return target
+
+
+def read_suite_results(run_dir: Path) -> list[dict[str, Any]]:
+    """The suite results of one run directory, each with the name of its result file."""
+    results = []
+    for path in sorted(run_dir.glob("suite-*.json")):
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if result.get("schema") != SCHEMA:
+            raise EvidenceError(f"{path}: unsupported suite result schema")
+        results.append({**result, "report": path.name})
+    return results
+
+
+def tooling_tag_problems(
+    results: list[dict[str, Any]], known: dict[str, Requirement]
+) -> list[str]:
+    """``file:line: problem`` for each tooling tag that names no existing criterion, in the
+    suite results of a run and in every tooling test file of :data:`TOOLING_TESTS`."""
+    located = {
+        (result["file"], entry["line"], entry["tag"])
+        for result in results
+        for entry in result["tags"]
+    }
+    for pattern in TOOLING_PATTERNS:
+        for path in sorted(TOOLING_TESTS.glob(pattern)):
+            located.update((_shown(path), line, tag) for line, tag in comment_tags(path))
+    return [
+        f"{file}:{line}: {problem}"
+        for file, line, tag in sorted(located)
+        for problem in tag_problems([tag], [], known)
+    ]
+
+
+def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evidence:
+    """Tagged results of the pytest reports and tooling suite results of one run directory."""
     evidence = Evidence()
     for report_path in sorted(run_dir.glob("pytest-*.json")):
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -215,14 +279,70 @@ def collect(run_dir: Path) -> Evidence:
                 evidence.criteria.setdefault(tag, []).append(item)
             for tag in test.get("scenario", []):
                 evidence.scenarios.setdefault(tag, []).append(item)
-    steps = {step["name"]: step["status"] for step in read_steps(run_dir)}
-    for tag, suites in suite_tags(TOOLING_TESTS).items():
-        for suite, step in suites:
-            if step in steps:
-                outcome = "passed" if steps[step] == "PASS" else "failed"
-                item = {"test": suite, "outcome": outcome, "contract": False, "report": "steps"}
-                evidence.criteria.setdefault(tag, []).append(item)
+    results = read_suite_results(run_dir)
+    problems = tooling_tag_problems(results, requirements() if known is None else known)
+    if problems:
+        raise EvidenceError(
+            "tooling test tags that name no existing criterion:\n  " + "\n  ".join(problems)
+        )
+    for result in results:
+        outcome = "passed" if result["exitstatus"] == 0 else "failed"
+        evidence.suites.append({"file": result["file"], "exitstatus": result["exitstatus"]})
+        for tag in sorted({entry["tag"] for entry in result["tags"]}):
+            item = {
+                "test": result["file"],
+                "outcome": outcome,
+                "contract": False,
+                "report": result["report"],
+            }
+            evidence.criteria.setdefault(tag, []).append(item)
     return evidence
+
+
+def _unit_problems(result: unittest.TestResult) -> list[str]:
+    """Why a unit-test file proves nothing: each test that did not pass, or no test at all."""
+    problems = [
+        f"{label}: {test.id()}"
+        for label, entries in (
+            ("failed", result.failures),
+            ("error", result.errors),
+            ("skipped", result.skipped),
+            ("expected to fail", result.expectedFailures),
+        )
+        for test, _ in entries
+    ]
+    problems += [f"passed unexpectedly: {test.id()}" for test in result.unexpectedSuccesses]
+    if result.testsRun == 0:
+        problems.append("no test ran")
+    return problems
+
+
+def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
+    """Runs each ``test_*.py`` file of ``directory`` as one suite; writes its suite result into
+    ``run_dir`` when given. Exit status 1 when any file fails or none exists."""
+    files = sorted(directory.glob(UNIT_PATTERN))
+    if not files:
+        print(f"FAIL: no {UNIT_PATTERN} file in {directory}")
+        return 1
+    failed = []
+    for path in files:
+        print(f"--- {_shown(path)}", flush=True)
+        loader = unittest.TestLoader()
+        suite = loader.discover(str(directory), pattern=path.name, top_level_dir=str(directory))
+        result = unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(suite)
+        problems = _unit_problems(result)
+        if problems:
+            failed.append(path)
+            print(f"FAIL: {_shown(path)} — a test that did not pass proves nothing:")
+            for problem in problems:
+                print(f"  {problem}")
+        if run_dir is not None:
+            write_suite_result(run_dir, path, 1 if problems else 0)
+    if failed:
+        print(f"evidence.py unittest: FAIL ({len(failed)} of {len(files)} file(s))")
+        return 1
+    print(f"evidence.py unittest: PASS ({len(files)} file(s))")
+    return 0
 
 
 def criterion_state(items: list[dict[str, Any]], inspected: bool) -> str:
@@ -306,6 +426,7 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
         "configuration": configuration(),
         "steps": steps,
         "tests": evidence.tests,
+        "suites": evidence.suites,
         "criteria": evidence.criteria,
         "scenarios": evidence.scenarios,
     }
@@ -358,11 +479,14 @@ def cmd_show(args: argparse.Namespace) -> int:
         f"current tree (rerun ./scripts/verify.sh --tier {manifest['tier']})"
     )
     known = requirements()
-    unknown = [name for name in args.ids if name not in known]
+    shown_ids = args.ids or sorted({tag[:11] for tag in manifest["criteria"]})
+    unknown = [name for name in shown_ids if name not in known]
     if unknown:
-        raise EvidenceError(f"unknown requirement IDs: {', '.join(unknown)}")
+        raise EvidenceError(
+            f"unknown requirement IDs: {', '.join(unknown)} (no file in docs/requirements/)"
+        )
     incomplete = False
-    for requirement_id in args.ids or sorted({tag[:11] for tag in manifest["criteria"]}):
+    for requirement_id in shown_ids:
         requirement = known[requirement_id]
         print(f"{requirement_id} ({requirement.status})")
         for criterion in requirement.criteria:
@@ -370,9 +494,12 @@ def cmd_show(args: argparse.Namespace) -> int:
             state = criterion_state(items, criterion in requirement.inspected)
             incomplete |= state not in ("passed", "inspected")
             print(f"  {criterion:<6} {state:<14} {_test_summary(items)}")
+    failed_run = manifest["result"] != "PASS"
+    if args.require_complete and failed_run:
+        print("Completeness: the run FAILED; a failed run certifies no requirement complete")
     if args.require_fresh and not fresh:
         return 1
-    return 1 if args.require_complete and incomplete else 0
+    return 1 if args.require_complete and (incomplete or failed_run) else 0
 
 
 def _test_summary(items: list[dict[str, Any]], shown: int = 4) -> str:
@@ -386,8 +513,8 @@ def _test_summary(items: list[dict[str, Any]], shown: int = 4) -> str:
 
 def done_problems(run_dir: Path, known: dict[str, Requirement] | None = None) -> list[str]:
     """Criteria of `done` requirements that this run does not evidence."""
-    evidence = collect(run_dir)
     known = requirements() if known is None else known
+    evidence = collect(run_dir, known)
     problems = []
     for requirement in known.values():
         if requirement.status != "done":
@@ -412,6 +539,18 @@ def cmd_check_done(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_unittest(args: argparse.Namespace) -> int:
+    run_dir = Path(args.dir) if args.dir else None
+    if run_dir is not None and not run_dir.is_dir():
+        raise EvidenceError(f"run directory {run_dir} does not exist")
+    return run_unit_tests(Path(args.directory), run_dir)
+
+
+def cmd_record_suite(args: argparse.Namespace) -> int:
+    write_suite_result(Path(args.dir), Path(args.file), args.exit)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="scripts/evidence.py", description=__doc__.split("\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -429,6 +568,15 @@ def main(argv: list[str] | None = None) -> int:
     check = commands.add_parser("check-done", help="done requirements are evidenced by a run")
     check.add_argument("--dir", required=True)
     check.set_defaults(handler=cmd_check_done)
+    unit = commands.add_parser("unittest", help="run the tooling unit tests; record each file")
+    unit.add_argument("--dir", default=os.environ.get("AVE_EVIDENCE_DIR", ""))
+    unit.add_argument("directory", nargs="?", default=str(TOOLING_TESTS))
+    unit.set_defaults(handler=cmd_unittest)
+    suite = commands.add_parser("record-suite", help="record one tooling suite's result")
+    suite.add_argument("--dir", required=True)
+    suite.add_argument("--file", required=True)
+    suite.add_argument("--exit", required=True, type=int)
+    suite.set_defaults(handler=cmd_record_suite)
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))

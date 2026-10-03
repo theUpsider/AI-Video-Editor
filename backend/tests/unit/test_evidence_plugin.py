@@ -73,14 +73,58 @@ def test_report_records_tags_outcomes_and_contract_flags(pytester: pytest.Pytest
     assert data["schema"] == 1
 
 
-def test_forbid_skips_fails_a_session_with_tests_that_did_not_run(
-    pytester: pytest.Pytester,
+PASSING_MODULE = "def test_passes():\n    pass\n"
+
+
+@pytest.mark.parametrize(
+    ("source", "nodeid", "outcome"),
+    [
+        pytest.param(
+            'import pytest\n\ndef test_x():\n    pytest.skip("not available")\n',
+            "test_generated.py::test_x",
+            "skipped",
+            id="skip-only",
+        ),
+        pytest.param(
+            'import pytest\n\n@pytest.mark.xfail(reason="known")\n'
+            "def test_x():\n    assert False\n",
+            "test_generated.py::test_x",
+            "xfailed",
+            id="xfail-only",
+        ),
+        pytest.param(
+            'import pytest\n\n@pytest.mark.xfail(reason="known")\ndef test_x():\n    pass\n',
+            "test_generated.py::test_x",
+            "xpassed",
+            id="xpass-only",
+        ),
+        pytest.param(
+            'import pytest\n\npytest.skip("not available", allow_module_level=True)\n\n'
+            "def test_x():\n    pass\n",
+            "test_generated.py",
+            "skipped",
+            id="module-level-skip",
+        ),
+        pytest.param(
+            'import pytest\n\npytest.importorskip("ave_module_that_does_not_exist")\n\n'
+            "def test_x():\n    pass\n",
+            "test_generated.py",
+            "skipped",
+            id="importorskip",
+        ),
+    ],
+)
+def test_forbid_skips_fails_a_session_with_a_test_that_did_not_run(
+    pytester: pytest.Pytester, source: str, nodeid: str, outcome: str
 ) -> None:
-    """A skipped or expected-to-fail test makes an otherwise green session fail under
-    --forbid-skips (the verify.sh setting); without the option the same session passes."""
-    source = MODULE.replace("assert 1 == 2", "pass")
-    status, _ = _run(pytester, source)
+    """One test, or one whole module skipped at collection, that did not run as a passing test
+    makes an otherwise green session fail under --forbid-skips (the verify.sh setting); the
+    report records it; without the option the same session passes."""
+    pytester.makepyfile(test_passing=PASSING_MODULE)
+    status, data = _run(pytester, source)
     assert status == pytest.ExitCode.OK
+    outcomes = {test["nodeid"]: test["outcome"] for test in data["tests"]}
+    assert outcomes == {"test_passing.py::test_passes": "passed", nodeid: outcome}
     status, _ = _run(pytester, source, "--forbid-skips")
     assert status == pytest.ExitCode.TESTS_FAILED
 

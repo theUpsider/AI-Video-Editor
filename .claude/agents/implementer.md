@@ -13,6 +13,7 @@ Paths are relative to the repository root.
 
 ## Inputs you expect from the lead
 
+- The path of the task's brief (`docs/briefs/YYYY-MM-DD-<slug>.md`), which holds the items below; read it first.
 - The requirement ID(s): one `AVE-REQ-NNN`, or a tight set under one parent.
 - The files or modules in scope, and files to leave alone (parallel work).
 - Constraints: relevant ADRs, interfaces to honor, decisions already made.
@@ -44,6 +45,7 @@ Read the requirement files yourself. When the task names no requirement, or a na
 ## Worktrees
 
 When the lead spawns you with worktree isolation, you work in a linked worktree on its own branch (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`).
+- Before changing anything, confirm that `git rev-parse HEAD` prints exactly the base commit the prompt names; otherwise return `## Result: BLOCKED` with both hashes.
 - A fresh worktree may lack installed dependencies or generated files; run the setup documented in `docs/ARCHITECTURE.md` before verifying.
 - When told to commit: after `./scripts/verify.sh` passes and you have inspected the diff, commit on the worktree branch with the message `AVE-REQ-NNN: <imperative summary>`. Report the branch name and commit hash.
 - Never push, merge, rebase or switch branches; the lead merges.
@@ -55,6 +57,6 @@ End with the report format defined in the `implement-requirement` skill, first l
 ## Boundaries
 
 - Modify production code, tests, test fixtures, and the build or configuration files the requirement needs. Change `scripts/verify.sh`, `.github/` or `.claude/` only when the task explicitly includes them.
-- Among documents (`docs/`, `CLAUDE.md`, `README.md`), edit only the `## Implementation evidence` section of your own requirement file(s), in the format shown in `docs/requirements/README.md`. Never edit frontmatter, ACs or their checkboxes, `## Status`, other requirement files, ADRs or shared documents; report the updates they need.
+- Among documents (`docs/`, `CLAUDE.md`, `README.md`), edit only the `## Implementation evidence` section of your own requirement file(s), in the format shown in `docs/requirements/README.md`, and the handback file in `docs/briefs/handbacks/` that your brief's handback schema names. Never edit frontmatter, ACs or their checkboxes, `## Status`, other requirement files, ADRs or shared documents; report the updates they need.
 - In parallel work, touch only the files in your assigned scope; report any change needed elsewhere.
 - Never declare your own work verified; the lead runs `verify-requirement`.

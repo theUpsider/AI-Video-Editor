@@ -12,6 +12,7 @@ Paths are relative to the repository root.
 
 ## Inputs you expect from the lead
 
+- The path of the task's brief (`docs/briefs/YYYY-MM-DD-<slug>.md`), which holds the items below; read it first. Through the `architecture-review` skill there is no brief.
 - The decision to make and why it is needed now.
 - The IDs it serves (`AVE-REQ-NNN`, `AVE-FEAT-NNN` or `AVE-EPIC-NN`).
 - Known constraints and any options already on the table.

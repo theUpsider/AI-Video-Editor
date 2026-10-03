@@ -3,15 +3,22 @@
 #
 # Usage:  ./scripts/check-project-control.sh      (run by ./scripts/verify.sh; no arguments)
 # Checks: 1 required files exist                    6 relative Markdown links resolve
-#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings
-#         3 .claude/settings.json is valid JSON     8 requirement files (docs/requirements/README.md)
-#         4 agent frontmatter                       9 ADR files (docs/decisions/README.md)
-#         5 skill frontmatter                      10 requirement matrix in docs/TRACEABILITY.md
-#                                                  11 task brief headings (docs/briefs/README.md)
+#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings; no line claims
+#         3 .claude/settings.json is valid JSON       that work is running
+#         4 agent frontmatter                       8 requirement files (docs/requirements/README.md)
+#         5 skill frontmatter                       9 ADR files (docs/decisions/README.md)
+#                                                  10 requirement matrix in docs/TRACEABILITY.md
+#        11 task briefs (docs/briefs/README.md): every heading once and in template order, no empty
+#           section, an AVE-REQ ID under Requirements, a commit under Input revision; each handback
+#           in docs/briefs/handbacks/ is named after its brief
+#        12 .claude/settings.json policy: no permission bypass, the SessionStart hook runs on
+#           startup, resume and compact, hook commands start no loop, sleep or background job and
+#           none runs asynchronously
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
 # Portability: bash 3.2+, POSIX awk/grep/sed (mawk, gawk, BSD awk, busybox); CRLF tolerant.
+#              Check 12 needs python3 and warns without it.
 # Maintenance: add every file other files depend on to REQUIRED_FILES; keep the rules in sync with
 # docs/requirements/README.md, docs/decisions/README.md, docs/TRACEABILITY.md and docs/PROGRESS.md.
 # Baseline integrity (the requirements package and its import) is scripts/check_baseline.py's job.
@@ -30,6 +37,7 @@ CLAUDE.md
 README.md
 .gitignore
 .gitattributes
+.env.example
 docs/PRODUCT.md
 docs/ARCHITECTURE.md
 docs/ROADMAP.md
@@ -78,7 +86,7 @@ scripts/lib/verify-state.sh
 
 # Check 7: docs/PROGRESS.md headings (exact lines).
 PROGRESS_HEADINGS='# Current project state|## Current milestone|## Current objective|## In progress|## Recently completed|## Next recommended work|## Blockers|## Known failures|## Important recent decisions|## Verification status'
-# Check 11: task brief headings (exact lines), from the template in docs/briefs/README.md.
+# Check 11: task brief headings (exact lines) in template order, from docs/briefs/README.md.
 BRIEF_HEADINGS='## Requirements|## Input revision|## Allowed paths|## Forbidden paths|## Dependencies and constraints|## Test commands|## Handback schema'
 
 ERRORS=0
@@ -194,6 +202,49 @@ function in_fence(line,   indent, rest, ch, run) {
   return 1
 }
 
+# Removes HTML comments; in_comment carries an unterminated "<!--" over to the next lines.
+function strip_comments(s,   out, i) {
+  out = ""
+  while (s != "") {
+    if (in_comment) {
+      if (!(i = index(s, "-->"))) return out
+      s = substr(s, i + 3)
+      in_comment = 0
+    } else {
+      if (!(i = index(s, "<!--"))) return out s
+      out = out substr(s, 1, i - 1)
+      s = substr(s, i + 4)
+      in_comment = 1
+    }
+  }
+  return out
+}
+
+# Removes inline code spans (a backtick run up to the next run of equal length).
+function strip_code_spans(s,   out, i, n, rest, closing) {
+  out = ""
+  while ((i = index(s, "`")) > 0) {
+    out = out substr(s, 1, i - 1)
+    n = run_length(substr(s, i), "`")
+    rest = substr(s, i + n)
+    closing = backtick_run_at(rest, n)
+    s = closing ? substr(rest, closing + n) : rest
+  }
+  return out s
+}
+
+# Position of the first run of exactly n backticks in s, or 0.
+function backtick_run_at(s, n,   offset, i, len) {
+  offset = 0
+  while ((i = index(s, "`")) > 0) {
+    len = run_length(substr(s, i), "`")
+    if (len == n) return offset + i
+    offset += i + len - 1
+    s = substr(s, i + len)
+  }
+  return 0
+}
+
 # Frontmatter: one "key: value" per line between "---" lines at the top of the file. Values are
 # unquoted; indented continuation lines (block scalars, folded text) join the previous key.
 function fm_parse(fi, line,   key, val) {
@@ -286,49 +337,6 @@ function destination(s,   j) {
   match(s, /^[^ \t)]*/)
   return substr(s, 1, RLENGTH)
 }
-
-# Removes HTML comments; in_comment carries an unterminated "<!--" over to the next lines.
-function strip_comments(s,   out, i) {
-  out = ""
-  while (s != "") {
-    if (in_comment) {
-      if (!(i = index(s, "-->"))) return out
-      s = substr(s, i + 3)
-      in_comment = 0
-    } else {
-      if (!(i = index(s, "<!--"))) return out s
-      out = out substr(s, 1, i - 1)
-      s = substr(s, i + 4)
-      in_comment = 1
-    }
-  }
-  return out
-}
-
-# Removes inline code spans (a backtick run up to the next run of equal length).
-function strip_code_spans(s,   out, i, n, rest, closing) {
-  out = ""
-  while ((i = index(s, "`")) > 0) {
-    out = out substr(s, 1, i - 1)
-    n = run_length(substr(s, i), "`")
-    rest = substr(s, i + n)
-    closing = backtick_run_at(rest, n)
-    s = closing ? substr(rest, closing + n) : rest
-  }
-  return out s
-}
-
-# Position of the first run of exactly n backticks in s, or 0.
-function backtick_run_at(s, n,   offset, i, len) {
-  offset = 0
-  while ((i = index(s, "`")) > 0) {
-    len = run_length(substr(s, i), "`")
-    if (len == n) return offset + i
-    offset += i + len - 1
-    s = substr(s, i + len)
-  }
-  return 0
-}
 AWK
 
 # Check 7. Variables: path, headings ("|"-separated exact heading lines).
@@ -343,6 +351,196 @@ END {
     if (!(want[i] in seen)) err(path, "missing heading '" want[i] "'")
 }
 AWK
+
+# Check 7: docs/PROGRESS.md claims no ongoing execution (AVE-REQ-098 AC-3). Variable: path. A later
+# session cannot check that work "is running"; delegated work in flight is recorded stop-safe
+# ("launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact
+# command>"). Outside fenced blocks, HTML comments and code spans, a line with the word "running",
+# "underway" or "in flight" fails; "nothing is running", "not running" and "no longer running" pass.
+IFS= read -r -d '' AWK_PROGRESS_CLAIMS <<'AWK' || true
+FNR == 1 { fence_char = ""; in_comment = 0 }
+{
+  sub(/\r$/, "")
+  if (!in_comment && in_fence($0)) next
+  line = " " tolower(strip_comments(strip_code_spans($0))) " "
+  gsub(/nothing is running|no longer running|not running/, "", line)
+  if (line ~ /[^a-z]running[^a-z]/ || line ~ /[^a-z]underway[^a-z]/ || line ~ /[^a-z]in[ -]flight[^a-z]/)
+    err(path, "line " FNR ": claims ongoing execution ('running', 'underway' or 'in flight'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
+}
+AWK
+
+# Check 11. Variables: path, headings ("|"-separated exact heading lines in template order). Each
+# heading appears once and in that order, each section holds a non-blank line, the Requirements
+# section names an AVE-REQ ID, and the Input revision section names a commit: a token of 7 to 40
+# lowercase hex digits with no letter, digit, "_" or "-" on either side (so the "af7078da" inside
+# the branch name ccr-af7078da-q8r8mf counts as none), or the self-reference
+# "git log -1 --format=%h -- <path of this brief>". An H1 or another H2 ends a section.
+IFS= read -r -d '' AWK_BRIEF <<'AWK' || true
+BEGIN {
+  count = split(headings, want, "|")
+  for (i = 1; i <= count; i++) rank[want[i]] = i
+}
+{
+  sub(/\r$/, "")
+  fenced = in_fence($0)
+  t = rtrim($0)
+  if (!fenced && t ~ /^##? /) {
+    current = (t in rank) ? t : ""
+    if (current == "") next
+    if (rank[current] <= last_rank)
+      err(path, "heading '" current "' follows '" last_heading "' (keep each heading once, in the order of the template in docs/briefs/README.md)")
+    seen[current] = 1
+    last_rank = rank[current]
+    last_heading = current
+    next
+  }
+  if (current == "" || t !~ /[^ \t]/) next
+  filled[current] = 1
+  if (current == "## Requirements" && t ~ /AVE-REQ-[0-9][0-9][0-9]/) names_id = 1
+  if (current == "## Input revision" && names_commit(t)) commit_named = 1
+}
+END {
+  for (i = 1; i <= count; i++) {
+    if (!(want[i] in seen)) err(path, "missing heading '" want[i] "'")
+    else if (!(want[i] in filled)) err(path, "section '" want[i] "' is empty")
+  }
+  if (("## Requirements" in seen) && !names_id)
+    err(path, "section '## Requirements' names no requirement ID (AVE-REQ-NNN)")
+  if (("## Input revision" in filled) && !commit_named)
+    err(path, "section '## Input revision' names no commit (a hash of 7 to 40 hex digits, or the self-reference 'git log -1 --format=%h -- " path "')")
+}
+
+function word_char(ch) {
+  return ch != "" && index("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-", ch) > 0
+}
+
+# True when s holds a delimited hex token of 7 to 40 digits or the self-reference to this brief.
+function names_commit(s,   ref, i, after, rest, off, start, len, before) {
+  ref = "git log -1 --format=%h -- " path
+  if ((i = index(s, ref)) > 0) {
+    after = substr(s, i + length(ref), 1)
+    if (!word_char(after) && after != "." && after != "/") return 1
+  }
+  rest = s
+  off = 0
+  while (match(rest, /[0-9a-f]+/)) {
+    start = off + RSTART
+    len = RLENGTH
+    before = start > 1 ? substr(s, start - 1, 1) : ""
+    if (len >= 7 && len <= 40 && !word_char(before) && !word_char(substr(s, start + len, 1))) return 1
+    off = start + len - 1
+    rest = substr(s, off + 1)
+  }
+  return 0
+}
+AWK
+
+# Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4), run by python3 with the file
+# as its argument. Prints one ERROR line per violation; prints nothing for a file that is no valid
+# JSON object (check 3 reports that). Hook matchers follow Claude Code: "", "*" or none match every
+# source; letters, digits, "_", "-", spaces, "," and "|" only form a list of exact names; anything
+# else is an unanchored regular expression.
+IFS= read -r -d '' PY_SETTINGS_POLICY <<'PY' || true
+import json
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+
+
+def error(message):
+    print(f"ERROR: {path}: {message}")
+
+
+permissions = data.get("permissions")
+mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None
+if mode in ("bypassPermissions", "dontAsk"):
+    error(f"permissions.defaultMode '{mode}' runs tools without permission prompts (AVE-REQ-098 AC-4)")
+
+
+def skipped_prompts(node, where):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            here = f"{where}.{key}" if where else key
+            if re.fullmatch(r"skip\w*PermissionPrompt", key) and value not in (False, None):
+                error(f"{here} skips a permission prompt (AVE-REQ-098 AC-4)")
+            skipped_prompts(value, here)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            skipped_prompts(value, f"{where}[{index}]")
+
+
+skipped_prompts(data, "")
+
+UNBOUNDED = re.compile(
+    r"\bwhile\s+(?:true|:)(?=[\s;]|$)|\b(?:sleep|nohup|disown|setsid)\b"
+    r"|--dangerously-skip-permissions|(?<![&|<>])&(?![&>])"
+)
+SESSION_SOURCES = ("startup", "resume", "compact")
+SESSION_HOOK = ".claude/hooks/session-start.sh"
+
+
+def as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def matches(matcher, source):
+    if matcher in (None, "", "*"):
+        return True
+    if not isinstance(matcher, str):
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_\- ,|]+", matcher):
+        return source in {part.strip() for part in re.split(r"[|,]", matcher)}
+    try:
+        return re.search(matcher, source) is not None
+    except re.error:
+        return False
+
+
+hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+covered = set()
+registered = False
+for event, groups in hooks.items():
+    for number, group in enumerate(as_list(groups)):
+        if not isinstance(group, dict):
+            continue
+        for handler in as_list(group.get("hooks")):
+            if not isinstance(handler, dict):
+                continue
+            if handler.get("async") not in (None, False):
+                error(
+                    f"hooks.{event}[{number}] runs a hook asynchronously (\"async\": "
+                    f"{json.dumps(handler.get('async'))}), which escapes its timeout (AVE-REQ-098 AC-4)"
+                )
+            if handler.get("type") != "command":
+                continue
+            command = str(handler.get("command", ""))
+            found = UNBOUNDED.search(command)
+            if found:
+                error(
+                    f"hooks.{event}[{number}] command {command!r} starts a loop, a sleep, a background "
+                    f"job or a permission bypass ({found.group(0).strip()!r}; AVE-REQ-098 AC-4)"
+                )
+            if event == "SessionStart" and SESSION_HOOK in command:
+                registered = True
+                covered.update(s for s in SESSION_SOURCES if matches(group.get("matcher"), s))
+if not registered:
+    error(f"no SessionStart hook runs {SESSION_HOOK} (AVE-REQ-098 AC-2)")
+else:
+    missing = [s for s in SESSION_SOURCES if s not in covered]
+    if missing:
+        error(
+            f"the SessionStart hook {SESSION_HOOK} does not run on {', '.join(missing)}: "
+            "its matcher excludes them (AVE-REQ-098 AC-2)"
+        )
+PY
 
 # Checks 8 and 10. Operands: section=goals docs/PRODUCT.md, section=req <requirement files...>,
 # section=trace docs/TRACEABILITY.md.
@@ -734,15 +932,57 @@ check_progress_headings() {
   [ -f "$file" ] || return 0
   run_awk "PROGRESS.md heading" -v path="$file" -v headings="$PROGRESS_HEADINGS" \
     "$AWK_LIB$AWK_HEADINGS" "$file"
+  run_awk "PROGRESS.md claim" -v path="$file" "$AWK_LIB$AWK_PROGRESS_CLAIMS" "$file"
 }
 
 check_briefs() {
   local file
   for file in docs/briefs/*.md; do
     [ -f "$file" ] && [ "$file" != docs/briefs/README.md ] || continue
-    run_awk "brief heading" -v path="$file" -v headings="$BRIEF_HEADINGS" \
-      "$AWK_LIB$AWK_HEADINGS" "$file"
+    run_awk "task brief" -v path="$file" -v headings="$BRIEF_HEADINGS" \
+      "$AWK_LIB$AWK_BRIEF" "$file"
   done
+  check_handbacks
+}
+
+# Check 11, handbacks: each file in docs/briefs/handbacks/ is named <brief-slug>.md or
+# <brief-slug>.part-<n>.md after the brief docs/briefs/<brief-slug>.md it answers.
+check_handbacks() {
+  local file name base slug rule="a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md"
+  for file in docs/briefs/handbacks/*; do
+    [ -e "$file" ] || continue
+    name="${file##*/}"
+    base="${name%.md}"
+    slug="$base"
+    if [ "$base" = "$name" ]; then
+      error "$file" "$rule"
+      continue
+    fi
+    case "$base" in
+      *.part-*)
+        slug="${base%.part-*}"
+        case "${base##*.part-}" in
+          "" | 0* | *[!0-9]*) error "$file" "$rule (n = 1, 2, …)"; continue ;;
+        esac
+        ;;
+    esac
+    if [ -z "$slug" ] || [ "$slug" = README ] || [ ! -f "docs/briefs/$slug.md" ]; then
+      error "$file" "names no brief: docs/briefs/$slug.md is missing ($rule)"
+    fi
+  done
+}
+
+check_settings_policy() {
+  local file=".claude/settings.json" output status
+  [ -f "$file" ] || return 0
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "$file" "settings policy not checked (install python3)"
+    return 0
+  fi
+  output="$(python3 -c "$PY_SETTINGS_POLICY" "$file" 2>&1)"
+  status=$?
+  relay "$output"
+  [ "$status" -eq 0 ] || error "$SELF" "the settings policy check could not run (python3 exit $status)"
 }
 
 # Checks 8 and 10 in one awk run. Operands: section=goals [docs/PRODUCT.md] section=req
@@ -788,6 +1028,7 @@ main() {
   check_required_files
   check_executables
   check_settings_json
+  check_settings_policy
   check_agents
   check_skills
   check_links

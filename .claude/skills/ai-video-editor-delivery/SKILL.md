@@ -14,9 +14,9 @@ Read the repository's active instructions and progress file. Locate the immutabl
 1. Select an unblocked requirement group; preserve its acceptance criteria and user exclusions.
 2. Inspect actual environment capabilities and the intended integration revision.
 3. Choose a bounded native dynamic workflow when supported and useful. Otherwise use subagents or sequential work. Never invent workflow APIs or bypass limits.
-4. Assign explicit requirements, paths, dependencies, test commands, resource bounds and a structured result. Isolate concurrent writers from the verified integration base.
+4. Assign explicit requirements, paths, dependencies, test commands, resource bounds and a structured result in a brief persisted in `docs/briefs/` before the launch. Isolate concurrent writers from the verified integration base. Count writing agents across every running workflow and subagent (at most two) and run heavy media commands under the heavy-media lock, so one heavy media job runs at a time ([develop](../develop/SKILL.md) § 4 Concurrency limits).
 5. Implement actual product behavior, run focused checks and inspect real rendered media for media-critical changes.
-6. Review independently against the requirement, not the implementer's confidence. Integrate and rerun the applicable checks.
+6. Review independently against the requirement, not the implementer's confidence. Integrate and rerun the applicable checks. Without subagents, the review runs in a fresh session from the repository alone and is recorded as a sequential review ([develop](../develop/SKILL.md) § 6).
 7. Record criterion-level evidence, actual commands/artifacts, current tree fingerprint, unresolved gaps and the next action. Commit coherently under repository policy.
 
 Read [references/verification.md](references/verification.md) when judging evidence, and [references/workflow-improvement.md](references/workflow-improvement.md) before changing reusable procedures.

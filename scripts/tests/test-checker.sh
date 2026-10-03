@@ -27,6 +27,15 @@ assert old in s, (p, old)
 open(p, 'w', newline='').write(s.replace(old, new, 1))
 PY
 }
+# jedit <python statement> — edits .claude/settings.json, parsed as d, and writes it back.
+jedit() { python3 - "$1" <<'PY'
+import json, sys
+p = '.claude/settings.json'
+d = json.load(open(p, encoding='utf-8'))
+exec(sys.argv[1])
+open(p, 'w', encoding='utf-8').write(json.dumps(d, indent=2) + '\n')
+PY
+}
 # fence_line <file> <line> — wraps the exact line <line> in a fenced code block.
 fence_line() { python3 - "$1" "$2" <<'PY'
 import sys
@@ -179,11 +188,90 @@ expect "FEAT parent of REQ kind"           1 "invalid parent 'AVE-REQ-001' (expe
 expect "FEAT parent of retired kind"       1 "invalid parent 'EPIC-001' (expected AVE-EPIC-NN)" "sub $R/AVE-FEAT-001-stub-feature.md 'parent: AVE-EPIC-01' 'parent: EPIC-001'"
 expect "deferred requirement accepted"     0 "OK:" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\r\\n' >> $R/AVE-REQ-002-crlf-requirement.md"
 expect "deferred status without log line"  1 "newest Status-log line records 'proposed' but frontmatter status is 'deferred'" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred'"
-# AVE-REQ-096 AC-1
+# AVE-REQ-096 AC-1: a task brief holds every template heading once, in order, each section filled,
+# and names its requirements.
 BRIEF='# Brief — stub task\n\n## Requirements\nAVE-REQ-001 AC-1\n\n## Input revision\nabc1234\n\n## Allowed paths\nsrc/\n\n## Forbidden paths\ndocs/\n\n## Dependencies and constraints\nNone.\n\n## Test commands\n./scripts/verify.sh\n\n## Handback schema\nResult line.\n'
-expect "complete task brief accepted"      0 "OK:" "printf '$BRIEF' > docs/briefs/2026-10-02-stub.md"
-expect "brief without test commands"       1 "ERROR: docs/briefs/2026-10-02-stub.md: missing heading '## Test commands'" "printf '$BRIEF' | grep -v '^## Test commands' > docs/briefs/2026-10-02-stub.md"
-expect "brief heading only in a fence"     1 "missing heading '## Handback schema'" "printf '$BRIEF' > docs/briefs/2026-10-02-stub.md && fence_line docs/briefs/2026-10-02-stub.md '## Handback schema'"
+BRIEF_SWAPPED='# Brief — stub task\n\n## Requirements\nAVE-REQ-001 AC-1\n\n## Input revision\nabc1234\n\n## Forbidden paths\ndocs/\n\n## Allowed paths\nsrc/\n\n## Dependencies and constraints\nNone.\n\n## Test commands\n./scripts/verify.sh\n\n## Handback schema\nResult line.\n'
+B=docs/briefs/2026-10-02-stub.md
+expect "complete task brief accepted"      0 "OK:" "printf '$BRIEF' > $B"
+for h in "## Requirements" "## Input revision" "## Allowed paths" "## Forbidden paths" \
+  "## Dependencies and constraints" "## Test commands" "## Handback schema"; do
+  expect "brief without '$h'" 1 "ERROR: $B: missing heading '$h'" "printf '$BRIEF' | grep -vx '$h' > $B"
+  expect "brief with an empty '$h'" 1 "ERROR: $B: section '$h' is empty" "printf '$BRIEF' | sed '/^$h\$/{n;d;}' > $B"
+done
+expect "brief heading only in a fence"     1 "missing heading '## Handback schema'" "printf '$BRIEF' > $B && fence_line $B '## Handback schema'"
+expect "brief headings out of order"       1 "ERROR: $B: heading '## Allowed paths' follows '## Forbidden paths'" "printf '$BRIEF_SWAPPED' > $B"
+expect "brief with a repeated heading"     1 "ERROR: $B: heading '## Requirements' follows '## Handback schema'" "printf '${BRIEF}\n## Requirements\nAVE-REQ-002 AC-1\n' > $B"
+expect "brief requirements without an ID"  1 "ERROR: $B: section '## Requirements' names no requirement ID (AVE-REQ-NNN)" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/Fix the findings./' > $B"
+expect "brief ID outside Requirements"     1 "section '## Requirements' names no requirement ID" "printf '$BRIEF' | sed -e 's/^AVE-REQ-001 AC-1\$/Fix the findings./' -e 's/^None\\.\$/After AVE-REQ-002./' > $B"
+expect "brief with an extra section after the template" 0 "OK:" "printf '${BRIEF}\n## Notes\nFree text.\n' > $B"
+# AVE-REQ-096 AC-1, AVE-REQ-096 AC-2: the input revision names a commit: a delimited hash of 7 to 40
+# hex digits, or the self-reference to the commit that adds the brief.
+NO_COMMIT="ERROR: $B: section '## Input revision' names no commit"
+expect "input revision without a commit"   1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/The commit that closes M0; the launching prompt names it./' > $B"
+expect "input revision: branch name only"  1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief./' > $B"
+expect "input revision: six hex digits"    1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/\`abc123\` on the working branch./' > $B"
+expect "input revision: 41 hex digits"     1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/0123456789abcdef0123456789abcdef012345678/' > $B"
+expect "input revision: abbreviated hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/\`6736401\` on \`ccr-af7078da-q8r8mf\`; isolated worktree./' > $B"
+expect "input revision: full hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/a62e197b41ebd83adb000349347ca9fd0209b7eb, main working tree./' > $B"
+expect "input revision: self-reference accepted" 0 "OK:" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief (\`git log -1 --format=%h -- $B\`).|' > $B"
+expect "input revision: self-reference to another brief" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` (\`git log -1 --format=%h -- docs/briefs/2026-10-01-other.md\`).|' > $B"
+# AVE-REQ-096 AC-1: a handback persists in docs/briefs/handbacks/, named after the brief it answers.
+HB=docs/briefs/handbacks
+expect "handback and part handback of a brief accepted" 0 "OK:" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.md && printf '# Handback, part 2\n' > $HB/2026-10-02-stub.part-2.md"
+expect "handback without its brief"        1 "ERROR: $HB/2026-10-02-other.md: names no brief: docs/briefs/2026-10-02-other.md is missing" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-other.md"
+expect "handback part without a number"    1 "ERROR: $HB/2026-10-02-stub.part-x.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.part-x.md"
+expect "handback that is no Markdown file" 1 "ERROR: $HB/2026-10-02-stub.txt: a handback is named" "printf '$BRIEF' > $B && mkdir -p $HB && printf 'x\n' > $HB/2026-10-02-stub.txt"
+expect "handback named after the README"   1 "ERROR: $HB/README.md: names no brief" "mkdir -p $HB && printf '# Handbacks\n' > $HB/README.md"
+# AVE-REQ-098 AC-3: PROGRESS.md never claims that work is running; in-flight work is recorded
+# stop-safe ("launched <date>; verdict not recorded; … re-run <exact command>").
+P=docs/PROGRESS.md
+expect "PROGRESS: review running"          1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- Review of AVE-REQ-001 running as a workflow.'"
+for claim in 'Running: the release tier of the merge.' '- Implementer in flight on branch x.' \
+  '- Implementer in-flight on branch x.' '- Media-tier run underway.' '- The review is still RUNNING.'; do
+  expect "PROGRESS claim: $claim" 1 "claims ongoing execution" "sub $P '## In progress' '## In progress
+$claim'"
+done
+expect "PROGRESS: stop-safe in-flight line accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Review of AVE-REQ-001: launched 2026-10-02; verdict not recorded. On resume without a recorded verdict nothing is running: re-run \`/verify-requirement AVE-REQ-001\`.'"
+expect "PROGRESS: claim words in comments, fences and code spans accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+<!-- never write that a review is running -->
+<!--
+a run underway
+-->
+Use \`running\` only in code.
+\`\`\`
+review running
+\`\`\`'"
+expect "PROGRESS: rerunning and not running accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Next: rerunning the media tier; the old job is not running and no longer running.'"
+# AVE-REQ-098 AC-4: settings start no permission bypass; hook commands start no loop, sleep or
+# background job, and no hook runs asynchronously.
+expect "settings: bypassPermissions default mode" 1 "ERROR: .claude/settings.json: permissions.defaultMode 'bypassPermissions' runs tools without permission prompts" "jedit \"d['permissions']['defaultMode'] = 'bypassPermissions'\""
+expect "settings: dontAsk default mode"    1 "permissions.defaultMode 'dontAsk' runs tools without permission prompts" "jedit \"d['permissions']['defaultMode'] = 'dontAsk'\""
+expect "settings: auto default mode accepted" 0 "OK:" "jedit \"d['permissions']['defaultMode'] = 'auto'\""
+expect "settings: skipped bypass-mode prompt" 1 "ERROR: .claude/settings.json: skipDangerousModePermissionPrompt skips a permission prompt" "jedit \"d['skipDangerousModePermissionPrompt'] = True\""
+expect "settings: skipped auto-mode prompt" 1 "skipAutoPermissionPrompt skips a permission prompt" "jedit \"d['skipAutoPermissionPrompt'] = True\""
+expect "settings: prompt kept (false)"     0 "OK:" "jedit \"d['skipDangerousModePermissionPrompt'] = False\""
+for cmd in 'while true; do .claude/hooks/stop-verify.sh; done' 'sleep 600' 'nohup .claude/hooks/stop-verify.sh' \
+  '.claude/hooks/stop-verify.sh; disown' 'setsid .claude/hooks/stop-verify.sh' '.claude/hooks/stop-verify.sh &' \
+  'claude -p go --dangerously-skip-permissions'; do
+  expect "hook command: $cmd" 1 "starts a loop, a sleep, a background job or a permission bypass" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '$cmd'\""
+done
+expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh 2>&1 && true'\""
+expect "hook entry with async true"        1 "ERROR: .claude/settings.json: hooks.Stop[0] runs a hook asynchronously (\"async\": true), which escapes its timeout" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['async'] = True\""
+expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['hooks'][0]['async'] = False\""
+# AVE-REQ-098 AC-2: the SessionStart hook runs at startup, after resume and after compaction.
+expect "SessionStart matcher startup only" 1 "ERROR: .claude/settings.json: the SessionStart hook .claude/hooks/session-start.sh does not run on resume, compact" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup'\""
+expect "SessionStart matcher without compact" 1 "does not run on compact: its matcher excludes them" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup|resume|clear'\""
+expect "SessionStart regex matcher without resume" 1 "does not run on resume" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '^(startup|compact)\$'\""
+expect "SessionStart matcher list accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup, resume, compact'\""
+expect "SessionStart regex matcher accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '^(startup|resume|compact)\$'\""
+expect "SessionStart matcher * accepted"   0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '*'\""
+expect "SessionStart hook removed"         1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"del d['hooks']['SessionStart']\""
+# AVE-REQ-098 AC-3: .env.example documents the product variables an unblock action names.
+expect "missing .env.example"              1 "ERROR: .env.example: required file is missing" "rm .env.example"
 expect "deferred epic and feature accepted" 0 "OK:" "sub $R/AVE-EPIC-01-stub-epic.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-EPIC-01-stub-epic.md && sub $R/AVE-FEAT-001-stub-feature.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-FEAT-001-stub-feature.md"
 expect "misspelled deferred status"        1 "invalid status 'defered'" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: defered'"
 expect "matrix row for a deferred requirement" 0 "OK:" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\r\\n' >> $R/AVE-REQ-002-crlf-requirement.md && printf '| [AVE-REQ-002](requirements/AVE-REQ-002-crlf-requirement.md) | deferred | — | — | — | — |\\n' >> docs/TRACEABILITY.md"
@@ -238,5 +326,6 @@ else
 fi
 make_path path-none
 CHECK_PATH="$T/path-none" expect "no validator: warning only"      0 "WARN: .claude/settings.json: JSON not validated (install python3, node or jq)" true
+CHECK_PATH="$T/path-none" expect "no python3: settings policy warning" 0 "WARN: .claude/settings.json: settings policy not checked (install python3)" true
 echo "CHECKER TOTAL: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

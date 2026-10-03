@@ -27,9 +27,12 @@ Not an improvement entry: the measured starting point that later entries compare
   ([ai-video-editor-delivery](../.claude/skills/ai-video-editor-delivery/SKILL.md),
   [develop](../.claude/skills/develop/SKILL.md)).
 - Concurrency: at most two concurrent writing agents plus one heavy media job (baseline rule; 2–4 agents run
-  concurrently on this 4-vCPU host).
-- Isolation: disjoint path ownership for concurrent writers in the main tree, or `isolation: worktree`
-  (smoke-tested: worktrees branch from local HEAD).
+  concurrently on this 4-vCPU host). Enforcement of the heavy media limit: WF-005.
+- Isolation: concurrent writers run in worktrees (`isolation: worktree`; smoke-tested: worktrees branch from
+  local HEAD; each task checks its base commit by equality). One writing task may use the main tree only
+  while no other agent writes; read-only reviews need no worktree. The first build run, `wf_5493b930-f7c`
+  (2026-10-01), ran two writers in the main tree on disjoint paths; AVE-REQ-096 requires verified worktree
+  isolation for concurrent writers, so that option ended with it (corrected 2026-10-02).
 - Verification: `./scripts/verify.sh`; independent review through `verify-requirement` (forked reviewer).
 
 ## Entries
@@ -50,8 +53,12 @@ Not an improvement entry: the measured starting point that later entries compare
   media core; held-out: the reviewer's constructions are unknown to the implementer.
 - Independent review result: round 1 FAIL (4 blocking), round 2 FAIL (4 blocking), round 3 PASS (0 blocking,
   12 non-blocking items in the [follow-up brief](briefs/2026-10-02-m0-media-core-round-3-follow-ups.md)).
+  Review of this log entry: pending (the lead records it).
 - Measured before/after result: 8 real defects found that the implementer's suite passed; each fix now has a
-  real-media test confirmed to fail without it (mutation runs recorded in the commits' handbacks).
+  real-media test confirmed to fail without it. The implementers reported their mutation runs in handbacks
+  that lived only in the session; the round-3 reviewers repeated the mutations
+  ([follow-up brief](briefs/2026-10-02-m0-media-core-round-3-follow-ups.md)). Handbacks persist in
+  `docs/briefs/handbacks/` since 2026-10-02.
 - Keep or revert, with reason: keep; the cost (about 40 min of reviewer time per round) is far below the cost
   of shipping wrong synchronization or frames.
 
@@ -65,7 +72,8 @@ Not an improvement entry: the measured starting point that later entries compare
   task from the repository: brief + worktree diff.
 - Expected metric and fixed evaluation set (plus held-out cases): an interrupted task is resumable without
   re-deriving its scope; evaluated on this interruption.
-- Independent review result: the resumed work is under the round-3 review with the rest of the fix.
+- Independent review result: the resumed work is under the round-3 review with the rest of the fix. Review of
+  this log entry: pending (the lead records it).
 - Measured before/after result: the lead completed items 1–9 of the round-2 brief from the brief and the
   worktree diff alone, adding the missing tests and 7 mutation checks.
 - Keep or revert, with reason: keep; the briefs cost minutes and also serve as review input (AVE-REQ-096 AC-1).
@@ -78,9 +86,15 @@ Not an improvement entry: the measured starting point that later entries compare
 - One proposed workflow/skill/context change: start an agent in the same message as independent lead work
   (parallel tool calls), so a blocking agent call still overlaps with useful work.
 - Expected metric and fixed evaluation set (plus held-out cases): lead idle time while agents run.
-- Independent review result: not applicable (no product change).
-- Measured before/after result: the round-2 re-review overlapped with a full media-tier run of the merge.
-- Keep or revert, with reason: keep; no cost.
+- Independent review result: pending (a review of this log entry; the lead records it).
+- Measured before/after result: the round-2 re-review, which ran media tests, overlapped with a full
+  media-tier run of the merge: two heavy media jobs at once, one above the operating baseline's limit. On
+  2026-10-02 at 09:00 four agents ran media-heavy work at once across `wf_1a23bf0d-2a0` and `wf_b0c34bba-a20`
+  ([fix brief](briefs/2026-10-02-m0-process-verification-fixes.md) item 5). The overlap shortened lead idle
+  time and broke the concurrency limit; CPU time, wall time and test stability under two heavy jobs were
+  never measured (corrected 2026-10-02; the earlier text recorded the overlap as a gain).
+- Keep or revert, with reason: keep for work that is no heavy media job; heavy media jobs serialize on the
+  heavy-media lock (WF-005).
 
 ### WF-004 — 2026-10-02 — Mutation checks must not run stale bytecode
 - Observed failure and evidence: a mutation that replaced `min` with `max` in `ave.media.probe` reported the
@@ -91,6 +105,40 @@ Not an improvement entry: the measured starting point that later entries compare
   after the run; reviewer prompts for media-core rounds say so explicitly.
 - Expected metric and fixed evaluation set (plus held-out cases): no mutation reported as surviving because of a
   stale cache; re-run of the affected mutation.
-- Independent review result: the round-3 review prompt carries the rule.
+- Independent review result: the round-3 review prompt carries the rule. Review of this log entry: pending
+  (the lead records it).
 - Measured before/after result: the `min`/`max` mutation went from a false "passed" to "failed" (caught).
 - Keep or revert, with reason: keep; it costs a cache rebuild of a few seconds.
+
+### WF-005 — 2026-10-03 — One heavy media job at a time, enforced by a lock
+- Observed failure and evidence: the limit of one heavy media job was a rule in prose only. The round-2
+  re-review ran media tests during a media-tier run of the merge, and on 2026-10-02 at 09:00 four agents ran
+  media-heavy work at once across `wf_1a23bf0d-2a0` and `wf_b0c34bba-a20` (WF-003;
+  [fix brief](briefs/2026-10-02-m0-process-verification-fixes.md) item 5). No entry measured the headroom
+  for a second heavy job.
+- Root-cause hypothesis: every agent and workflow starts its heavy commands on its own, and nobody counted
+  heavy jobs across concurrent workflows.
+- One proposed workflow/skill/context change: enforce the limit
+  ([execution brief](briefs/2026-10-02-m0-process-fixes-execution.md), decision on item 5).
+  `./scripts/verify.sh` holds an exclusive `flock` on the heavy-media lock
+  `${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}` for the whole run of the media and release tiers,
+  prints one line while it waits and exports `AVE_HEAVY_LOCK_HELD=1` to its steps; the fast tier takes no
+  lock. Every other heavy media command runs as `flock <lock file> <command>` (`docs/ARCHITECTURE.md`
+  § Testing strategy item 6). `develop` § 4 Concurrency limits and the delivery skill say how the lead counts
+  writing agents and heavy jobs across concurrent workflows.
+- Expected metric and fixed evaluation set (plus held-out cases): at most one heavy media job runs at a time.
+  Evaluation set: `scripts/tests/test-verify-tiers.sh` § "one heavy media job at a time" (the media and
+  release tiers hold the lock through their steps; a second media run prints one waiting line, runs no step
+  until the first releases the lock, then passes; the fast tier takes no lock; a caller holding the lock
+  takes none; no process a step leaves behind keeps the lock; without `flock` the media tier fails before any
+  step). Held-out: the media and release runs of the next concurrent workflows, whose logs show the waiting
+  line when they overlap.
+- Independent review result: pending (the re-verification of AVE-REQ-096 AC-4; the lead records it).
+- Measured before/after result: before, nothing stopped a second heavy job (four at once on 2026-10-02).
+  After, in the suite, a media run started while the lock was held printed the waiting line, gave no
+  output for 2 s and ran its steps after the release. Seven mutations of the lock in `scripts/verify.sh`
+  (no lock, the variable ignored or not exported, the fast tier locked, the descriptor inherited by steps,
+  no waiting line, no `flock` check) each failed the suite. CPU time and wall time under two heavy jobs stay
+  unmeasured: the limit stays at one, so no headroom measurement is needed.
+- Keep or revert, with reason: keep; a queued run costs its agent waiting time, and the limit holds on every
+  host where the agents share one lock file. Raising the limit needs the measurement `develop` § 4 names.

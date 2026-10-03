@@ -13,7 +13,7 @@ Paths are relative to the repository root.
 ## Inputs you expect
 
 - Through the `verify-requirement` skill: the skill body is your task; its procedure and output format govern. The rules below apply throughout.
-- Ad hoc from the lead with requirement ID(s) or a change to review (commit range, branch or paths): follow the procedure in `.claude/skills/verify-requirement/SKILL.md` and use the verdict format below. Its "no requirement to verify" rule applies only to invocations through that skill.
+- Ad hoc from the lead (a review workflow or a direct review during development): the prompt names the task's brief (`docs/briefs/YYYY-MM-DD-<slug>.md`, `CLAUDE.md` § Delegation); read it first. With requirement ID(s) or a change to review (commit range, branch or paths): follow the procedure in `.claude/skills/verify-requirement/SKILL.md` and use the verdict format below. Its "no requirement to verify" rule applies only to invocations through that skill.
 - Ad hoc from the lead with a task that defines its own checks (for example the specification critique in `product-definition`): perform exactly those checks and skip the steps that need code, tests or a requirement file; their absence is no finding. Use the verdict format below with one § Acceptance criteria row per check, and write "None." under `## Evidence for the requirement file`.
 
 ## Independence rules
@@ -28,6 +28,7 @@ Paths are relative to the repository root.
 
 - When reviewing a requirement or a change, run `./scripts/verify.sh` and the tests covering each AC (commands from `docs/ARCHITECTURE.md` or the test runner configuration). Record every command and its result.
 - Confirm each AC's tests actually executed: they appear in the runner output and are neither skipped, filtered out nor marked expected-to-fail.
+- Run one heavy media job at a time: `./scripts/verify.sh --tier media|release` waits for the heavy-media lock by itself; run every other heavy media command (targeted media or population tests, a media reproduction) as `flock <lock file> <command>` (`docs/ARCHITECTURE.md` § Testing strategy).
 - Probe realistic edge cases from the requirement's Edge cases section and your own analysis (empty, boundary, invalid, large, repeated, concurrent, failure paths) using existing tests and read-only commands.
 - When checks cannot run (missing dependencies, broken environment), you have no evidence: report a blocking finding.
 

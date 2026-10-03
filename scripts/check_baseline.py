@@ -4,8 +4,10 @@
 Usage:  python3 scripts/check_baseline.py      (no arguments; run by ./scripts/verify.sh)
 
 Checks (rules: docs/requirements/README.md § Baseline import and integrity):
-  a  ai-video-editor-requirements/tools/validate_package.py passes: package consistency and the
-     MANIFEST.json SHA-256 hashes, which prove the baseline is unchanged;
+  a  the SHA-256 of ai-video-editor-requirements/MANIFEST.json equals BASELINE_MANIFEST_SHA256,
+     the trust anchor this script keeps outside the package ("baseline changed" otherwise), and
+     ai-video-editor-requirements/tools/validate_package.py passes: package consistency and the
+     manifest's SHA-256 hash of every file; together they prove the baseline is unchanged;
   b  every baseline epic, feature and requirement has exactly one working file in docs/requirements/
      with the same ID and title; requirements keep the mapped type, priority and source, and their
      scope, parent, dependencies, origins, scenarios and baseline path equal the baseline; scope
@@ -13,7 +15,8 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity):
      current;
   c  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
      unless the file's Status log records "AC-n changed: <reason>" (reported as a recorded change);
-     additional working criteria are allowed and reported;
+     additional working criteria are allowed and reported; the Description equals the baseline
+     statement unless the Status log records "Description changed: <reason>" (reported likewise);
   d  no deferred requirement is a dependency of a version-one working requirement; requirements
      added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
   e  a summary: requirements by status and by gate, acceptance criteria ticked.
@@ -24,6 +27,7 @@ Read-only; Python 3.8+ standard library only.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
 import subprocess
@@ -51,6 +55,11 @@ LOG_LINE = re.compile(r"^- \d{4}-\d{2}-\d{2} — ")
 GATE = re.compile(r"^(M\d+|FUTURE)$")
 # Highest baseline number per kind; later IDs are derived work.
 BASELINE_MAX = {"EPIC": 10, "FEAT": 20, "REQ": 101}
+# AVE-REQ-093: SHA-256 of ai-video-editor-requirements/MANIFEST.json for package v1.0. The manifest
+# pins every other package file, and this value pins the manifest from outside the package. It
+# changes only when the human supplies a new baseline version (docs/requirements/README.md
+# § Baseline import and integrity).
+BASELINE_MANIFEST_SHA256 = "140307b86ab7b9e070088adc469888fe8a7fbfdb5a0c4dffa2c6a04846696e05"
 
 errors = []
 notes = []
@@ -99,11 +108,14 @@ class Working:
                     self.fm[match.group(1)] = value
         self.h1 = ""
         self.sections = OrderedDict()
+        self.raw_sections = OrderedDict()  # the same sections with their fenced lines
         current = None
         fence = ""
         for line in lines[body_start:]:
             stripped = line.lstrip(" ")
             marker = re.match(r"^(`{3,}|~{3,})", stripped)
+            if (fence or marker) and current is not None:
+                self.raw_sections[current].append(line.rstrip())
             if fence:
                 if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
                     fence = ""
@@ -116,8 +128,10 @@ class Working:
             elif line.startswith("## "):
                 current = line[3:].strip()
                 self.sections.setdefault(current, [])
+                self.raw_sections.setdefault(current, [])
             elif current is not None:
                 self.sections[current].append(line.rstrip())
+                self.raw_sections[current].append(line.rstrip())
         self.text = text
 
     def get(self, key: str) -> str:
@@ -147,8 +161,13 @@ class Working:
     def log(self):
         return [line for line in self.sections.get("Status", []) if LOG_LINE.match(line)]
 
-    def recorded_change(self, ac_id: str) -> str:
-        pattern = re.compile(r"(?<![A-Za-z0-9-])" + re.escape(ac_id) + r" changed:\s*(\S.*)$")
+    def description(self) -> str:
+        """The whole ## Description section, fenced blocks included."""
+        return "\n".join(self.raw_sections.get("Description", [])).strip()
+
+    def recorded_change(self, subject: str) -> str:
+        """The reason of the Status-log line '<subject> changed: <reason>' (AC-n or Description)."""
+        pattern = re.compile(r"(?<![A-Za-z0-9-])" + re.escape(subject) + r" changed:\s*(\S.*)$")
         for line in self.log():
             match = pattern.search(line)
             if match:
@@ -169,6 +188,27 @@ def load_working():
 # --------------------------------------------------------------------------------------------
 # Checks
 # --------------------------------------------------------------------------------------------
+
+
+def check_manifest_pin(pkg: Path) -> None:
+    """The manifest equals the pinned hash and is the only file the package inventory skips."""
+    manifest = pkg / "MANIFEST.json"
+    try:
+        actual = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    except OSError:
+        error(manifest, "baseline changed: the manifest is missing or unreadable")
+        return
+    for extra in sorted(pkg.rglob("MANIFEST.json")):
+        if extra != manifest:
+            error(extra, "baseline changed: a file the package inventory skips was added")
+    if actual != BASELINE_MANIFEST_SHA256:
+        error(
+            manifest,
+            f"baseline changed: SHA-256 {actual} differs from the pinned"
+            f" {BASELINE_MANIFEST_SHA256} (BASELINE_MANIFEST_SHA256 in scripts/check_baseline.py)",
+        )
+    else:
+        print("Baseline manifest: PASS (SHA-256 equals the value pinned in check_baseline.py)")
 
 
 def run_package_validator(pkg: Path) -> None:
@@ -295,6 +335,18 @@ def check_requirements(importer, base, files):
                 error(
                     item.path,
                     f"{ac_id} {what} and the Status log has no '{ac_id} changed: <reason>' line",
+                )
+        description = item.description()
+        if description != req["statement"].strip():
+            reason = item.recorded_change("Description")
+            what = "is missing" if not description else "differs from the baseline statement"
+            if reason:
+                notes.append(f"Recorded change: {req['id']} Description {what} — {reason}")
+            else:
+                error(
+                    item.path,
+                    f"Description {what} and the Status log has no"
+                    " 'Description changed: <reason>' line",
                 )
         baseline_ids = {ac_id for ac_id, _ in req["criteria"]}
         for ac_id in criteria:
@@ -424,6 +476,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    check_manifest_pin(importer.PKG)
     run_package_validator(importer.PKG)
     try:
         base = importer.load_baseline()

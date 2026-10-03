@@ -31,13 +31,22 @@ logrm() { rm -f "$R/.git/claude-verify/last.log"; }
 logexists() { [ -f "$R/.git/claude-verify/last.log" ]; }
 
 "$W/make-fixture.sh" "$R" with-reqs >/dev/null
+# One marker step per tier, so the log shows which tiers the gate ran.
+cat > "$R/scripts/verify.d/20-backend.sh" <<'STEPS'
+# fixture component step file: one marker step per tier
+# shellcheck shell=bash
+fast_step "Marker fast step" true
+media_step "Marker media step" true
+release_step "Marker release step" true
+STEPS
 (cd "$R" && git init -q && git config user.email t@t && git config user.name t && git add -A && git commit -qm init)
 
 echo "## pass path"
 # AVE-REQ-097 AC-3: the gate runs the fast tier even when the session asks for a heavier one.
 VERIFY_TIER=release hook "$J_FALSE"
 check "gate ran the fast tier despite VERIFY_TIER=release" 'grep -q "verify.sh: PASS — tier fast" "$R/.git/claude-verify/last.log"'
-check "gate output holds no media or release step" '! grep -Eq "^==> (Backend media|Verification tooling regression)" "$R/.git/claude-verify/last.log"'
+check "gate ran the fast marker step" 'grep -qx "<== PASS: Marker fast step ([0-9]*s)" "$R/.git/claude-verify/last.log"'
+check "gate ran no media or release marker step" '! grep -Eq "^==> Marker (media|release) step$" "$R/.git/claude-verify/last.log"'
 check "exit 0 on pass" '[ "$CODE" = 0 ]'
 check "stdout empty on pass" '[ -z "$OUT" ]'
 check "last-pass = current fingerprint" '[ "$(state last-pass)" = "$(fp)" ]'

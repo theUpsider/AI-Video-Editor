@@ -328,9 +328,11 @@ one: it never moves to `done`, and product completion counts the version-one req
 
 `proposed` requirements change freely within rule 2; log substantial changes. "Approved"
 means status `ready` or later, and `deferred`. For an approved requirement:
-1. Log every change to Intent or ACs in `## Status` with the reason before or with the edit.
-   Never change a requirement silently. For a changed or removed baseline AC, the log line
-   contains `AC-n changed: <reason>` ([Baseline import and integrity](#baseline-import-and-integrity)).
+1. Log every change to Intent, Description or ACs in `## Status` with the reason before or with
+   the edit. Never change a requirement silently. For a changed or removed baseline AC, the log
+   line contains `AC-n changed: <reason>`; for a changed Description of an imported requirement,
+   it contains `Description changed: <reason>`
+   ([Baseline import and integrity](#baseline-import-and-integrity)).
 2. `source: human` and the change alters product intent, in any status: a change the human
    requested is authorized; apply it through `product-definition` amendment mode, which records
    the input and cites it in the log. Escalate any other such change to the human (CLAUDE.md
@@ -376,10 +378,14 @@ When the lead implements directly, the lead also fills Implementation evidence.
 
 The human's requirements package lives unchanged in
 [ai-video-editor-requirements/](../../ai-video-editor-requirements/README.md); its `MANIFEST.json`
-pins the SHA-256 hash of every file. The working files in this directory carry the lifecycle.
+pins the SHA-256 hash of every file, and `BASELINE_MANIFEST_SHA256` in
+[check_baseline.py](../../scripts/check_baseline.py) pins the SHA-256 of `MANIFEST.json` itself:
+the trust anchor lives outside the package, so a baseline edit fails with "baseline changed" even
+when the manifest is re-hashed. The working files in this directory carry the lifecycle.
 
 1. **Never edit the baseline.** A requirement change happens in the working file, with a logged
-   reason; a new baseline version comes only from the human.
+   reason; a new baseline version comes only from the human, and the commit that adopts it
+   updates the pinned manifest hash and cites the human's input.
 2. **Import.** `python3 scripts/requirements/import_baseline.py`
    ([source](../../scripts/requirements/import_baseline.py)) creates one working file per
    baseline epic, feature and requirement and regenerates [IMPORT_MAPPING.md](IMPORT_MAPPING.md).
@@ -403,9 +409,12 @@ pins the SHA-256 hash of every file. The working files in this directory carry t
    [Changing requirements](#changing-requirements)). A baseline AC whose text changes, or which
    is removed, needs a Status-log line containing `AC-n changed: <reason>`; check_baseline.py
    reports it as a recorded change. Added ACs take the next unused AC number and are reported.
-   `scope`, `parent`, `dependencies`, `origins`, `scenarios`, `baseline`, the title, the type,
-   the priority and the source stay equal to the baseline (mapped); a different value fails the
-   check. A primary gate moved by the roadmap is reported.
+   The Description (the baseline statement verbatim), `scope`, `parent`, `dependencies`,
+   `origins`, `scenarios`, `baseline`, the title, the type, the priority and the source stay
+   equal to the baseline (mapped); a different value fails the check. Of these, only the
+   Description may change, with a Status-log line containing `Description changed: <reason>`;
+   check_baseline.py reports it as a recorded change. A primary gate moved by the roadmap is
+   reported.
 5. **New work.** A requirement found later takes the next free ID after the baseline range
    (`AVE-REQ-102` onward) with `source: derived`, a `scope` and a `primary_gate`; it is absent
    from IMPORT_MAPPING.md.
@@ -435,13 +444,18 @@ pins the SHA-256 hash of every file. The working files in this directory carry t
 The checker ignores frontmatter keys it does not know, so the requirement keys `scope`,
 `primary_gate`, `origins`, `dependencies`, `scenarios` and `baseline` pass through to
 `python3 scripts/check_baseline.py`, which fails on:
-1. a failing baseline package validation (`tools/validate_package.py`: consistency and the
-   `MANIFEST.json` hashes, so any edit of the baseline fails);
+1. a changed baseline: a `MANIFEST.json` whose SHA-256 differs from the pinned
+   `BASELINE_MANIFEST_SHA256`, a missing manifest or a second `MANIFEST.json` inside the package
+   (each reported as "baseline changed"), or a failing package validation
+   (`tools/validate_package.py`: consistency and the manifest's hash of every file), so any edit
+   of the baseline fails, including one that re-hashes the manifest;
 2. a baseline epic, feature or requirement without exactly one working file of the same ID, or
    with a different title or H1;
 3. an imported requirement whose type, priority or source differs from the mapped baseline
    value, or whose `scope`, `parent`, `dependencies`, `origins`, `scenarios` or `baseline`
-   differs from the baseline; a parent that does not link its baseline child;
+   differs from the baseline, or whose Description differs from the baseline statement without a
+   `Description changed: <reason>` Status-log line; a parent that does not link its baseline
+   child;
 4. scope and status out of step: `deferred` without `scope: future`, a future requirement in a
    status other than `deferred` or `superseded`, or `primary_gate: FUTURE` outside future scope;
 5. a baseline AC that is missing or altered without a `AC-n changed: <reason>` Status-log line;

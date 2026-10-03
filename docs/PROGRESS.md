@@ -38,8 +38,8 @@ M1 backend core ‖ M2 synchronization from the persisted briefs.
   `git log ccr-af7078da-q8r8mf..m0-media-follow-ups` plus `docs/briefs/handbacks/`, then re-run the unfinished
   parts from the execution briefs.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
-- Next delegated tasks, briefs persisted: [M1 backend core](briefs/2026-10-02-m1-backend-core.md) ‖
-  [M2 synchronization](briefs/2026-10-02-m2-synchronization.md); both start from the commit that closes M0.
+- Next delegated tasks, briefs persisted: [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
+  [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md); both start from the commit that closes M0.
 
 ## Recently completed
 

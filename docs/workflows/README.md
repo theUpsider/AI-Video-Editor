@@ -3,10 +3,13 @@
 Copies of the workflow scripts and the task contracts of delegated runs, kept so that later reviews (milestone
 reviews, AT-30 "task handoffs") can inspect what each run was asked to do after the session that ran it is gone
 ([AVE-REQ-094](../requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md),
-[AVE-REQ-096](../requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)). Task briefs for
-bounded implementation work live in [docs/briefs/](../briefs/README.md); [WORKFLOW_LOG.md](../WORKFLOW_LOG.md)
-records measured process changes. The scripts reference the session scratchpad and absolute paths of the cloud
-container that ran them; the copies here are the record of those inputs.
+[AVE-REQ-096](../requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)). Since 2026-10-02
+every run starts from a committed brief in [docs/briefs/](../briefs/README.md) (`CLAUDE.md` § Delegation), its
+script is copied here, and its row links both; `wf_5493b930-f7c`, `wf_1a23bf0d-2a0` and `wf_b0c34bba-a20`
+predate that rule.
+[WORKFLOW_LOG.md](../WORKFLOW_LOG.md) records measured process changes. The scripts reference the session
+scratchpad and absolute paths of the cloud container that ran them; the copies here are the record of those
+inputs.
 
 | Run | Date (UTC) | Script | Inputs | Agents | Outcome |
 |---|---|---|---|---|---|

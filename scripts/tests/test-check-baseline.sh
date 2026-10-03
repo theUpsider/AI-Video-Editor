@@ -46,6 +46,23 @@ with open(paths[0], "w", encoding="utf-8", newline="") as handle:
 PY
 }
 
+# rehash — rewrites the size and SHA-256 entries of the package's MANIFEST.json from the files on
+# disk, as an editor of the baseline would to keep the package validator passing.
+rehash() {
+  python3 - "$B" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+path = root / "MANIFEST.json"
+manifest = json.loads(path.read_text(encoding="utf-8"))
+for item in manifest["files"]:
+    data = (root / item["path"]).read_bytes()
+    item["bytes"], item["sha256"] = len(data), hashlib.sha256(data).hexdigest()
+with path.open("w", encoding="utf-8", newline="\n") as handle:
+    handle.write(json.dumps(manifest, indent=2) + "\n")
+PY
+}
+
 # expect <name> <exit> <expected substring or ""> <mutation...> — runs check_baseline.py.
 expect() { run_case check "$@"; }
 # expect_import <name> <exit> <expected substring> <mutation...> — runs import_baseline.py --check.
@@ -70,6 +87,7 @@ run_case() {
 
 R001="$R/AVE-REQ-001-*.md"
 R067="$R/AVE-REQ-067-*.md"
+STATEMENT="The application shall create, name, reopen, duplicate, and persist editing projects, including their media references, timeline, output settings, and revisions."
 AC2="- [ ] AC-2 After saving and restarting the application, timeline content, output settings, selected profiles, and project metadata are unchanged."
 AC4="- [ ] AC-4 Project deletion clearly distinguishes deleting editing data from deleting original media; originals are not deleted by default."
 LOG_LAST="- 2026-10-01 — ready — baseline ready means specified for planning; Edge cases and the dependency order are settled before work starts (lead)"
@@ -106,6 +124,14 @@ expect "summary counts ticked criteria"              0 "Acceptance criteria tick
 expect "edited baseline requirement fails"           1 "package validation failed" "printf 'edit\n' >> $B/spec/requirements/AVE-REQ-001.md"
 expect "edited baseline JSON fails"                  1 "Hash mismatch: spec/requirements.json" "sub $B/spec/requirements.json '\"prepared\": \"2026-10-02\"' '\"prepared\": \"2026-10-03\"'"
 expect "file added to the baseline fails"            1 "Manifest inventory mismatch" "printf 'x\n' > $B/spec/NOTES.md"
+# AVE-REQ-093 AC-1, AVE-REQ-093 AC-3: the checker pins the SHA-256 of MANIFEST.json outside the
+# package, so an edited manifest and a weakened baseline with a re-hashed manifest both fail.
+expect "edited MANIFEST.json fails"                  1 "$B/MANIFEST.json: baseline changed: SHA-256" "sub $B/MANIFEST.json '\"version\": \"1.0\"' '\"version\": \"1.1\"' && sub $B/MANIFEST.json '\"MANIFEST.json\"' '\"MANIFEST.json\", \"NOTES.md\"'"
+WEAKENED="sub $B/spec/requirements/AVE-REQ-001.md 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub $B/spec/requirements.json 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && rehash"
+expect "baseline edit with a re-hashed manifest fails" 1 "$B/MANIFEST.json: baseline changed: SHA-256" "$WEAKENED"
+expect "re-hashed manifest: the pin is the only failure" 1 "FAILED: 1 baseline integrity error(s)" "$WEAKENED"
+expect "removed MANIFEST.json fails"                 1 "$B/MANIFEST.json: baseline changed: the manifest is missing" "rm $B/MANIFEST.json"
+expect "second MANIFEST.json in the package fails"   1 "$B/spec/MANIFEST.json: baseline changed: a file the package inventory skips" "printf '{}\n' > $B/spec/MANIFEST.json"
 # (b) one working file per baseline item, same identity
 # AVE-REQ-093 AC-1: every baseline ID maps to exactly one working file.
 # AVE-REQ-093 AC-3: priority, scope, type, source and exclusions cannot be demoted or rewritten.
@@ -151,6 +177,20 @@ expect "additional criterion is reported"            0 "Additional criterion: AV
 - [ ] AC-5 Added behavior.'"
 expect "duplicate criterion ID"                      1 "duplicate acceptance criterion AC-2" "sub '$R001' '$AC2' '$AC2
 $AC2'"
+# AVE-REQ-093 AC-3: the Description stays the baseline statement unless a reasoned change is logged.
+expect "rewritten description without log line"      1 "Description differs from the baseline statement and the Status log has no 'Description changed: <reason>' line" "sub '$R001' '$STATEMENT' 'The application may keep projects.'"
+expect "extended description without log line"       1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' '$STATEMENT
+Persistence is optional.'"
+expect "fenced block added to the description fails" 1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' '$STATEMENT
+~~~
+Persistence is optional.
+~~~'"
+expect "emptied description without log line"        1 "Description is missing and the Status log has no 'Description changed: <reason>' line" "sub '$R001' '$STATEMENT' ''"
+expect "rewritten description with recorded change"  0 "Recorded change: AVE-REQ-001 Description differs from the baseline statement — duplication moved to AVE-REQ-102" "sub '$R001' '$STATEMENT' 'The application shall create, name, reopen and persist editing projects.' && printf -- '- 2026-10-02 — ready — Description changed: duplication moved to AVE-REQ-102 (lead)\n' >> $R001"
+expect "description change needs a reason"           1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' 'x.' && printf -- '- 2026-10-02 — ready — Description changed:\n' >> $R001"
+expect "AC log line does not cover the description"  1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' 'x.' && printf -- '- 2026-10-02 — ready — AC-2 changed: other (lead)\n' >> $R001"
+expect "description log line outside ## Status"      1 "Description differs from the baseline statement" "sub '$R001' '$STATEMENT' 'x.' && sub '$R001' '## Edge cases' '## Edge cases
+- 2026-10-02 — ready — Description changed: misplaced (lead)'"
 # (d) deferred dependencies and derived requirements
 expect "derived requirement accepted"                0 "OK: baseline intact" "printf '%s\n' '$DERIVED' > $R/AVE-REQ-102-derived-stub.md"
 expect "v1 requirement depends on a deferred one"    1 "version-one requirement depends on deferred AVE-REQ-067" "printf '%s\n' '$DERIVED' | sed 's/dependencies: \[AVE-REQ-001\]/dependencies: [AVE-REQ-001, AVE-REQ-067]/' > $R/AVE-REQ-102-derived-stub.md"

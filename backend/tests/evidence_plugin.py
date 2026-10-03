@@ -17,8 +17,9 @@ Options:
 * ``--evidence-report PATH`` writes one JSON record per test (node ID, outcome, tags, contract
   flag) for ``scripts/evidence.py``;
 * ``--forbid-skips`` fails the session when any test is skipped, expected to fail or
-  unexpectedly passes: a test that did not run proves nothing, so verification never lets one
-  through as green.
+  unexpectedly passes, or when a module is skipped at collection (module-level
+  ``pytest.skip(allow_module_level=True)``, ``pytest.importorskip``): a test that did not run
+  proves nothing, so verification never lets one through as green.
 """
 
 from __future__ import annotations
@@ -124,6 +125,20 @@ class EvidenceRecorder:
             }
         if problems:
             raise pytest.UsageError("invalid evidence tags:\n  " + "\n  ".join(problems))
+
+    def pytest_collectreport(self, report: pytest.CollectReport) -> None:
+        """A collector skipped at collection yields no test items; it is recorded as one
+        skipped entry, so --forbid-skips sees it."""
+        if report.skipped:
+            self.results[report.nodeid] = {
+                "nodeid": report.nodeid,
+                "req": [],
+                "scenario": [],
+                "contract": False,
+                "markers": [],
+                "outcome": "skipped",
+                "duration": 0.0,
+            }
 
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
         record = self.results.get(report.nodeid)
