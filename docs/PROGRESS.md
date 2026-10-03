@@ -26,8 +26,8 @@ from the drafts.
 - AVE-REQ-093 and AVE-REQ-097 `in-progress`: every PASS so far fell to one skeptic probe (fixes `0e4f8d9`,
   `a681e4d`, `442f68c`, `a10e2df`, `56e5864`; Status logs hold each). A six-lens red-team pass
   ([brief](briefs/2026-10-03-m0-gates-red-team.md)) enumerates the remaining probes: launched 2026-10-03;
-  verdict not recorded; on resume without a recorded verdict, re-run its script in
-  [docs/workflows/](workflows/README.md) with the commit that adds the brief. Then one review each with a skeptic.
+  verdict not recorded; on resume without a recorded verdict, re-run its script
+  (`wf_4514929c-244` in [docs/workflows/](workflows/README.md)) with `{commit: '35f99c5'}`. Then one review each with a skeptic.
 - AVE-REQ-094 `in-progress`: the repair run `wf_d57d9cab-829` ([brief](briefs/2026-10-03-ave-req-094-probe-evidence.md))
   finished research, tests (`49ecb21`) and implementation (`fcd97f0`, branch `ave-req-094-probe-evidence`,
   unmerged and pushed); its review PASSED at `fcd97f0`; the skeptic was cut off by a session restart and
