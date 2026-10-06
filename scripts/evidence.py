@@ -13,7 +13,7 @@ outcomes. ``var/verify/latest-<tier>.json`` is a copy of the newest manifest of 
 Commands:
   record --dir DIR --tier TIER --fingerprint FP
       Write DIR/manifest.json from DIR's step log, reports and suite results; refresh
-      latest-<tier>.json.
+      latest-<tier>.json (var/verify/ is created when absent; exit 2 when it cannot be).
   show [AVE-REQ-NNN ...] [--tier TIER] [--require-fresh] [--require-complete]
       Per-criterion evidence from the heaviest manifest that is fresh (same tree fingerprint and
       toolchain as now), or from the newest one when none is. --require-fresh exits 1 when the
@@ -46,13 +46,19 @@ Evidence rules (docs/requirements/README.md, Definition of Done):
   * a failed, skipped or erroring tagged test counts against the criterion;
   * tests marked ``contract`` replace an external provider with a fake: they prove the
     interface only and never evidence a criterion on their own;
-  * the tooling tests in scripts/tests/ (shell suites and Python unit tests) tag their cases with
+  * the tooling tests in scripts/tests/ (the shell suites that scripts/tests/run.sh lists, one
+    ``run_suite <file>`` line each, and the Python unit tests ``test_*.py``) tag their cases with
     ``# AVE-REQ-NNN AC-n`` comment lines; those tags count only through a suite result of the run,
     with the exit status and the check counts of that file: a file that never ran gives no
     evidence, and a failing one, or a shell suite that exited 0 without running a check or with a
     failed check in its total, counts against its criteria; in a unit-test file each tag stands
-    directly above the test it names, and a tag above no test that ran fails the file;
+    directly above the test it names and binds to that test by class and name
+    (``Class.test_x``), and a tag above no test that ran fails the file;
   * every tooling tag names an existing criterion: one that does not stops ``record`` and
+    ``check-done`` with the file and line;
+  * every comment tag in scripts/tests/ stands in a tooling test file: a tag in any other file
+    there (the suite runner, a fixture builder, a suite run.sh does not list; bytecode
+    directories excepted) has no runner and no suite result, so it stops ``record`` and
     ``check-done`` with the file and line;
   * a test that exists and did not run (a deselected pytest test, a tooling file without a suite
     result of the run) is recorded as ``not-run``: it evidences nothing, and a run that left a
@@ -77,6 +83,7 @@ if __name__ == "__main__" and not sys.flags.safe_path:
     os.execv(sys.executable, [sys.executable, "-P", "-B", os.path.abspath(__file__), *sys.argv[1:]])
 
 import argparse
+import ast
 import functools
 import hashlib
 import json
@@ -97,9 +104,11 @@ REQUIREMENTS = ROOT / "docs" / "requirements"
 SCENARIOS_FILE = ROOT / "ai-video-editor-requirements" / "spec" / "ACCEPTANCE_TESTS.md"
 VERIFY_DIR = ROOT / "var" / "verify"
 TOOLING_TESTS = ROOT / "scripts" / "tests"
-TOOLING_PATTERNS = ("*.sh", "test_*.py")
-"""Tooling test files in scripts/tests/: shell suites and Python unit tests."""
+RUNNER = "run.sh"
+"""The suite runner in scripts/tests/: each ``run_suite <file>`` line names a shell suite it runs."""
+_LISTED_SUITE = re.compile(r"^run_suite (\S+)", re.MULTILINE)
 UNIT_PATTERN = "test_*.py"
+"""The Python unit tests in scripts/tests/, run by the ``unittest`` command."""
 TIERS = ("fast", "media", "release")
 SCHEMA = 1
 KEEP_RUNS = 20
@@ -112,7 +121,7 @@ NOT_RUN = "not-run"
 """Outcome of a test that exists and was not executed in the run."""
 _UNRUN_OUTCOMES = (NOT_RUN, "deselected")
 """Report outcomes of a test that did not run: selected and never started, or deselected."""
-_TEST_DEF = re.compile(r"^\s*(?:async\s+)?def (test_\w+)\(")
+_TEST_NAME = re.compile(r"test_\w+")
 _REDIRECTING = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -205,7 +214,7 @@ def form_problems(known: dict[str, Requirement]) -> list[str]:
     reading, so no gate takes its status or criteria on trust."""
     return [
         f"{requirement.id}: {requirement.path.name} is outside the canonical form"
-        f" ({requirement.problems[0]}); python3 scripts/check_baseline.py lists every problem"
+        f" ({requirement.problems[0]}); python3 -I -B scripts/check_baseline.py lists every problem"
         for requirement in known.values()
         if requirement.problems
     ]
@@ -277,7 +286,8 @@ def _shown(path: Path) -> str:
 def comment_tags(path: Path) -> list[tuple[int, str]]:
     """Criterion tags in the comment lines of a tooling test file: (line number, tag)."""
     found = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if stripped.startswith("#"):
             found.extend((number, tag) for tag in _TAG_IN_TEXT.findall(stripped))
@@ -308,11 +318,42 @@ def write_suite_result(
     return target
 
 
+def listed_suites() -> list[Path]:
+    """The shell suites that scripts/tests/run.sh runs: one ``run_suite <file>`` line each, at the
+    start of the line. Without the runner no shell suite is listed."""
+    runner = TOOLING_TESTS / RUNNER
+    if not runner.is_file():
+        return []
+    names = _LISTED_SUITE.findall(runner.read_text(encoding="utf-8", errors="replace"))
+    return sorted({TOOLING_TESTS / name for name in names})
+
+
 def tooling_files() -> list[Path]:
-    """The tooling test files of this tree: shell suites and Python unit tests."""
-    return sorted(
-        path for pattern in TOOLING_PATTERNS for path in TOOLING_TESTS.glob(pattern) if path.is_file()
-    )
+    """The tooling test files of this tree, the files a runner writes a suite result for: the
+    shell suites run.sh lists and the Python unit tests."""
+    units = {path for path in TOOLING_TESTS.glob(UNIT_PATTERN) if path.is_file()}
+    return sorted(units | {path for path in listed_suites() if path.is_file()})
+
+
+def unowned_tag_problems() -> list[str]:
+    """``file:line: problem`` for each comment tag in a file of scripts/tests/ that is no tooling
+    test file (AVE-REQ-097 AC-4). No runner writes a suite result for such a file, so its tag
+    would read ``not-run`` in every tier and no run could evidence its criterion completely.
+    Bytecode directories hold no comment line and are left out."""
+    owned = {path.resolve() for path in tooling_files()}
+    problems = []
+    for directory, subdirectories, names in os.walk(TOOLING_TESTS):
+        subdirectories[:] = sorted(name for name in subdirectories if name != "__pycache__")
+        for name in sorted(names):
+            path = Path(directory) / name
+            if not path.is_file() or path.resolve() in owned:
+                continue
+            problems += [
+                f"{_shown(path)}:{line}: the tag {tag} stands in a file that is neither a suite"
+                f" {RUNNER} lists nor a {UNIT_PATTERN} file"
+                for line, tag in comment_tags(path)
+            ]
+    return problems
 
 
 def read_suite_results(run_dir: Path) -> list[dict[str, Any]]:
@@ -383,6 +424,12 @@ def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evide
             for tag in test.get("scenario", []):
                 evidence.scenarios.setdefault(tag, []).append(item)
     results = read_suite_results(run_dir)
+    unowned = unowned_tag_problems()
+    if unowned:
+        raise EvidenceError(
+            "criterion tags in scripts/tests/ outside the tooling test files (a tag counts through"
+            " the suite result of a file that a runner runs):\n  " + "\n  ".join(unowned)
+        )
     problems = tooling_tag_problems(results, requirements() if known is None else known)
     if problems:
         raise EvidenceError(
@@ -451,33 +498,68 @@ def _unit_problems(result: unittest.TestResult) -> list[str]:
     return problems
 
 
+def qualified_tests(source: str) -> dict[int, str]:
+    """The line of each ``def test_…`` of a Python source → its class-qualified name, as
+    ``__qualname__`` spells it (``Class.test_x``; the bare name at module level). Empty for a
+    source Python cannot parse: such a file runs no test either."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    found: dict[int, str] = {}
+
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                visit(child, f"{prefix}{child.name}.")
+            elif isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                if _TEST_NAME.fullmatch(child.name):
+                    found[child.lineno] = prefix + child.name
+                visit(child, f"{prefix}{child.name}.<locals>.")
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return found
+
+
 def tagged_tests(path: Path) -> list[tuple[int, str, str]]:
-    """(line, tag, test name) for each comment tag of a unit-test file; the name is the ``def
-    test_…`` on the next code line (decorators skipped), or "" when no test follows the tag."""
-    lines = path.read_text(encoding="utf-8").splitlines()
+    """(line, tag, test) for each comment tag of a unit-test file; the test is the class-qualified
+    name of the ``def test_…`` on the next code line (decorator lines skipped), or "" when no
+    test follows the tag."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    definitions = qualified_tests(text)
     found = []
     for number, tag in comment_tags(path):
         name = ""
-        for line in lines[number:]:
+        for following, line in enumerate(lines[number:], start=number + 1):
             stripped = line.strip()
             if not stripped or stripped.startswith(("#", "@")):
                 continue
-            match = _TEST_DEF.match(line)
-            name = match.group(1) if match else ""
+            name = definitions.get(following, "")
             break
         found.append((number, tag, name))
     return found
 
 
+def started_test(test: unittest.TestCase) -> str:
+    """The class-qualified name of the test function a started test runs: the class that defines
+    the method (the test's own class, or the base it inherits the method from) and the name."""
+    method = str(getattr(test, "_testMethodName", ""))
+    owner = next((cls for cls in type(test).__mro__ if method in vars(cls)), type(test))
+    return f"{owner.__qualname__}.{method}"
+
+
 class _RecordingResult(unittest.TextTestResult):
-    """Remembers the method name of every test that started."""
+    """Remembers the class-qualified name of every test that started."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.started: set[str] = set()
 
     def startTest(self, test: unittest.TestCase) -> None:  # noqa: N802 - unittest's name
-        self.started.add(test.id().rsplit(".", 1)[-1])
+        self.started.add(started_test(test))
         super().startTest(test)
 
 
@@ -486,7 +568,8 @@ def run_unit_file(path: Path, result_path: Path) -> int:
     [...]}`` to ``result_path`` (the ``unittest-file`` command, started once per file).
 
     Warnings are errors, so a test that returns a value (a generator or a coroutine whose body
-    never ran) fails; each comment tag must stand above a test that ran."""
+    never ran) fails; each comment tag must stand above a test that ran, compared by class and
+    name: a test of the same name in another class leaves the tag unbound."""
     warnings.simplefilter("error")
     loader = unittest.TestLoader()
     suite = loader.discover(str(path.parent), pattern=path.name, top_level_dir=str(path.parent))
@@ -646,7 +729,9 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
-    """Writes ``run_dir/manifest.json`` and ``latest-<tier>.json``; prunes old runs."""
+    """Writes ``run_dir/manifest.json`` and ``latest-<tier>.json``; prunes old runs. The evidence
+    directory var/verify/ is created when it is absent (a run directory may lie elsewhere); when
+    it cannot be created the run stays unrecorded."""
     if not run_dir.is_dir():
         raise EvidenceError(f"run directory {run_dir} does not exist")
     if (run_dir / "manifest.json").exists():
@@ -654,6 +739,12 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
             f"{run_dir} is recorded already: a run is recorded once, for the tree and the tier"
             " that produced its results"
         )
+    try:
+        VERIFY_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise EvidenceError(
+            f"cannot create the evidence directory {VERIFY_DIR} ({error}); nothing was recorded"
+        ) from error
     steps = read_steps(run_dir)
     evidence = collect(run_dir)
     status = _run(["git", "status", "--porcelain", "--untracked-files=all"])
@@ -677,7 +768,8 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
     }
     _write_json(run_dir / "manifest.json", manifest)
     _write_json(VERIFY_DIR / f"latest-{tier}.json", manifest)
-    runs = sorted(p for p in (VERIFY_DIR / "runs").iterdir() if p.is_dir())
+    kept = VERIFY_DIR / "runs"
+    runs = sorted(p for p in kept.iterdir() if p.is_dir()) if kept.is_dir() else []
     for old in runs[:-KEEP_RUNS]:
         shutil.rmtree(old, ignore_errors=True)
     return manifest

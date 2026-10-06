@@ -132,6 +132,13 @@ expect "link inside code span ignored"     0 "OK:" "printf '\nUse \`\`[x](span-m
 expect "inline triple-backtick span is no fence" 1 "broken link to 'missing-after.md'" "printf '\n\`\`\` \`inline\` \`\`\` then [x](missing-after.md)\n' >> docs/ARCHITECTURE.md"
 expect "worktrees excluded"                0 "OK:" "mkdir -p .claude/worktrees/w/.claude/agents && printf '[x](missing.md)\n' > .claude/worktrees/w/bad.md && printf 'no frontmatter\n' > .claude/worktrees/w/.claude/agents/x.md"
 expect "missing PROGRESS heading"          1 "ERROR: docs/PROGRESS.md: missing heading '## Blockers'" "sub docs/PROGRESS.md '## Blockers' '## Blocker'"
+# AVE-REQ-098 AC-1: PROGRESS.md keeps every heading of its template. The ten headings are written
+# out here, apart from the checker's own list, so a heading dropped from that list fails its case.
+for h in "# Current project state" "## Current milestone" "## Current objective" "## In progress" \
+  "## Recently completed" "## Next recommended work" "## Blockers" "## Known failures" \
+  "## Important recent decisions" "## Verification status"; do
+  expect "PROGRESS without '$h'" 1 "ERROR: docs/PROGRESS.md: missing heading '$h'" "grep -vx '$h' docs/PROGRESS.md > p.tmp && mv p.tmp docs/PROGRESS.md"
+done
 expect "PROGRESS heading with CRLF"        0 "OK:" "sed 's/\$/\r/' docs/PROGRESS.md > p.tmp && mv p.tmp docs/PROGRESS.md"
 expect "missing required file"             1 "ERROR: docs/ROADMAP.md: required file is missing" "rm docs/ROADMAP.md"
 expect "non-executable hook"               1 "ERROR: .claude/hooks/stop-verify.sh: not executable" "chmod -x .claude/hooks/stop-verify.sh"
@@ -222,6 +229,31 @@ expect "brief with a repeated heading"     1 "ERROR: $B: heading '## Requirement
 expect "brief requirements without an ID"  1 "ERROR: $B: section '## Requirements' names no requirement ID (AVE-REQ-NNN)" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/Fix the findings./' > $B"
 expect "brief ID outside Requirements"     1 "section '## Requirements' names no requirement ID" "printf '$BRIEF' | sed -e 's/^AVE-REQ-001 AC-1\$/Fix the findings./' -e 's/^None\\.\$/After AVE-REQ-002./' > $B"
 expect "brief with an extra section after the template" 0 "OK:" "printf '${BRIEF}\n## Notes\nFree text.\n' > $B"
+# AVE-REQ-096 AC-1: HTML comments are removed before a section is judged: text, a requirement ID or a
+# heading inside a comment is absent for the reader of the rendered brief, and for the rule.
+expect "brief section holding only an HTML comment" 1 "ERROR: $B: section '## Allowed paths' is empty" "printf '$BRIEF' | sed 's|^src/\$|<!-- later -->|' > $B"
+expect "brief requirement ID only in an HTML comment" 1 "ERROR: $B: section '## Requirements' is empty" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/<!-- AVE-REQ-001 AC-1 -->/' > $B"
+expect "brief requirement ID in a comment beside other text" 1 "ERROR: $B: section '## Requirements' names no requirement ID (AVE-REQ-NNN)" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/<!-- AVE-REQ-001 AC-1 --> Fix the findings./' > $B"
+expect "brief heading inside a multi-line HTML comment" 1 "ERROR: $B: missing heading '## Handback schema'" "printf '$BRIEF' > $B && sub $B '## Handback schema' '<!--
+## Handback schema' && printf -- '-->\n' >> $B"
+expect "brief section text inside a multi-line HTML comment" 1 "ERROR: $B: section '## Test commands' is empty" "printf '$BRIEF' > $B && sub $B './scripts/verify.sh' '<!--
+./scripts/verify.sh
+-->'"
+expect "brief text beside an HTML comment counts" 0 "OK:" "printf '$BRIEF' | sed 's|^src/\$|<!-- the task owns --> src/|' > $B"
+expect "brief comment marker inside a code span opens no comment" 0 "OK:" "printf '$BRIEF' | sed 's|^src/\$|\`src/\` (the text \`<!--\` in a code span is text)|' > $B"
+expect "brief fence marker inside an HTML comment opens no fence" 0 "OK:" "printf '$BRIEF' > $B && sub $B 'src/' '<!--
+\`\`\`
+-->
+src/'"
+# AVE-REQ-096 AC-1: docs/briefs/ holds briefs, README.md, drafts/ and handbacks/ only, so no file
+# there looks like a brief while no rule reads it.
+expect "brief with another extension"      1 "ERROR: docs/briefs/2026-10-02-stub.markdown: is no task brief" "printf '$BRIEF' > $B && printf 'No sections.\n' > docs/briefs/2026-10-02-stub.markdown"
+expect "brief in another subdirectory"     1 "ERROR: docs/briefs/extra: is no task brief" "mkdir docs/briefs/extra && printf 'No sections.\n' > docs/briefs/extra/2026-10-02-stub.md"
+expect "hidden brief"                      1 "ERROR: docs/briefs/.2026-10-02-stub.md: is no task brief" "printf 'No sections.\n' > docs/briefs/.2026-10-02-stub.md"
+expect "file in place of the drafts directory" 1 "ERROR: docs/briefs/drafts: is no task brief" "printf 'No sections.\n' > docs/briefs/drafts"
+expect "directory named like a brief"      1 "ERROR: $B: is no task brief" "mkdir $B"
+expect "draft without sections left alone" 0 "OK:" "mkdir docs/briefs/drafts && printf 'No sections yet.\n' > docs/briefs/drafts/2026-10-02-later.md"
+expect "folder files of an operating system passed over" 0 "OK:" "printf '$BRIEF' > $B && mkdir -p docs/briefs/handbacks && : > docs/briefs/.DS_Store && : > docs/briefs/Thumbs.db && : > docs/briefs/handbacks/.DS_Store"
 # AVE-REQ-096 AC-1, AVE-REQ-096 AC-2: the input revision names a commit: a delimited hash of 7 to 40
 # hex digits, or the self-reference to the commit that adds the brief.
 NO_COMMIT="ERROR: $B: section '## Input revision' names no commit"
@@ -229,6 +261,7 @@ expect "input revision without a commit"   1 "$NO_COMMIT" "printf '$BRIEF' | sed
 expect "input revision: branch name only"  1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief./' > $B"
 expect "input revision: six hex digits"    1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/\`abc123\` on the working branch./' > $B"
 expect "input revision: 41 hex digits"     1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/0123456789abcdef0123456789abcdef012345678/' > $B"
+expect "input revision: commit only in an HTML comment" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/<!-- abc1234 --> The launching prompt names it./' > $B"
 expect "input revision: abbreviated hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/\`6736401\` on \`ccr-af7078da-q8r8mf\`; isolated worktree./' > $B"
 expect "input revision: full hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/a62e197b41ebd83adb000349347ca9fd0209b7eb, main working tree./' > $B"
 expect "input revision: self-reference accepted" 0 "OK:" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief (\`git log -1 --format=%h -- $B\`).|' > $B"
@@ -240,14 +273,20 @@ expect "handback without its brief"        1 "ERROR: $HB/2026-10-02-other.md: na
 expect "handback part without a number"    1 "ERROR: $HB/2026-10-02-stub.part-x.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.part-x.md"
 expect "handback that is no Markdown file" 1 "ERROR: $HB/2026-10-02-stub.txt: a handback is named" "printf '$BRIEF' > $B && mkdir -p $HB && printf 'x\n' > $HB/2026-10-02-stub.txt"
 expect "handback named after the README"   1 "ERROR: $HB/README.md: names no brief" "mkdir -p $HB && printf '# Handbacks\n' > $HB/README.md"
+expect "hidden handback of a brief"        1 "ERROR: $HB/.2026-10-02-stub.part-1.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md; a hidden file is none" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/.2026-10-02-stub.part-1.md"
+expect "hidden handback without a slug"    1 "ERROR: $HB/.part-1.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md; a hidden file is none" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/.part-1.md"
+expect "directory named like a handback"   1 "ERROR: $HB/2026-10-02-stub.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md" "printf '$BRIEF' > $B && mkdir -p $HB/2026-10-02-stub.md"
 # AVE-REQ-098 AC-3: PROGRESS.md never claims that work is running; in-flight work is recorded
 # stop-safe ("launched <date>; verdict not recorded; … re-run <exact command>").
 P=docs/PROGRESS.md
 expect "PROGRESS: review running"          1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
 - Review of AVE-REQ-001 running as a workflow.'"
 for claim in 'Running: the release tier of the merge.' '- Implementer in flight on branch x.' \
-  '- Implementer in-flight on branch x.' '- Media-tier run underway.' '- The review is still RUNNING.'; do
-  expect "PROGRESS claim: $claim" 1 "claims ongoing execution" "sub $P '## In progress' '## In progress
+  '- Implementer in-flight on branch x.' '- Media-tier run underway.' '- The review is still RUNNING.' \
+  '- Media-tier run under way.' '- Media-tier run under-way since noon.' '- The review is still executing.' \
+  '- Ongoing: the release tier of the merge.' '- The on-going review of AVE-REQ-001.' \
+  '- The release tier runs now.'; do
+  expect "PROGRESS claim: $claim" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
 $claim'"
 done
 expect "PROGRESS: stop-safe in-flight line accepted" 0 "OK:" "sub $P '## In progress' '## In progress
@@ -263,6 +302,8 @@ review running
 \`\`\`'"
 expect "PROGRESS: rerunning and not running accepted" 0 "OK:" "sub $P '## In progress' '## In progress
 - Next: rerunning the media tier; the old job is not running and no longer running.'"
+expect "PROGRESS: words that only contain a claim word accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Next: the suite runs nowhere else; the outgoing brief names the way under the bridge; executing the plan is still open.'"
 # AVE-REQ-098 AC-4: settings start no permission bypass; hook commands start no loop, sleep or
 # background job, and no hook runs asynchronously.
 expect "settings: bypassPermissions default mode" 1 "ERROR: .claude/settings.json: permissions.defaultMode 'bypassPermissions' runs tools without permission prompts" "jedit \"d['permissions']['defaultMode'] = 'bypassPermissions'\""
@@ -276,7 +317,18 @@ for cmd in 'while true; do .claude/hooks/stop-verify.sh; done' 'sleep 600' 'nohu
   'claude -p go --dangerously-skip-permissions'; do
   expect "hook command: $cmd" 1 "starts a loop, a sleep, a background job or a permission bypass" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '$cmd'\""
 done
-expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh 2>&1 && true'\""
+# The same forms and the further ones on a hook of another event, where no rule on the Stop command
+# takes part: the exit status follows from the command's wording alone.
+for cmd in 'while true; do scripts/note.sh; done' 'while :; do scripts/note.sh; done' \
+  'while [ 1 ]; do scripts/note.sh; done' 'true; while [ -e x ]; do scripts/note.sh; done' \
+  'until false; do scripts/note.sh; done' '(until scripts/note.sh; do :; done)' \
+  'for ((;;)); do scripts/note.sh; done' 'for (( i = 0; ; i++ )); do scripts/note.sh; done' \
+  'sleep 600' 'scripts/note.sh &' 'claude -p go --dangerously-skip-permissions' \
+  'claude -p go --permission-mode bypassPermissions' 'claude -p go --permission-mode=acceptEdits'; do
+  expect "tool hook command: $cmd" 1 "ERROR: .claude/settings.json: hooks.PreToolUse[0] command '$cmd' starts a loop, a sleep, a background job or a permission bypass" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': '$cmd'}]}]\""
+done
+expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/note.sh 2>&1 && true'}]}]\""
+expect "hook command with a list loop and loop words inside names accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'for f in a b; do scripts/wait-until-ready.sh --meanwhile || true; done'}]}]\""
 expect "hook entry with async true"        1 "ERROR: .claude/settings.json: hooks.Stop[0] runs a hook asynchronously (\"async\": true), which escapes its timeout" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['async'] = True\""
 expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['hooks'][0]['async'] = False\""
 # AVE-REQ-097 AC-3: the Stop gate is registered once; nothing in the settings file switches it off,
@@ -289,6 +341,21 @@ expect "Stop command sets a gate variable" 1 "sets a gate variable" "jedit \"d['
 expect "disableAllHooks"                   1 "disableAllHooks switches the Stop gate and the SessionStart hook off" "jedit \"d['disableAllHooks'] = True\""
 expect "settings env switches the gate off" 1 "env.CLAUDE_VERIFY_GATE changes the Stop gate from the settings file" "jedit \"d['env'] = {'CLAUDE_VERIFY_GATE': 'off'}\""
 expect "settings env loosens the gate"     1 "env.CLAUDE_VERIFY_MAX_ATTEMPTS changes the Stop gate from the settings file" "jedit \"d['env'] = {'CLAUDE_VERIFY_MAX_ATTEMPTS': '1'}\""
+# AVE-REQ-097 AC-3: the Stop gate is a handler of type command whose command is exactly the registered
+# one; text after it, another spelling of it or another handler type would switch the gate off.
+STOP_EXACT='reads exactly "$CLAUDE_PROJECT_DIR"/.claude/hooks/stop-verify.sh, with nothing before or after it'
+expect "Stop command with || true appended" 1 "$STOP_EXACT" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] += ' || true'\""
+expect "Stop command with a redirect appended" 1 "$STOP_EXACT" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] += ' >/dev/null 2>&1'\""
+expect "Stop command with text before it"  1 "$STOP_EXACT" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = 'exec ' + d['hooks']['Stop'][0]['hooks'][0]['command']\""
+expect "Stop command without the project directory" 1 "$STOP_EXACT" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh'\""
+expect "Stop handler of type prompt"       1 'ERROR: .claude/settings.json: hooks.Stop handler has type "prompt"; the Stop gate is a handler of type "command"' "jedit \"d['hooks']['Stop'][0]['hooks'][0]['type'] = 'prompt'\""
+expect "Stop handler without a type"       1 'hooks.Stop handler has type null; the Stop gate is a handler of type "command"' "jedit \"del d['hooks']['Stop'][0]['hooks'][0]['type']\""
+# AVE-REQ-097 AC-3: no setting changes the shell that runs the hooks and verify.sh (SHELLOPTS=noexec
+# makes a script exit 0 without running a command).
+for key in SHELLOPTS BASHOPTS BASH_ENV ENV; do
+  expect "settings env sets $key"          1 "ERROR: .claude/settings.json: env.$key changes the shell that runs the hooks and verify.sh from the settings file" "jedit \"d['env'] = {'$key': 'noexec'}\""
+done
+expect "settings env with other variables accepted" 0 "OK:" "jedit \"d['env'] = {'ENVIRONMENT': 'dev', 'AVE_NOTE': 'x', 'BASH_ENVIRONMENT': 'y'}\""
 # AVE-REQ-097 AC-4: scripts/verify.d holds the registered step files only.
 expect "unregistered step file"            1 "ERROR: scripts/verify.d/99-local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/99-local.sh"
 expect "unregistered hidden step file"     1 "ERROR: scripts/verify.d/.local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/.local.sh"

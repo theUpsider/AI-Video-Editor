@@ -9,11 +9,13 @@
 #         5 skill frontmatter                       9 ADR files (docs/decisions/README.md)
 #                                                  10 requirement matrix in docs/TRACEABILITY.md
 #        11 task briefs (docs/briefs/README.md): every heading once and in template order, no empty
-#           section, an AVE-REQ ID under Requirements, a commit under Input revision; each handback
-#           in docs/briefs/handbacks/ is named after its brief
+#           section, an AVE-REQ ID under Requirements, a commit under Input revision, each judged
+#           without HTML comments; docs/briefs/ holds briefs (*.md), README.md, drafts/ and
+#           handbacks/ only; each handback in docs/briefs/handbacks/ is named after its brief
 #        12 .claude/settings.json policy: no permission bypass, the SessionStart hook runs on
 #           startup, resume and compact, hook commands start no loop, sleep or background job and
-#           none runs asynchronously
+#           none runs asynchronously; the Stop gate is one handler of type command with exactly
+#           the registered command, and no setting switches it off or changes the hooks' shell
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
@@ -222,6 +224,41 @@ function strip_comments(s,   out, i) {
   return out
 }
 
+# Removes HTML comments and keeps inline code spans whole, so a "<!--" inside a code span opens no
+# comment and the text of a code span stays readable; in_comment carries an unterminated comment
+# over to the next lines.
+function strip_comments_outside_spans(s,   out, i, j, n, rest, closing) {
+  out = ""
+  while (s != "") {
+    if (in_comment) {
+      if (!(i = index(s, "-->"))) return out
+      s = substr(s, i + 3)
+      in_comment = 0
+      continue
+    }
+    i = index(s, "<!--")
+    j = index(s, "`")
+    if (j && (!i || j < i)) {
+      n = run_length(substr(s, j), "`")
+      rest = substr(s, j + n)
+      closing = backtick_run_at(rest, n)
+      if (closing) {
+        out = out substr(s, 1, j + n - 1) substr(rest, 1, closing + n - 1)
+        s = substr(rest, closing + n)
+      } else {
+        out = out substr(s, 1, j + n - 1)
+        s = rest
+      }
+      continue
+    }
+    if (!i) return out s
+    out = out substr(s, 1, i - 1)
+    s = substr(s, i + 4)
+    in_comment = 1
+  }
+  return out
+}
+
 # Removes inline code spans (a backtick run up to the next run of equal length).
 function strip_code_spans(s,   out, i, n, rest, closing) {
   out = ""
@@ -357,8 +394,11 @@ AWK
 # Check 7: docs/PROGRESS.md claims no ongoing execution (AVE-REQ-098 AC-3). Variable: path. A later
 # session cannot check that work "is running"; delegated work in flight is recorded stop-safe
 # ("launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact
-# command>"). Outside fenced blocks, HTML comments and code spans, a line with the word "running",
-# "underway" or "in flight" fails; "nothing is running", "not running" and "no longer running" pass.
+# command>"). Outside fenced blocks, HTML comments and code spans, a line fails with one of the
+# wordings "running", "underway", "under way", "in flight", "ongoing", "still executing" or "runs
+# now", in any letter case and with spaces, tabs or hyphens between the words; "nothing is
+# running", "not running" and "no longer running" pass. The rule knows this list: another wording
+# of the same claim is judged by the reader of the diff (commit review, verify-requirement).
 IFS= read -r -d '' AWK_PROGRESS_CLAIMS <<'AWK' || true
 FNR == 1 { fence_char = ""; in_comment = 0 }
 {
@@ -366,8 +406,8 @@ FNR == 1 { fence_char = ""; in_comment = 0 }
   if (!in_comment && in_fence($0)) next
   line = " " tolower(strip_comments(strip_code_spans($0))) " "
   gsub(/nothing is running|no longer running|not running/, "", line)
-  if (line ~ /[^a-z]running[^a-z]/ || line ~ /[^a-z]underway[^a-z]/ || line ~ /[^a-z]in[ -]flight[^a-z]/)
-    err(path, "line " FNR ": claims ongoing execution ('running', 'underway' or 'in flight'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
+  if (line ~ /[^a-z](running|underway|under[ \t-]+way|in[ \t-]+flight|on-?going|still[ \t-]+executing|runs[ \t-]+now)[^a-z]/)
+    err(path, "line " FNR ": claims ongoing execution ('running', 'underway', 'under way', 'in flight', 'ongoing', 'still executing' or 'runs now'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
 }
 AWK
 
@@ -376,7 +416,9 @@ AWK
 # section names an AVE-REQ ID, and the Input revision section names a commit: a token of 7 to 40
 # lowercase hex digits with no letter, digit, "_" or "-" on either side (so the "af7078da" inside
 # the branch name ccr-af7078da-q8r8mf counts as none), or the self-reference
-# "git log -1 --format=%h -- <path of this brief>". An H1 or another H2 ends a section.
+# "git log -1 --format=%h -- <path of this brief>". An H1 or another H2 ends a section. HTML
+# comments are removed first (outside fenced blocks and code spans): a heading, an ID, a commit or
+# the only text of a section inside a comment counts as absent.
 IFS= read -r -d '' AWK_BRIEF <<'AWK' || true
 BEGIN {
   count = split(headings, want, "|")
@@ -384,8 +426,8 @@ BEGIN {
 }
 {
   sub(/\r$/, "")
-  fenced = in_fence($0)
-  t = rtrim($0)
+  fenced = (!in_comment && in_fence($0))
+  t = rtrim(fenced ? $0 : strip_comments_outside_spans($0))
   if (!fenced && t ~ /^##? /) {
     current = (t in rank) ? t : ""
     if (current == "") next
@@ -437,11 +479,17 @@ function names_commit(s,   ref, i, after, rest, off, start, len, before) {
 }
 AWK
 
-# Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4), run by python3 with the file
-# as its argument. Prints one ERROR line per violation; prints nothing for a file that is no valid
-# JSON object (check 3 reports that). Hook matchers follow Claude Code: "", "*" or none match every
-# source; letters, digits, "_", "-" and "|" only form a list of exact names; anything else (a
-# comma-separated list included) is an unanchored regular expression.
+# Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4; AVE-REQ-097 AC-3), run by
+# python3 with the file as its argument. Prints one ERROR line per violation; prints nothing for a
+# file that is no valid JSON object (check 3 reports that). Hook matchers follow Claude Code: "",
+# "*" or none match every source; letters, digits, "_", "-" and "|" only form a list of exact
+# names; anything else (a comma-separated list included) is an unanchored regular expression.
+# A hook command fails with the shell word "while" or "until", a "for ((" loop, "sleep", "nohup",
+# "disown", "setsid", a background "&", "--dangerously-skip-permissions" or "--permission-mode".
+# The rule knows this list: a loop or a bypass written another way (inside a script the command
+# calls, for example) is judged by the reader of the diff (commit review, verify-requirement).
+# The file checked is .claude/settings.json; the personal .claude/settings.local.json and the
+# user-level settings lie outside the repository and outside this check.
 IFS= read -r -d '' PY_SETTINGS_POLICY <<'PY' || true
 import json
 import re
@@ -482,8 +530,8 @@ def skipped_prompts(node, where):
 skipped_prompts(data, "")
 
 UNBOUNDED = re.compile(
-    r"\bwhile\s+(?:true|:)(?=[\s;]|$)|\b(?:sleep|nohup|disown|setsid)\b"
-    r"|--dangerously-skip-permissions|(?<![&|<>])&(?![&>])"
+    r"(?<![\w./-])(?:while|until)(?![\w./-])|\bfor\s*\(\(|\b(?:sleep|nohup|disown|setsid)\b"
+    r"|--dangerously-skip-permissions|--permission-mode|(?<![&|<>])&(?![&>])"
 )
 SESSION_SOURCES = ("startup", "resume", "compact")
 SESSION_HOOK = ".claude/hooks/session-start.sh"
@@ -533,26 +581,37 @@ for event, groups in hooks.items():
             if event == "SessionStart" and SESSION_HOOK in command:
                 registered = True
                 covered.update(s for s in SESSION_SOURCES if matches(group.get("matcher"), s))
-# AVE-REQ-097 AC-3: the Stop gate is registered once and nothing in the settings file switches it
-# off, loosens it or runs a heavier tier at every stop.
+# AVE-REQ-097 AC-3: the Stop gate is registered once, as a handler of type "command" whose command
+# is exactly the registered one, and nothing in the settings file switches it off, loosens it or
+# runs a heavier tier at every stop. Text after the command (" || true") would discard the gate's
+# exit status, and a handler of another type would never start the script.
 STOP_HOOK = ".claude/hooks/stop-verify.sh"
-stop_commands = [
-    str(handler.get("command", ""))
+STOP_COMMAND = '"$CLAUDE_PROJECT_DIR"/' + STOP_HOOK
+SHELL_VARIABLES = ("SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV")
+stop_handlers = [
+    handler
     for group in as_list(hooks.get("Stop"))
     if isinstance(group, dict)
     for handler in as_list(group.get("hooks"))
     if isinstance(handler, dict)
 ]
-if len(stop_commands) != 1:
+if len(stop_handlers) != 1:
     error(
-        f"hooks.Stop holds {len(stop_commands)} command(s); it holds exactly one, the Stop gate"
+        f"hooks.Stop holds {len(stop_handlers)} command(s); it holds exactly one, the Stop gate"
         f" {STOP_HOOK} (AVE-REQ-097 AC-3)"
     )
-for command in stop_commands:
-    if STOP_HOOK not in command or "verify.sh" in command.replace(STOP_HOOK, ""):
+for handler in stop_handlers:
+    command = str(handler.get("command", ""))
+    if handler.get("type") != "command":
+        error(
+            f"hooks.Stop handler has type {json.dumps(handler.get('type'))}; the Stop gate is a"
+            ' handler of type "command" (AVE-REQ-097 AC-3)'
+        )
+    if command != STOP_COMMAND:
         error(
             f"hooks.Stop command {command!r} must run the Stop gate {STOP_HOOK} and no other"
-            " verification command (AVE-REQ-097 AC-3)"
+            f" verification command: it reads exactly {STOP_COMMAND}, with nothing before or after"
+            " it (AVE-REQ-097 AC-3)"
         )
     if "CLAUDE_VERIFY_" in command:
         error(f"hooks.Stop command {command!r} sets a gate variable (AVE-REQ-097 AC-3)")
@@ -562,6 +621,11 @@ environment = data.get("env") if isinstance(data.get("env"), dict) else {}
 for key in sorted(environment):
     if key.startswith("CLAUDE_VERIFY_"):
         error(f"env.{key} changes the Stop gate from the settings file (AVE-REQ-097 AC-3)")
+    elif key in SHELL_VARIABLES:
+        error(
+            f"env.{key} changes the shell that runs the hooks and verify.sh from the settings file"
+            " (AVE-REQ-097 AC-3)"
+        )
 if not registered:
     error(f"no SessionStart hook runs {SESSION_HOOK} (AVE-REQ-098 AC-2)")
 else:
@@ -993,26 +1057,51 @@ check_progress_headings() {
   run_awk "PROGRESS.md claim" -v path="$file" "$AWK_LIB$AWK_PROGRESS_CLAIMS" "$file"
 }
 
+# Check 11: every entry of docs/briefs/ is a brief (a visible *.md file, checked against the
+# template), README.md, the directory drafts/ (briefs that name no input revision yet; unchecked)
+# or the directory handbacks/. Anything else fails: a file with another extension, a hidden file
+# or another directory would hold a brief no rule reads. The folder files an operating system
+# leaves behind (.DS_Store, Thumbs.db; ignored by Git) are passed over here and in handbacks/.
 check_briefs() {
-  local file
-  for file in docs/briefs/*.md; do
-    [ -f "$file" ] && [ "$file" != docs/briefs/README.md ] || continue
-    run_awk "task brief" -v path="$file" -v headings="$BRIEF_HEADINGS" \
-      "$AWK_LIB$AWK_BRIEF" "$file"
+  local file name
+  for file in docs/briefs/* docs/briefs/.[!.]* docs/briefs/..?*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
+    name="${file##*/}"
+    case "$name" in
+      .DS_Store | Thumbs.db) continue ;;
+      README.md) [ ! -f "$file" ] || continue ;;
+      drafts | handbacks) [ ! -d "$file" ] || continue ;;
+      .*) ;;
+      *.md)
+        if [ -f "$file" ]; then
+          run_awk "task brief" -v path="$file" -v headings="$BRIEF_HEADINGS" \
+            "$AWK_LIB$AWK_BRIEF" "$file"
+          continue
+        fi
+        ;;
+    esac
+    error "$file" "is no task brief: docs/briefs/ holds briefs (visible *.md files), README.md, drafts/ and handbacks/ only"
   done
   check_handbacks
 }
 
-# Check 11, handbacks: each file in docs/briefs/handbacks/ is named <brief-slug>.md or
-# <brief-slug>.part-<n>.md after the brief docs/briefs/<brief-slug>.md it answers.
+# Check 11, handbacks: each entry of docs/briefs/handbacks/, hidden ones included, is a file named
+# <brief-slug>.md or <brief-slug>.part-<n>.md after the brief docs/briefs/<brief-slug>.md it answers.
 check_handbacks() {
   local file name base slug rule="a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md"
-  for file in docs/briefs/handbacks/*; do
-    [ -e "$file" ] || continue
+  for file in docs/briefs/handbacks/* docs/briefs/handbacks/.[!.]* docs/briefs/handbacks/..?*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
     name="${file##*/}"
     base="${name%.md}"
     slug="$base"
-    if [ "$base" = "$name" ]; then
+    case "$name" in
+      .DS_Store | Thumbs.db) continue ;;
+      .*)
+        error "$file" "$rule; a hidden file is none"
+        continue
+        ;;
+    esac
+    if [ "$base" = "$name" ] || [ ! -f "$file" ]; then
       error "$file" "$rule"
       continue
     fi

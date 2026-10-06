@@ -188,6 +188,39 @@ def test_a_test_file_that_git_ignores_stops_the_session(
     assert "htmlcov/conftest.py" in "\n".join(result.errlines + result.outlines)
 
 
+def test_a_git_that_fails_inside_a_repository_stops_the_session(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard against ignored test files needs Git's answer. Inside a repository a Git that
+    fails (here: a configuration variable of the caller that Git rejects) or that does not start
+    is a usage error; a tree without a repository is the one case in which nothing is asked."""
+    source = 'import pytest\n\n@pytest.mark.req("AVE-REQ-012 AC-1")\ndef test_x():\n    pass\n'
+    monkeypatch.setattr(evidence_plugin, "GIT_ROOT", pytester.path)
+    (pytester.path / "test_seen.py").write_text(source, encoding="utf-8")
+    arguments = ("-p", "tests.evidence_plugin", "-p", "no:cacheprovider")
+    assert not evidence_plugin._in_repository(pytester.path)
+    with monkeypatch.context() as broken:
+        broken.setenv("GIT_CONFIG_COUNT", "abc")
+        assert pytester.runpytest_inprocess(*arguments).ret == pytest.ExitCode.OK
+    subprocess.run(["git", "init", "-q", str(pytester.path)], check=True)  # noqa: S607
+    assert evidence_plugin._in_repository(pytester.path)
+    assert evidence_plugin._in_repository(pytester.mkdir("below"))
+    assert pytester.runpytest_inprocess(*arguments).ret == pytest.ExitCode.OK
+    with monkeypatch.context() as broken:
+        broken.setenv("GIT_CONFIG_COUNT", "abc")
+        result = pytester.runpytest_inprocess(*arguments)
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    output = "\n".join(result.errlines + result.outlines)
+    assert "Git failed (git check-ignore: exit 128" in output
+    assert "inside a repository the session runs only with that answer" in output
+    with monkeypatch.context() as broken:
+        broken.setenv("PATH", str(pytester.mkdir("no-tools")))
+        result = pytester.runpytest_inprocess(*arguments)
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "Git did not start" in "\n".join(result.errlines + result.outlines)
+    assert pytester.runpytest_inprocess(*arguments).ret == pytest.ExitCode.OK
+
+
 PASSING_MODULE = "def test_passes():\n    pass\n"
 
 

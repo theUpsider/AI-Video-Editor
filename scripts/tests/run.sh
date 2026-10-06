@@ -13,9 +13,14 @@
 # criterion tags) goes into the run's evidence directory: a suite's tags count only through that
 # result, and only when the suite exited 0 and its `<NAME> TOTAL: pass=N fail=M` line reports N >= 1
 # and M = 0. A listed suite that exited 0 without running a check, or with a failed check in its own
-# total, fails here (AVE-REQ-097 AC-4: a no-op script and a caught failure establish nothing).
+# total, fails here: a no-op script and a caught failure establish nothing.
 # Every suite builds its fixtures in a temp dir outside every Git work tree and leaves the working
 # tree unchanged; with a temp dir inside a work tree this script stops before the first suite.
+# This file holds no criterion tag: the runner has no suite result of its own, and scripts/evidence.py
+# stops on a comment tag in a file of this directory that is neither a listed suite nor a test_*.py
+# file. The list of suites is the `run_suite <file>` lines at the end of this file, one per line and
+# at the start of the line, which scripts/evidence.py reads; the cases that run this script are in
+# test_evidence.py.
 # Exit: 0 every suite passed · 1 a suite failed · 2 usage error.
 set -uo pipefail
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
