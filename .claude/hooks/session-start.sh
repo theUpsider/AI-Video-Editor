@@ -3,9 +3,9 @@
 #
 # Claude Code adds this script's stdout to Claude's context at startup, resume, clear and compact.
 # It prints a compact "Project state" block: branch, HEAD, the count and the list of uncommitted
-# paths (`git status --short`, at most 20 lines), the last verification result and whether it
-# matches the current tree, the last 8 commits, docs/PROGRESS.md (at most 120 lines) and the
-# instruction to follow the resume-project skill.
+# paths (`git status --short`, at most 20 lines), the result of the last Stop-gate verification
+# and whether it matches the current tree, the last 8 commits, docs/PROGRESS.md (at most 120 lines)
+# and the instruction to follow the resume-project skill.
 #
 # Input:  SessionStart hook JSON on stdin; reads "source".
 # Env:    CLAUDE_PROJECT_DIR (project root; default: two directories above this script).
@@ -53,6 +53,8 @@ print_uncommitted_paths() {
     END { if (NR > max) printf "  [%d more; run git status --short]\n", NR - max }'
 }
 
+# The record is the Stop gate's (scripts/lib/verify-state.sh): a run of ./scripts/verify.sh started
+# by hand leaves it as it is and records its evidence in var/verify/.
 print_verification_state() {
   local record result stamp recorded current freshness
   # shellcheck source=../../scripts/lib/verify-state.sh
@@ -62,7 +64,7 @@ print_verification_state() {
   fi
   record="$(vstate_get last-result)"
   if [ -z "$record" ]; then
-    printf -- '- Last verification: none recorded (run ./scripts/verify.sh)\n'
+    printf -- '- Last verification: none recorded by the Stop gate (run ./scripts/verify.sh)\n'
     return 0
   fi
   read -r result stamp recorded _ <<EOF

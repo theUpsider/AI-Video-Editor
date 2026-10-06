@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/tests/test-verify-tiers.sh — tier selection of scripts/verify.sh (fast ⊂ media ⊂ release),
-# its exit codes and its heavy-media lock, in a fixture project whose component step file registers
-# one marker step per tier plus steps that report the lock state. Needs git, python3, flock and
+# its exit codes, the environment its steps start from and its heavy-media lock, in a fixture
+# project whose component step file registers one marker step per tier plus steps that report the
+# lock state and the environment. Needs git, python3, flock and
 # timeout. Every run uses a lock file in the suite's temp dir, so the suite never waits for a real
 # media run. Exit 0 when every check passes.
 # Checks are strings run by eval, which reads the variables they name.
@@ -76,9 +77,10 @@ fast_step "fast step" true
 fast_step "lock state" sh -c 'echo "lock state: AVE_HEAVY_LOCK_HELD=${AVE_HEAVY_LOCK_HELD:-unset}"'
 media_step "media step" true
 media_step "media tier holds the lock" sh -c "$LOCK_HELD"
-# with LEAVE_PROCESS=<file>: leaves a background process behind and writes its PID to <file>
-media_step "media background process" sh -c '[ -z "${LEAVE_PROCESS:-}" ] ||
-  { sleep 300 </dev/null >/dev/null 2>&1 & echo "$!" >"$LEAVE_PROCESS"; }'
+# with a file <lock file>.leave-process: leaves a background process behind and writes its PID
+# there (the lock file's path is the one variable of the suite that reaches a step)
+media_step "media background process" sh -c 'pidfile="${AVE_HEAVY_LOCK:-}.leave-process"; [ ! -e "$pidfile" ] ||
+  { sleep 300 </dev/null >/dev/null 2>&1 & echo "$!" >"$pidfile"; }'
 release_step "release step" true
 release_step "release tier holds the lock" sh -c "$LOCK_HELD"
 STEPS
@@ -106,25 +108,72 @@ check "missing tier value exits 2" '[ "$CODE" = 2 ]'
 run --fast
 check "unexpected argument exits 2" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | quiet "unexpected argument"'
 
-# AVE-REQ-097 AC-2, AVE-REQ-097 AC-4: the run clears what its caller exported, reads no bytecode
-# from the tree, names this tree in its manifest and starts in a directory that did not exist.
+# AVE-REQ-097 AC-2, AVE-REQ-097 AC-4: the steps start from a named set of variables, read no
+# bytecode from the tree and no module from a user site directory; the run names this tree in its
+# manifest and starts in a directory that did not exist.
 echo "## the run's environment"
 cp "$R/scripts/verify.d/20-backend.sh" "$T/20-fixture.sh"
 cat >> "$R/scripts/verify.d/20-backend.sh" <<'STEPS'
-fast_step "environment" sh -c 'echo "env: PYTEST_ADDOPTS=${PYTEST_ADDOPTS-unset} PYTEST_PLUGINS=${PYTEST_PLUGINS-unset} PYTHONPATH=${PYTHONPATH-unset} VERIFY_TIER=${VERIFY_TIER-unset} GIT_DIR=${GIT_DIR-unset} GIT_WORK_TREE=${GIT_WORK_TREE-unset} BASH_ENV=${BASH_ENV-unset} AUTOLOAD=${PYTEST_DISABLE_PLUGIN_AUTOLOAD-unset} SAFEPATH=${PYTHONSAFEPATH-unset}"
+fast_step "environment names" env
+fast_step "environment" sh -c 'echo "env: AUTOLOAD=${PYTEST_DISABLE_PLUGIN_AUTOLOAD-unset} SAFEPATH=${PYTHONSAFEPATH-unset} NOUSERSITE=${PYTHONNOUSERSITE-unset} HOME=${HOME-unset} TZ=${TZ-unset}"
   case "${PYTHONPYCACHEPREFIX-}" in "" | "$PWD"/*) ;; "$AVE_RUN_SCRATCH"/*) [ -d "$AVE_RUN_SCRATCH" ] && echo "env: bytecode prefix in the scratch directory of the run, outside the tree" ;; esac
   echo "env: scratch $AVE_RUN_SCRATCH"'
+fast_step "python3 step" python3 -c 'print("python3 step ran")'
 STEPS
 mkdir -p "$T/other" && (cd "$T/other" && git init -q && git config user.email t@t && git config user.name t && printf 'x\n' > f && git add -A && git commit -qm other)
 HERE_FP="$(cd "$R" && . scripts/lib/verify-state.sh && vstate_fingerprint)"
 HERE_COMMIT="$(cd "$R" && git rev-parse HEAD)"
-OUT="$(cd "$R" && PYTEST_ADDOPTS=--collect-only PYTEST_PLUGINS=x PYTHONPATH=/nonexistent VERIFY_TIER=media BASH_ENV=/nonexistent GIT_DIR="$T/other/.git" GIT_WORK_TREE="$T/other" ./scripts/verify.sh 2>&1)"; CODE=$?
-check "the steps see none of the caller's Git, Python, pytest or tier variables" '[ "$CODE" = 0 ] && ran media && printf "%s\n" "$OUT" | quiet -x "env: PYTEST_ADDOPTS=unset PYTEST_PLUGINS=unset PYTHONPATH=unset VERIFY_TIER=unset GIT_DIR=unset GIT_WORK_TREE=unset BASH_ENV=unset AUTOLOAD=1 SAFEPATH=1"'
+# A module that Python loads at its start from a user site directory: one under HOME, which is in
+# the named set, and one under a user base the caller names. Each leaves a file beside itself.
+SITE="$(python3 -c 'import sys; print("lib/python%d.%d/site-packages" % sys.version_info[:2])')"
+for base in "$T/home/.local" "$T/userbase"; do
+  mkdir -p "$base/$SITE"
+  printf 'import os\nopen(os.path.join(os.path.dirname(__file__), "loaded"), "a").close()\n' > "$base/$SITE/usercustomize.py"
+done
+(cd "$T" && env -u PYTHONNOUSERSITE HOME="$T/home" python3 -c pass && env -u PYTHONNOUSERSITE PYTHONUSERBASE="$T/userbase" python3 -c pass)
+check "control: without the run, Python loads the module of each user site directory" '[ -e "$T/home/.local/$SITE/loaded" ] && [ -e "$T/userbase/$SITE/loaded" ]'
+rm -f "$T/home/.local/$SITE/loaded" "$T/userbase/$SITE/loaded"
+mkdir -p "$T/tmpdir"
+# The caller sets every variable of the named set, and beside them variables that redirect Git,
+# change what Python, pytest and uv load, name the media tools or the run's own directories, the
+# two option variables that the shell keeps read-only (with the options a script has anyway), an
+# arbitrary name and an exported function that would stand in for `true`. The caller sets no
+# OLDPWD: the shell then exports the one of its own start at the first cd, unless the run unsets it.
+NAMED=(PATH="$PATH" HOME="$T/home" USER=tester LOGNAME=tester TMPDIR="$T/tmpdir" LANG=C.UTF-8 LC_ALL=C.UTF-8
+  TZ=UTC UV_PROJECT_ENVIRONMENT="$T/venv" UV_CACHE_DIR="$T/uv-cache" UV_PYTHON_INSTALL_DIR="$T/uv-python"
+  AVE_HEAVY_LOCK="$AVE_HEAVY_LOCK")
+OUTSIDE=(VERIFY_TIER=media PYTEST_ADDOPTS=--collect-only PYTEST_PLUGINS=x PYTHONPATH=/nonexistent
+  PYTHONHOME=/nonexistent PYTHONSTARTUP=/nonexistent PYTHONOPTIMIZE=2 PYTHONWARNINGS=ignore PYTHONINSPECT=1
+  PYTHONUSERBASE="$T/userbase" PYTHONPYCACHEPREFIX="$R/pycache" UV_ENV_FILE="$T/uv.env" UV_NO_SYNC=1
+  BASH_ENV=/nonexistent ENV=/nonexistent CDPATH=/nonexistent SHELLOPTS=braceexpand:hashall:interactive-comments
+  BASHOPTS=cmdhist GIT_DIR="$T/other/.git"
+  GIT_WORK_TREE="$T/other" GIT_INDEX_FILE=/nonexistent/index GIT_OBJECT_DIRECTORY=/nonexistent
+  GIT_ALTERNATE_OBJECT_DIRECTORIES=/nonexistent GIT_COMMON_DIR=/nonexistent GIT_NAMESPACE=other
+  GIT_CONFIG_COUNT=abc AVE_FFMPEG=/nonexistent/ffmpeg AVE_FFPROBE=/nonexistent/ffprobe
+  AVE_EVIDENCE_DIR=/nonexistent AVE_RUN_SCRATCH=/nonexistent XDG_CONFIG_HOME=/nonexistent
+  CLAUDE_VERIFY_GATE=off ANY_OTHER_NAME=1 'BASH_FUNC_true%%=() { echo "the function of the caller ran"; return 1; }')
+# The names a step sees: the caller's variables of the named set, the run's own, the shell's own.
+EXPECTED_NAMES="$(printf '%s\n' PATH HOME USER LOGNAME TMPDIR LANG LC_ALL TZ UV_PROJECT_ENVIRONMENT UV_CACHE_DIR \
+  UV_PYTHON_INSTALL_DIR AVE_HEAVY_LOCK AVE_HEAVY_LOCK_HELD PYTHONSAFEPATH PYTHONNOUSERSITE \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD PYTHONPYCACHEPREFIX AVE_RUN_SCRATCH AVE_EVIDENCE_DIR PWD SHLVL _ | LC_ALL=C sort | tr '\n' ' ')"
+# names_seen — the variable names in the output of the step that runs `env`.
+names_seen() {
+  printf '%s\n' "$OUT" | awk '/^==> environment names$/ { on = 1; next } /^<== (PASS|FAIL): environment names / { on = 0 }
+    on { sub(/=.*/, ""); print }' | LC_ALL=C sort | tr '\n' ' '
+}
+OUT="$(cd "$R" && env -i "${NAMED[@]}" "${OUTSIDE[@]}" ./scripts/verify.sh 2>&1)"; CODE=$?
+check "the steps see the named set, the run's own variables and no other name" '[ "$CODE" = 0 ] && ran media && [ "$(names_seen)" = "$EXPECTED_NAMES" ]'
+check "the run sets its own Python and pytest variables and passes on the values of the named set" 'printf "%s\n" "$OUT" | quiet -x "env: AUTOLOAD=1 SAFEPATH=1 NOUSERSITE=1 HOME=$T/home TZ=UTC"'
+check "an exported function of the caller stands in for no command of a step" 'ran fast && ! printf "%s\n" "$OUT" | quiet "the function of the caller ran"'
+check "no step loads a module from a user site directory" 'printf "%s\n" "$OUT" | quiet -x "python3 step ran" && [ ! -e "$T/home/.local/$SITE/loaded" ] && [ ! -e "$T/userbase/$SITE/loaded" ]'
 check "the steps read bytecode from the run's scratch directory only" 'printf "%s\n" "$OUT" | quiet -x "env: bytecode prefix in the scratch directory of the run, outside the tree"'
 check "the scratch directory is gone after the run" 's="$(printf "%s\n" "$OUT" | sed -n "s/^env: scratch //p")" && [ -n "$s" ] && [ ! -e "$s" ]'
 check "GIT_DIR and GIT_WORK_TREE of another repository: the manifest names this tree" 'm="$(ls "$R"/var/verify/runs/*/manifest.json | tail -1)" && [ -n "$HERE_FP" ] && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert (d[\"fingerprint\"], d[\"commit\"]) == (sys.argv[2], sys.argv[3]), d" "$m" "$HERE_FP" "$HERE_COMMIT"'
 OUT="$(cd "$R" && bash -c 'for i in 0 1 2 3 4 5; do mkdir -p "var/verify/runs/$(date -u -d "+$i sec" +%Y%m%dT%H%M%SZ)-$$"; done; exec ./scripts/verify.sh' 2>&1)"; CODE=$?
 check "a run directory prepared by the caller is never reused" '[ "$CODE" = 2 ] && printf "%s\n" "$OUT" | quiet "cannot create the run directory" && ! printf "%s\n" "$OUT" | quiet "^==> "'
+# The shell passes on an environment entry whose name is no shell identifier and cannot unset it.
+OUT="$(cd "$R" && env 'not.an-identifier=1' ./scripts/verify.sh 2>&1)"; CODE=$?
+check "an environment entry that the shell cannot unset fails the run before any step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet -x "verify.sh: FAIL — the environment holds names outside the named set of the steps: not.an-identifier" && ! printf "%s\n" "$OUT" | quiet "^==> "'
 
 # AVE-REQ-097 AC-1, AVE-REQ-097 AC-4: a tier runs the registered step files, all of them.
 echo "## step files"
@@ -169,6 +218,24 @@ check "bytecode directories, folder files of the operating system and var/ pass"
 unplant scripts/tests/.DS_Store scripts/__pycache__
 rmdir "$R/scripts/tests" 2>/dev/null || true
 check "the fixture is as committed after the planted files are gone" '[ -z "$(cd "$R" && git status --porcelain --ignored | grep -v "^!! var/")" ]'
+# A Git command that fails inside a work tree proves nothing about ignored files: the step fails.
+# A directory without a repository is the one skip.
+cp "$R/.git/config" "$T/git-config.saved"
+printf '[core\n' > "$R/.git/config"
+run
+check "a repository that Git cannot read fails the ignored-file step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet -F "<== FAIL: $IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails inside the work tree of $R/.git:"'
+cp "$T/git-config.saved" "$R/.git/config"
+cp "$R/.git/index" "$T/git-index.saved"
+printf 'no index\n' > "$R/.git/index"
+run
+check "a listing that Git cannot produce fails the ignored-file step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet -F "<== FAIL: $IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails to list the ignored files of this work tree."'
+cp "$T/git-index.saved" "$R/.git/index"
+run
+check "the restored repository passes the ignored-file step" '[ "$CODE" = 0 ] && passed "$IGNORED_STEP" && [ -z "$(cd "$R" && git status --porcelain)" ]'
+PLAIN="$T/plain-project"
+"$W/make-fixture.sh" "$PLAIN" >/dev/null
+OUT="$(cd "$PLAIN" && ./scripts/verify.sh 2>&1)"; CODE=$?
+check "a directory without a repository skips the ignored-file step" '[ "$CODE" = 0 ] && passed "$IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Skipped: outside a Git work tree (no .git here or above)."'
 
 # AVE-REQ-097 AC-4: a suite whose cases were all skipped establishes nothing.
 echo "## skipped suites"
@@ -182,16 +249,31 @@ cp "$REPO/scripts/verify.d/20-backend.sh" "$R/scripts/verify.d/20-backend.sh"
 mkdir -p "$T/stub" && cat > "$T/stub/uv" <<'STUB' && chmod +x "$T/stub/uv"
 #!/bin/sh
 echo "uv $*"
-case " $* " in *" pytest "*) echo "media tools of pytest $*: ${AVE_FFMPEG-unset} ${AVE_FFPROBE-unset}" ;; esac
+case " $* " in *" pytest "*)
+  echo "media tools of pytest $*: ${AVE_FFMPEG-unset} ${AVE_FFPROBE-unset}"
+  for tool in ffmpeg ffprobe; do
+    found="$(command -v "$tool" || echo none)"
+    said="$("$tool" -version 2>&1)"
+    status=$?
+    echo "$tool on PATH of pytest $*: $found exit $status $(printf '%s\n' "$said" | sed -n 1p)"
+  done ;;
+esac
 STUB
-OUT="$(cd "$R" && env -u AVE_FFMPEG -u AVE_FFPROBE PATH="$T/stub:$PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
-check "the pytest steps take their configuration from pyproject.toml alone" 'printf "%s\n" "$OUT" | quiet -E "^uv run --frozen --quiet --directory backend pytest -c pyproject.toml -q -p no:cacheprovider --forbid-skips --evidence-report=.*/pytest-unit.json -m not media and not slow$"'
+# The caller names media tools of its own: they are outside the named set, so no step sees them.
+OUT="$(cd "$R" && AVE_FFMPEG=/nonexistent/ffmpeg AVE_FFPROBE=/nonexistent/ffprobe PATH="$T/stub:$PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
+check "the pytest steps take their configuration from pyproject.toml alone, and uv reads no environment file" 'printf "%s\n" "$OUT" | quiet -E "^uv run --frozen --quiet --no-env-file --directory backend pytest -c pyproject.toml -q -p no:cacheprovider --forbid-skips --evidence-report=.*/pytest-unit.json -m not media and not slow$"'
+check "every uv call of the backend steps passes --no-env-file" '[ "$(printf "%s\n" "$OUT" | grep -c "^uv run ")" -ge 5 ] && ! printf "%s\n" "$OUT" | grep "^uv run " | quiet -v -- "^uv run --frozen --quiet --no-env-file --directory backend "'
 check "a pytest step that left no report fails" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet "no report: the pytest session ended before it wrote one" && printf "%s\n" "$OUT" | quiet -F "<== FAIL: Backend unit tests"'
 check "the type checker reads no cache from the tree" 'printf "%s\n" "$OUT" | quiet -E "^uv run .* mypy --cache-dir=.*/verify-run\.[^/]*/mypy-cache$" && ! printf "%s\n" "$OUT" | quiet -F -- "--cache-dir=$R/"'
-# AVE-REQ-097 AC-3: the fast tier renders nothing; its tests see media tools that refuse to run.
+# AVE-REQ-097 AC-3: the fast tier renders nothing; its tests see media tools that refuse to run,
+# through the variables that ave.proc reads and by name on PATH.
 MEDIA_STUB="$R/scripts/lib/media-tier-only.sh"
 check "the fast tier's tests see media tools that refuse to run" 'printf "%s\n" "$OUT" | quiet -E "^media tools of pytest .* -m not media and not slow: $MEDIA_STUB $MEDIA_STUB\$"'
-check "the media tier's tests see the real media tools" 'printf "%s\n" "$OUT" | quiet -E "^media tools of pytest .* -m media or slow: unset unset\$"'
+for tool in ffmpeg ffprobe; do
+  check "the fast tier's tests resolve $tool on PATH to a stand-in that exits 1" 'printf "%s\n" "$OUT" | quiet -E "^$tool on PATH of pytest .* -m not media and not slow: /.*/verify-run\.[^/]*/media-tier-only/$tool exit 1 media tools run in the media tier only"'
+  check "the media tier's tests resolve $tool on PATH outside the stand-ins" 'printf "%s\n" "$OUT" | quiet -E "^$tool on PATH of pytest .* -m media or slow: " && ! printf "%s\n" "$OUT" | grep -E "^$tool on PATH of pytest .* -m media or slow: " | quiet "media-tier-only"'
+done
+check "the media tier's tests see the real media tools, whatever the caller named" 'printf "%s\n" "$OUT" | quiet -E "^media tools of pytest .* -m media or slow: unset unset\$"'
 STUB_OUT="$("$MEDIA_STUB" -version 2>&1)"; STUB_CODE=$?
 check "the stand-in exits 1 and names the media tier" '[ "$STUB_CODE" = 1 ] && printf "%s\n" "$STUB_OUT" | quiet "media tools run in the media tier only"'
 cp "$T/20-fixture.sh" "$R/scripts/verify.d/20-backend.sh"
@@ -234,15 +316,25 @@ check "after the release it runs the media tier under the lock" '[ "$CODE" = 0 ]
 mkdir -p "$T/tmpdir"
 OUT="$(cd "$R" && env -u AVE_HEAVY_LOCK TMPDIR="$T/tmpdir" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
 check "default lock file: \$TMPDIR/ave-heavy-media.lock" '[ "$CODE" = 0 ] && passed "media tier holds the lock" && [ -f "$T/tmpdir/ave-heavy-media.lock" ]'
-LEAVE_PROCESS="$T/left.pid" run --tier media
-LEFT="$(cat "$T/left.pid" 2>/dev/null)"
+: > "$AVE_HEAVY_LOCK.leave-process"
+run --tier media
+LEFT="$(cat "$AVE_HEAVY_LOCK.leave-process" 2>/dev/null)"
 check "a process a step leaves behind keeps no lock after the run" '[ "$CODE" = 0 ] && [ -n "$LEFT" ] && kill -0 "$LEFT" 2>/dev/null && flock -n "$AVE_HEAVY_LOCK" true'
 [ -z "$LEFT" ] || kill "$LEFT" 2>/dev/null
+rm -f "$AVE_HEAVY_LOCK.leave-process"
 NO_FLOCK_PATH="$(path_without flock)"
 OUT="$(cd "$R" && PATH="$NO_FLOCK_PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
 check "without flock the media tier fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet "needs flock" && ! printf "%s" "$OUT" | quiet "^==> "'
 OUT="$(cd "$R" && PATH="$NO_FLOCK_PATH" ./scripts/verify.sh 2>&1)"; CODE=$?
 check "without flock the fast tier still runs" '[ "$CODE" = 0 ]'
+# A run that cannot test the lock its caller claims to hold confirms nothing: it fails closed.
+OUT="$(cd "$R" && AVE_HEAVY_LOCK_HELD=1 PATH="$NO_FLOCK_PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
+check "AVE_HEAVY_LOCK_HELD=1 without flock fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet "needs flock" && ! printf "%s" "$OUT" | quiet "^==> "'
+OUT="$(cd "$R" && AVE_HEAVY_LOCK_HELD=1 AVE_HEAVY_LOCK="$T/no-such-directory/heavy-media.lock" ./scripts/verify.sh --tier release 2>&1)"; CODE=$?
+check "AVE_HEAVY_LOCK_HELD=1 with a lock file that cannot be opened fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet "cannot open the heavy-media lock $T/no-such-directory/heavy-media.lock" && ! printf "%s" "$OUT" | quiet "^==> "'
+mkdir -p "$T/failing-flock" && printf '#!/bin/sh\nexit 2\n' > "$T/failing-flock/flock" && chmod +x "$T/failing-flock/flock"
+OUT="$(cd "$R" && AVE_HEAVY_LOCK_HELD=1 PATH="$T/failing-flock:$PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
+check "AVE_HEAVY_LOCK_HELD=1 with a lock that flock cannot test fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet "cannot be tested (flock exit 2)" && ! printf "%s" "$OUT" | quiet "^==> "'
 
 # AVE-REQ-097 AC-4
 echo "## a failing step fails the tier that runs it"

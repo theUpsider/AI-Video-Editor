@@ -12,7 +12,8 @@
 #         continued stop, so the gate stays bounded.
 # Env:    CLAUDE_PROJECT_DIR          project root (default: two directories above this script)
 #         CLAUDE_VERIFY_GATE=off      disables the gate (for humans; never set it to get green)
-#         CLAUDE_VERIFY_MAX_ATTEMPTS  failed attempts until the gate releases (default 3)
+#         CLAUDE_VERIFY_MAX_ATTEMPTS  failed attempts until the gate releases (1 to 10, default 3;
+#                                     with 1 the gate releases at the first failure)
 # Exit:   0  stop allowed: verified, unchanged since the last pass, disabled, or released (then
 #            stdout carries {"systemMessage": "..."})
 #         2  stop blocked: stderr holds the log tail and repair guidance for Claude
@@ -82,8 +83,10 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '
 }
 
-# Prints CLAUDE_VERIFY_MAX_ATTEMPTS when it is an integer from 1 to 10, else the default: a limit
-# of 0 would release at the first failure, and a huge one would block without a practical bound.
+# Prints CLAUDE_VERIFY_MAX_ATTEMPTS when it is an integer from 1 to 10, else the default. The
+# N-th consecutive failure releases, so a limit of N blocks N - 1 times: a limit of 1 never blocks
+# (the first failure releases with the warning and the recorded FAIL), and 10 is the largest
+# number of attempts a session spends on one stop.
 max_attempts() {
   local value="${CLAUDE_VERIFY_MAX_ATTEMPTS:-$DEFAULT_MAX_ATTEMPTS}"
   case "$value" in
@@ -105,8 +108,9 @@ run_verify() {
   ./scripts/verify.sh --tier fast >"$1" 2>&1 </dev/null
 }
 
-# Increments and prints the failed-attempt counter. When the counter cannot be stored, prints a
-# value that still bounds the loop: 1 on a fresh stop (stop_hook_active false), else the maximum.
+# Increments and prints the failed-attempt counter. When the counter cannot be stored, or reads
+# back as another value, prints a value that still bounds the loop: 1 on a fresh stop
+# (stop_hook_active false), else the maximum.
 count_failed_attempt() {
   local stop_active="$1" max="$2" attempts
   attempts="$(vstate_get attempts)"
@@ -114,7 +118,7 @@ count_failed_attempt() {
     "" | *[!0-9]*) attempts=0 ;;
   esac
   attempts=$((attempts + 1))
-  if ! vstate_set attempts "$attempts"; then
+  if ! vstate_set attempts "$attempts" || [ "$(vstate_get attempts)" != "$attempts" ]; then
     if [ "$stop_active" = "false" ]; then attempts=1; else attempts="$max"; fi
   fi
   printf '%s\n' "$attempts"

@@ -6,31 +6,48 @@
 # with bash 3.2.
 #
 # State directory: "$(git rev-parse --git-path claude-verify)" (inside .git, so never committed;
-# one per worktree). Outside a Git work tree, or when that directory is not writable, it falls
-# back to a per-user temporary directory, and fingerprints are unavailable (no caching).
-# Record files:
-#   last-pass    fingerprint of the last tree that passed ./scripts/verify.sh
-#   last-result  "PASS|FAIL <ISO-8601 UTC> <fingerprint|none>" of the last run
-#   last.log     full output of the last run
+# one per worktree). Outside a Git work tree, or when that directory is not writable, the records
+# go to a per-user temporary directory.
+# Record files, written by the Stop gate (.claude/hooks/stop-verify.sh) alone:
+#   last-pass    fingerprint of the last tree on which a Stop-gate run passed
+#   last-result  "PASS|FAIL <ISO-8601 UTC> <fingerprint|none>" of the last Stop-gate run
+#   last.log     full output of the last Stop-gate run
 #   attempts     consecutive failed Stop-gate attempts
+# A run of ./scripts/verify.sh started any other way (by hand, by CI) leaves these records as they
+# are; its result is the manifest in var/verify/ (scripts/evidence.py).
 #
-# Fingerprint: the tree hash of the full working-tree content, untracked non-ignored files
-# included, built in a temporary copy of the index with a throwaway object directory (it reads
-# the real object store and writes nothing to it). It ignores HEAD, so committing keeps a pass
-# valid, while any content change (tracked or untracked) invalidates it. Hashing time grows with
-# untracked and modified non-ignored content, so generated media and render outputs belong in
-# .gitignore. A tree that contains a submodule or embedded repository gets no fingerprint (Git
-# records only its commit), so the Stop gate always runs verify.sh there.
-# A tree the fingerprint cannot see gets none either (AVE-REQ-097 AC-2): an index flag
-# (assume-unchanged, skip-worktree) hides an edit of a tracked file, a filter attribute rewrites
-# what Git hashes, and an ignore rule outside the .gitignore files (.git/info/exclude, the user's
-# excludes file) hides an untracked file. A working file whose line ends differ from its
-# normalized blob (CRLF under `eol=lf`) adds its raw bytes to the fingerprint.
+# Fingerprint (AVE-REQ-097 AC-2): the hash of a sorted listing with one entry per path that
+# `git ls-files --cached --others --exclude-per-directory=.gitignore` names, which is every index
+# entry and every untracked file that no .gitignore file of the tree ignores. An entry holds
+#   - the mode of the index entry, or `untracked`;
+#   - the state of the working file, read from the file system: `missing`, `other` (a directory
+#     or a special file at the path of an index entry), `link` with the hash of the link text, or
+#     `file-x` / `file--` (a regular file with or without the executable bit) with the hash of the
+#     file's raw bytes (`git hash-object --no-filters`);
+#   - the path.
+# The listing is made of the bytes and the executable bit a step reads. The index gives the paths
+# and the committed mode and nothing else: an index flag (assume-unchanged, skip-worktree,
+# fsmonitor-valid), an attribute (filter, ident, text, eol), a line-end conversion, an ignore rule
+# outside the .gitignore files (.git/info/exclude, core.excludesFile) and the fsmonitor and
+# untracked-cache state change no entry. HEAD takes no part, so a commit keeps a pass valid;
+# staging a new file changes its entry from `untracked` to its index mode.
+# A Windows host keeps no executable bit: every regular file counts as `file-x` there, which is
+# what the development container reads through its mount of the same checkout, so both print one
+# value for one checkout.
+# A symbolic link enters with its link text: the file it points to is fingerprinted when it is a
+# listed path itself, and stays outside the fingerprint when it lies outside the tree or is ignored.
+# Hashing time grows with the listed content, so generated media and render outputs belong in
+# .gitignore.
+# A tree keeps no fingerprint, so that the Stop gate always runs verify.sh there and no evidence
+# reads fresh, when it holds a gitlink (submodule) or an embedded repository (Git records only its
+# commit), a listed path that begins with a double quote, holds a line feed or ends with a
+# carriage return (no line of `git hash-object --stdin-paths` names it), or a listed file that
+# cannot be read, and whenever a Git command of the listing fails.
 
 # This checkout only: no Git variable of the caller points the commands at another repository,
-# index or object store.
+# index or object store, or adds configuration to them.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
-  GIT_COMMON_DIR GIT_NAMESPACE
+  GIT_COMMON_DIR GIT_NAMESPACE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
 
 # True inside a Git work tree.
 vstate_in_git() {
@@ -84,73 +101,81 @@ vstate_set() {
   return 1
 }
 
-# True when the working tree holds something the fingerprint cannot see (header). awk reads each
-# whole listing, which keeps the pipeline status reliable under pipefail.
-vstate_blind() {
-  local listed visible
-  git ls-files -v 2>/dev/null | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit !found }' && return 0
-  git -c core.quotePath=false ls-files --cached --others --exclude-standard 2>/dev/null |
-    git check-attr --stdin filter 2>/dev/null |
-    awk '!/: filter: (unspecified|unset)$/ { found = 1 } END { exit !found }' && return 0
-  listed="$(git ls-files --others --exclude-per-directory=.gitignore 2>/dev/null | wc -l)"
-  visible="$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)"
-  [ "$listed" = "$visible" ] || return 0
-  return 1
+# vstate_ls_files <options> — the NUL-separated path listing of the fingerprint (header). Git 2.55
+# gives this listing the same paths with and without the two settings (measured under an fsmonitor
+# hook and the untracked cache, in the container and under Git for Windows): they pin the listing
+# for a Git that would consult either state.
+vstate_ls_files() {
+  git -c core.fsmonitor=false -c core.untrackedCache=false ls-files -z "$@" 2>/dev/null
 }
 
-# Prints the fingerprint of the current working tree. Returns 1 outside Git, on any Git error and
-# for a tree the fingerprint cannot see.
-vstate_fingerprint() {
-  local dir real_index objects tmp_index tmp_objects tree divergent path status=1
-  vstate_in_git || return 1
-  vstate_blind && return 1
-  dir="$(vstate_dir)" || return 1
-  real_index="$(git rev-parse --git-path index 2>/dev/null)" || return 1
-  objects="$(git rev-parse --git-path objects 2>/dev/null)" || return 1
-  case "$objects" in
-    /*) ;;
-    *) objects="$(pwd)/$objects" ;;
+# Prints one record "<index mode | untracked><TAB><path><NUL>" per index entry and per untracked
+# file that no .gitignore file ignores, then one empty record. Returns 1, without the empty
+# record, when a Git command failed: a listing without it is incomplete.
+vstate_listing() {
+  local record tracked
+  vstate_ls_files -s --cached | while IFS= read -r -d '' record; do
+    printf '%s\t%s\0' "${record%% *}" "${record#*$'\t'}"
+  done
+  tracked="${PIPESTATUS[0]}"
+  vstate_ls_files --others --exclude-per-directory=.gitignore | while IFS= read -r -d '' record; do
+    printf 'untracked\t%s\0' "$record"
+  done
+  [ "$tracked${PIPESTATUS[0]}" = 00 ] || return 1
+  printf '\0'
+}
+
+# vstate_entry <index mode | untracked> <path> — adds one entry to the listing that the calling
+# vstate_fingerprint builds: its line to $entries and, for a regular file, its path to $regular
+# (the files whose bytes are hashed, in the order of their entries). Returns 1 for a path that
+# leaves the tree without a fingerprint (header).
+vstate_entry() {
+  local mode="$1" path="$2" state
+  [ "$mode" != 160000 ] || return 1
+  case "$path" in
+    */ | '"'* | *$'\n'* | *$'\r') return 1 ;;
   esac
-  tmp_index="$dir/fingerprint-index.$$"
-  tmp_objects="$dir/fingerprint-objects.$$"
-  rm -rf "$tmp_index" "$tmp_objects"
-  if [ -f "$real_index" ] && ! cp "$real_index" "$tmp_index" 2>/dev/null; then
-    rm -f "$tmp_index"
-    return 1
+  if [ -L "$path" ]; then
+    state="$(readlink -- "$path" 2>/dev/null | git hash-object --stdin 2>/dev/null)"
+    [ -n "$state" ] || return 1
+    state="link $state"
+  elif [ -f "$path" ]; then
+    if [ "$no_mode_bits" = 1 ] || [ -x "$path" ]; then state="file-x"; else state="file--"; fi
+    regular+="$path"$'\n'
+  elif [ -e "$path" ]; then
+    state="other"
+  else
+    state="missing"
   fi
-  # New blobs and trees go to a throwaway object directory that reads the real store as an
-  # alternate, so fingerprinting never adds objects to the repository. A gitlink (submodule or
-  # embedded repository) records only its commit, so such a tree gets no fingerprint. awk reads
-  # the whole listing, which keeps the pipeline status reliable under pipefail.
-  if mkdir -p "$tmp_objects" &&
-    GIT_INDEX_FILE="$tmp_index" GIT_OBJECT_DIRECTORY="$tmp_objects" \
-      GIT_ALTERNATE_OBJECT_DIRECTORIES="$objects" git add -A >/dev/null 2>&1 &&
-    ! GIT_INDEX_FILE="$tmp_index" git ls-files -s 2>/dev/null |
-      awk '$1 == "160000" { found = 1 } END { exit !found }' &&
-    tree="$(GIT_INDEX_FILE="$tmp_index" GIT_OBJECT_DIRECTORY="$tmp_objects" \
-      GIT_ALTERNATE_OBJECT_DIRECTORIES="$objects" git write-tree 2>/dev/null)"; then
-    # Git hashes a text file in its normalized form: a working file with other line ends joins
-    # the fingerprint with its raw bytes, so the bytes a step reads are the bytes fingerprinted.
-    divergent="$(GIT_INDEX_FILE="$tmp_index" git -c core.quotePath=false ls-files --eol 2>/dev/null |
-      awk -F'\t' '{ split($1, state, " "); if (state[2] == "w/crlf" || state[2] == "w/mixed") print $2 }')"
-    if [ -n "$divergent" ]; then
-      tree="$({
-        printf '%s\n' "$tree"
-        printf '%s\n' "$divergent" | while IFS= read -r path; do
-          printf '%s %s\n' "$(git hash-object --no-filters -- "$path" 2>/dev/null)" "$path"
-        done
-      } | git hash-object --stdin 2>/dev/null)" || tree=""
-    fi
-    if [ -n "$tree" ]; then
-      printf '%s\n' "$tree"
-      status=0
-    fi
-  fi
-  rm -rf "$tmp_index" "$tmp_index.lock" "$tmp_objects"
-  return "$status"
+  entries+="$mode"$'\t'"$state"$'\t'"$path"$'\n'
 }
 
-# Records the outcome of a verify run: vstate_record PASS|FAIL <fingerprint, may be empty>.
+# Prints the fingerprint of the current working tree (header). Returns 1 outside Git and for a
+# tree that keeps no fingerprint.
+vstate_fingerprint() {
+  vstate_in_git || return 1
+  (
+    cd "./$(git rev-parse --show-cdup 2>/dev/null)" 2>/dev/null || exit 1
+    entries="" regular="" complete=0 no_mode_bits=0 hashes=""
+    case "$(uname -s 2>/dev/null)" in
+      MINGW* | MSYS* | CYGWIN*) no_mode_bits=1 ;;
+    esac
+    while IFS= read -r -d '' record; do
+      if [ -z "$record" ]; then
+        complete=1
+        continue
+      fi
+      vstate_entry "${record%%$'\t'*}" "${record#*$'\t'}" || exit 1
+    done < <(vstate_listing | LC_ALL=C sort -z)
+    [ "$complete" -eq 1 ] || exit 1
+    if [ -n "$regular" ]; then
+      hashes="$(printf '%s' "$regular" | git hash-object --no-filters --stdin-paths 2>/dev/null)" || exit 1
+    fi
+    printf '%s%s\n' "$entries" "$hashes" | git hash-object --stdin 2>/dev/null
+  )
+}
+
+# Records the outcome of a Stop-gate run: vstate_record PASS|FAIL <fingerprint, may be empty>.
 vstate_record() {
   local result="$1" fingerprint="${2:-}" now
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
