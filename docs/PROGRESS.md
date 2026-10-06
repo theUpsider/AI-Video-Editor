@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: the fixes of the final review are integrated on `m0-final-integration`; the five M0 requirements are in `verification`._
+_Last updated: 2026-10-07 — M0 open: the second review round returned no upheld PASS; the fix round for its findings is briefed._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -17,25 +17,25 @@ Host: Windows 11 ARM64; every check runs in the development container (`scripts/
 
 ## Current objective
 
-Finish M0: review AVE-REQ-093/094/096/097/098 on the integration branch (reviewer and skeptic per requirement),
-move the five to `done` in the order 093 → 094 → 096/097/098, bring the branch into the working branch and
+Finish M0: close the findings of the second review round on AVE-REQ-093/094/096/097/098
+([fix brief](briefs/2026-10-07-m0-review-2-fixes.md)), review again (brief first, status `verification` first),
+move the five to `done` in the order 093 → 094 → 096/097/098, bring this branch into the working branch and
 `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## In progress
 
-- Integration branch `m0-final-integration` (this file's branch): the working branch with the three tracks of
-  the fix round `wf_5cd13360-464` ([brief](briefs/2026-10-06-m0-final-review-fixes.md), handback parts 1 to 3
-  in `docs/briefs/handbacks/`) and the AVE-REQ-094 task branch merged in. The 13 blocking findings of the first
-  round are closed: characters and headings of requirement files by allow-list and container-aware reading, an
-  exact milestone Status line, steps that start from a named set of variables, a fingerprint made of the bytes
-  the steps read, media stand-ins first on `PATH`, tags only in files a runner runs, the exact Stop command,
-  GPU nodes counted as character devices that open; each non-blocking finding is fixed or stated as a limit.
-- AVE-REQ-093/094/096/097/098 `verification`. Review run from
-  [its brief](briefs/2026-10-06-m0-final-review-2b.md) at `f996c17`: launched 2026-10-06 as workflow
-  `wf_b18a5f3e-54e` ([script](workflows/m0-final-review-2.js)); verdicts not recorded; on resume without a
-  recorded verdict, re-run the Workflow tool with that script and
-  `{commit: 'f996c170a4e75ad25b06f36babf8699843012c92'}` plus the model arguments. The working branch receives
-  this branch after the reviews pass (`CLAUDE.md` § Delegation).
+- Integration branch `m0-final-integration` (this file's branch): the working branch with the fix round
+  `wf_5cd13360-464` and the AVE-REQ-094 task branch merged in; the working branch receives it after the reviews.
+- Second review round `wf_b18a5f3e-54e` at `f996c17`, verdicts recorded 2026-10-07 (handback parts 1 to 5 of
+  [its brief](briefs/2026-10-06-m0-final-review-2b.md)): AVE-REQ-093, AVE-REQ-094 and AVE-REQ-097 FAIL with two
+  blocking findings each; AVE-REQ-096 PASS refuted on AC-4 and AVE-REQ-098 PASS refuted on AC-2. All five are
+  `in-progress` (Status logs hold each finding); the 13 blocking findings of the first round are closed.
+- Fix round briefed in [the fix brief](briefs/2026-10-07-m0-review-2-fixes.md): tracks A (AVE-REQ-093),
+  C (AVE-REQ-094), B1 (run environment, hooks) and B2 (checker, evidence tool), each with a statement audit
+  ([WF-010](WORKFLOW_LOG.md)). Not launched when this file was written: create a worktree per track from the
+  brief's commit (`git worktree add .claude/worktrees/m0-r2-fixes-<track> -b m0-r2-fixes-<track> <commit>`),
+  then run the Workflow tool with `docs/workflows/m0-review-2-fixes.js` and the arguments its header names.
+  The lead closes AVE-REQ-096 and the lead-owned documents beside it.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -48,21 +48,19 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring the bran
 
 ## Next recommended work
 
-1. Launch the review run from its brief; file each report as a handback part; on every upheld PASS tick the
-   ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
-2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
-3. `milestone-review` M0; record the result in ROADMAP.md.
-4. Launch M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` in isolated worktrees from the commit
-   that closes M0 (each draft becomes a brief with that hash first).
+1. Launch the fix round as § In progress states; merge its four branches here with `--no-commit`, apply the
+   proposed document text, pass `./scripts/verify.sh --tier release`, commit, push, wait for green CI.
+2. Third review round from a new brief (status `verification` first; two reviewer clones at most); on every
+   upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+3. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
+4. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/`.
 
 ## Blockers
 
-Host disk: drive C: held 5.2 GB free of 237 GB on 2026-10-06 (98 % used). A clone with its run data takes
-about 60 MB and its backend environment 24 MB, so reviews proceed; the human frees space before M1 adds render
-outputs (Docker's build cache holds about 9 GB that `docker builder prune` reclaims). External gaps, each with
-its unblock action:
-[ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § External gaps (provider credentials, a GPU device
-visible to the container, downloaded speech and vision models).
+Host disk: drive C: held 5.5 GB free of 237 GB on 2026-10-07; reviews proceed two clones at a time
+([ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § Limits item 5), and the human frees space before
+M1 adds render outputs (`docker builder prune` reclaims about 9 GB). External gaps with their unblock actions
+(provider credentials, a GPU device visible to the container, speech and vision models): § External gaps there.
 
 ## Known failures
 
@@ -70,16 +68,15 @@ None.
 
 ## Important recent decisions
 
-- [ASM-020](ASSUMPTIONS.md) — a resumed parallel workflow continues through a continuation script with the completed stages as facts.
-- [ASM-017](ASSUMPTIONS.md) — the heavy-media lock file lives on the shared state volume, so private clones serialize too.
-- [ASM-011](ASSUMPTIONS.md) — the baseline is anchored by the pinned SHA-256 of its manifest.
-- [ASM-008](ASSUMPTIONS.md) — revised: jitter stays uncorrected while its peak-to-peak spread is below 10 ms; AVE-REQ-104 proposed.
-- [ADR-009](decisions/ADR-009-linux-development-container-for-other-hosts.md) — Windows and macOS hosts verify inside a Linux development container.
+- [WF-011](WORKFLOW_LOG.md) — reviewer clones and the lead's own code work count toward the concurrency limits.
+- [WF-010](WORKFLOW_LOG.md) — a fix track ends with a statement audit of its requirement file.
+- [ASM-030](ASSUMPTIONS.md) — check 12 fails every loop word in a hook command.
+- [ASM-026](ASSUMPTIONS.md) — requirement files hold the characters of an allow-list.
+- [ASM-025](ASSUMPTIONS.md) — the steps of verify.sh start from a named set of variables.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS on the integration tree before its first commit (development container,
-arm64; 13 of 13 steps); CI (x86_64) release tier green at `b573d65` on `m0-final-integration`, after the one
-failure at `fc66eb3` ([WF-009](WORKFLOW_LOG.md)); GitHub holds the state of later pushes. The fast tier (11
-steps) passes on the working tree at every stop (Stop gate); the committed tree of `56e5864` failed it
-([WF-006](WORKFLOW_LOG.md)).
+`./scripts/verify.sh --tier release` PASS on the integration tree before its first commit and in the reviewer
+clones at `f996c17` (development container, arm64; 13 of 13 steps); CI (x86_64) release tier green at `fc068d8`
+on `m0-final-integration`, after the one failure at `fc66eb3` ([WF-009](WORKFLOW_LOG.md)); GitHub holds the
+state of later pushes. The fast tier (11 steps) passes on the working tree at every stop (Stop gate).

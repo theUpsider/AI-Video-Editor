@@ -2,7 +2,7 @@
 id: AVE-REQ-094
 title: Capability-aware native dynamic workflows
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -111,3 +111,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — verification — repair in place on branch `ave-req-094-probe-evidence`, merged with the working branch; independent verification requested again (lead)
 - 2026-10-06 — in-progress — verify-requirement FAIL at `d4147d8` (workflow `wf_7d9d015c-906`; [handback part 6](../briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-6.md)): AC-1 — the node rule counted every entry that is no directory and whose name starts with `nvidia<digit>` or `renderD<digit>`, so `nvidia0.txt`, a FIFO or a dangling link read as a GPU, and the suite's nodes were regular files, which left eight mutants of the rule alive. Repaired by the lead on the task branch: an entry counts when it is a character device with the whole name `nvidia<N>` or `renderD<N>` that opens for this user; a node without access is reported as such; the `nvidia-smi` query always runs under `timeout -k 2`; the suite builds its nodes as links to `/dev/null` and gained the reviewer's names, kinds, numbers, access and row cases (155 checks), and 38 mutants of the probe each fail it (lead)
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
+- 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 2](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-2.md)): AC-1 — the node rule judges names on lines of `find` output and opens with a form that creates a missing path, so a device name that holds a line feed reads as a GPU and the probe writes a file; the network clause of § Verification strategy claims both states for each of the seven hosts while two hosts answer in both scenarios; AC-2 to AC-4 PASS. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track C (lead)

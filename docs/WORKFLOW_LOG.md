@@ -264,3 +264,49 @@ Not an improvement entry: the measured starting point that later entries compare
 - Measured before/after result: before, the local release tier passed and CI failed. After: the checker fails the
   tree of `fc66eb3` in its first step; three mutants of the rule each fail a named case.
 - Keep or revert, with reason: keep; the check costs one Git call per entry point.
+
+### WF-010 — 2026-10-07 — Two review rounds found requirement-file statements that no check pins
+- Observed failure and evidence: the second round of the final M0 review (`wf_b18a5f3e-54e` at `f996c17`)
+  returned FAIL for AVE-REQ-093, AVE-REQ-094 and AVE-REQ-097 and a refuted PASS for AVE-REQ-096 and AVE-REQ-098,
+  after the 13 blocking findings of the first round were closed. Each of the six blocking findings and both
+  refutations is a sentence of § Edge cases, § Verification strategy or § Implementation evidence (or of a
+  record it cites) that holds for the forms a fix listed and fails for a neighbouring form: a footnote as a
+  container, raw HTML other than a comment in the roadmap, a device name with a line feed, an ignored file
+  outside four directories, a cache in the tree, a hook named in a comment, a limit the runs exceeded
+  ([handback parts 1 to 5](briefs/handbacks/2026-10-06-m0-final-review-2b.part-1.md)).
+- Root-cause hypothesis: a fix closes the reported form and adds a sentence about its class; nothing compares
+  each sentence with a case that fails without it, so the reviewer is the first to test the sentence.
+- One proposed workflow/skill/context change: a fix track ends with a statement audit of its requirement's three
+  sections. Per sentence that states a behavior it names the suite case and the mutant that fails it, adds the
+  case, rewords the sentence, or words it as a limit with its inspection; a sentence with "every", "no other",
+  "only", "never" or "whenever" holds through an allow-list or names its forms. The table goes into the handback
+  ([fix brief](briefs/2026-10-07-m0-review-2-fixes.md) § Dependencies and constraints).
+- Expected metric and fixed evaluation set (plus held-out cases): blocking findings per review round that cite a
+  requirement-file statement; evaluation set: the third review round of the five M0 requirements. Held-out: the
+  first reviews of M1 requirements.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, 13 in round one and 8 in round two (6 blocking findings, 2 refutations).
+  After: measured at the third round.
+- Keep or revert, with reason: keep until measured; the audit costs one pass per requirement file.
+
+### WF-011 — 2026-10-07 — A recorded resource limit that three runs exceeded
+- Observed failure and evidence: `docs/ENVIRONMENT_CAPABILITIES.md` § Limits item 5 said since `d4147d8` that
+  reviewer clones go one at a time while drive `C:` is 98 % full. The three runs launched after it
+  (`wf_7d9d015c-906`, `wf_5cd13360-464`, `wf_b18a5f3e-54e`) worked two at a time, 31 backend environments had
+  gathered on the state volume (744 MiB), and the lead repaired AVE-REQ-094 code (`b4f503f`) while two writers
+  of the fix round ran. The skeptic refuted the PASS of AVE-REQ-096 AC-4 with these records
+  ([handback part 3](briefs/handbacks/2026-10-06-m0-final-review-2b.part-3.md)).
+- Root-cause hypothesis: the limit was written from the free-space figure without a measurement of a clone's
+  footprint, and `develop` § 4 counted launched writing agents only: neither clones nor the lead's own code
+  work, which the baseline's limit of two concurrent code-writing tasks includes.
+- One proposed workflow/skill/context change: `develop` § 4 Concurrency limits counts reviewer clones (at most
+  two; each removes its backend environment, its container and itself) and the lead's own code work among the
+  two writers; item 5 states the measured footprint and the limit that follows from it.
+- Expected metric and fixed evaluation set (plus held-out cases): runs whose records exceed a stated limit;
+  evaluation set: the fix round from the brief of 2026-10-07 and the third review round. Held-out: the launches
+  of M1 and M2.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, 3 of 3 runs above the stated clone limit and one overlap of three code
+  writers. After: measured on the two runs of the evaluation set.
+- Keep or revert, with reason: keep; the count is one line of the launch record, and the cleanup returned
+  577 MiB of the state volume.

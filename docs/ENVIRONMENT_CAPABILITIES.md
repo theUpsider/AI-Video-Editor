@@ -127,9 +127,14 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 4. Live provider, agent-runtime, vision and GPU tests cannot run here (no credentials, no GPU device); their
    adapters get contract tests, and the release report lists each as externally unverified with the exact
    prerequisite (§ External gaps).
-5. Disk: 5.2 GiB free on the host on 2026-10-06 (19 GiB on 2026-10-02); the development image takes 1.3 GiB, and render outputs stay in gitignored
-   or container-local paths. Each private clone gets its own backend environment on the state volume, so reviewer clones and
-   release-tier runs go one at a time until the human frees space on `C:`.
+5. Disk: 5.5 GiB free on the host on 2026-10-07 (19 GiB on 2026-10-02); the development image takes 1.3 GiB,
+   and render outputs stay in gitignored or container-local paths. Measured on 2026-10-07: a private clone
+   with its run data takes 42 to 60 MiB on the host and its backend environment 24 MiB on the state volume,
+   where a removed clone leaves that environment behind (31 had gathered, 744 MiB; the lead removed the 28
+   of removed clones). The limit that follows from the footprint: at most two reviewer clones exist at a
+   time, each removes its backend environment before it stops its container (`develop` § 4 Concurrency
+   limits, [WF-011](WORKFLOW_LOG.md)), and release-tier runs serialize on the heavy-media lock. The human
+   frees space on `C:` before M1 adds render outputs.
 6. Evidence on the Docker Desktop bind mount: one reviewer clone observed a completed release run's directory
    and `latest-release.json` absent about 40 s after the run, while its harness had executed the background
    verify launch twice and the second run's manifest persisted; the lead has not reproduced it

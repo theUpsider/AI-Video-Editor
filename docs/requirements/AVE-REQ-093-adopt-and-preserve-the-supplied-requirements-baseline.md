@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -174,3 +174,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — in-progress — verify-requirement FAIL at `2df637f` (workflow `wf_7d9d015c-906`; [handback part 5](../briefs/handbacks/2026-10-03-m0-gates-red-team.part-5.md)): AC-3 — headings in list-item and quote form that a Markdown reader renders passed the canonical form, as did invisible characters outside five Unicode classes, and a milestone Status spelled `done.` or `Done` escaped the rule for finished milestones; two statements were false (a module named `__future__` beside the checker ran before its restart, and the done step refuses a test that did not run in the release tier only). Fixes through [the fix brief](../briefs/2026-10-06-m0-final-review-fixes.md) (lead)
 - 2026-10-06 — in-progress — fixes of the final review merged on branch `m0-final-integration` ([fix brief](../briefs/2026-10-06-m0-final-review-fixes.md), [handback part 1](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-1.md)): characters by allow-list, headings judged behind leading spaces and container markers, raw HTML outside code spans refused, one exact Status line per milestone entry, roadmap lists by template label, the restart as the checker's first statements with the guarantee scoped to the isolated start, marks of sixteen digits, status rules for imported requirements, features and epics. ADR-003 decision 5 names the change marker by its opening words and stays as accepted (an accepted ADR admits typo and link fixes); `docs/requirements/README.md` holds the full form of each marker (lead)
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
+- 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 1](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-1.md)): AC-3 — a heading on the first line of a footnote definition passes the canonical form while GitHub renders it, and in `docs/ROADMAP.md` raw HTML other than a comment and a Status line in another emphasis form pass, so two consequences that § Edge cases states do not hold; AC-1, AC-2 and AC-4 PASS, and the blocking findings of the first round are closed. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track A (lead)

@@ -2,7 +2,7 @@
 id: AVE-REQ-097
 title: Verification gates that cannot pass as placeholders
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -115,3 +115,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — in-progress — fixes of the final review merged on branch `m0-final-integration` from the tracks B1 and B2 of [the fix brief](../briefs/2026-10-06-m0-final-review-fixes.md) (handback parts [2](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-2.md) and [3](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-3.md)): the steps start from a named set of variables, the fingerprint is made of the bytes, the executable bit and the index mode of every listed path, media stand-ins lead `PATH` in the fast tier, a comment tag in a file no runner runs stops the evidence tool, check 12 holds the exact Stop command; the lead added the restart of `scripts/evidence.py` before its first import. Edge cases state the limits that remain local state (lead)
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
 - 2026-10-06 — verification — CI failed the release tier at `fc66eb3`, the first commit of the integration branch: the merge had dropped the executable bit of `scripts/tests/run.sh` in the Git index, which the development container cannot see through its mount. The mode is restored, and check 2 now reads the index mode of every entry point and covers the suites, their runner and the media stand-in (six cases); the review starts from the commit that holds this fix (lead)
+- 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 4](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-4.md)): AC-2 and AC-4 — a file that a `.gitignore` rule ignores outside the four checked directories (a `backend/ave.pyc`, a `.gitignore` in a subdirectory that hides `mypy.ini` and `ruff.toml`) takes part in the steps and in no fingerprint or ignored-file step, and ruff keeps its cache in the tree, against § Implementation evidence and ASM-023; AC-1 and AC-3 PASS. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), tracks B1 and B2 (lead)

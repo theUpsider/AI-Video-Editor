@@ -2,7 +2,7 @@
 id: AVE-REQ-096
 title: Isolated bounded tasks and independent review
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -101,3 +101,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — in-progress — verify-requirement FAIL at `2df637f` (workflow `wf_7d9d015c-906`; [handback part 7](../briefs/handbacks/2026-10-03-m0-gates-red-team.part-7.md)): AC-2 — no recorded writer prompt carried the base-commit equality check the strategy named (three runs confirmed the branch name), and seven review runs since the brief rule started without a brief while an Edge case said such a task is never launched. `develop` § 4 and § 6 and the implementer and tester definitions now state both rules for the cases that occurred, the Edge cases and the strategy state what the records show, and [WF-008](../WORKFLOW_LOG.md) records the deviation; the non-blocking items go through [the fix brief](../briefs/2026-10-06-m0-final-review-fixes.md) (lead)
 - 2026-10-06 — in-progress — fixes of the final review merged on branch `m0-final-integration` ([fix brief](../briefs/2026-10-06-m0-final-review-fixes.md), handback parts [2](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-2.md) and [3](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-3.md)): an inherited `AVE_HEAVY_LOCK_HELD=1` fails closed without `flock` or a usable lock file; check 11 judges a section without its HTML comments and fails any other entry of `docs/briefs/`; ASM-018 names the forms that count as a commit; the writers of the fix run confirmed their base commit by equality, as their prompts in `docs/workflows/m0-final-review-fixes.js` ask (lead)
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
+- 2026-10-07 — in-progress — verify-requirement PASS at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 3](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-3.md)) refuted by the skeptic: AC-4 — `docs/ENVIRONMENT_CAPABILITIES.md` § Limits item 5 let reviewer clones go one at a time, and the three runs since that line used two, so the record named as evidence stated a limit the runs exceeded; AC-1 to AC-3 upheld. The lead restates the limit from the measured footprint, counts reviewer clones and the lead's own code work in `develop` § 4 ([WF-011](../WORKFLOW_LOG.md)) and closes the six non-blocking items; the checker cases go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track B2 (lead)
