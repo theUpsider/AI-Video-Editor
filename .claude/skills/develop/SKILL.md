@@ -184,6 +184,14 @@ At most two writing agents (implementer, tester, architect, writing workflow age
 1. Inspect `git status` and `git diff`: every change belongs to this unit; no secret, debug output or stray file.
 2. Commit the requirement's code, tests, evidence, traceability and progress together: `AVE-REQ-NNN: <imperative summary>`.
 3. Commit other coherent units on their own: refinement batches, accepted ADRs, re-planning (`docs: …`), refactors (`refactor: …`). Never bundle unrelated changes.
+4. A commit made from a subset of the working tree (a pathspec, a partly staged index, untracked files left for a later commit) holds a tree no local check saw. A file a later commit adds is linked only from that later commit or after it, and the committed tree is checked before the push (WF-006):
+
+   ```sh
+   git worktree add -q --detach .claude/worktrees/commit-check HEAD
+   (cd .claude/worktrees/commit-check && ./scripts/check-project-control.sh); git worktree remove --force .claude/worktrees/commit-check
+   ```
+
+   On a host that verifies in the development container the check runs as `./scripts/dev-container.sh ./scripts/check-project-control.sh`.
 
 ## 10. Discovered work
 

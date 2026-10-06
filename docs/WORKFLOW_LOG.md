@@ -179,3 +179,24 @@ Not an improvement entry: the measured starting point that later entries compare
   measurement is needed.
 - Keep or revert, with reason: keep; a queued run costs its agent waiting time, and the limit holds on every
   host where the agents share one lock file. Raising the limit needs the measurement `develop` § 4 names.
+
+### WF-006 — 2026-10-06 — A partial commit holds a tree no local check saw
+- Observed failure and evidence: commit `56e5864` (2026-10-03) changed AVE-REQ-097's Status log to link
+  [the gates brief](briefs/2026-10-03-m0-gates-red-team.md) while the brief stayed untracked for the next
+  commit. The fast tier passed locally, because the file existed in the working tree; CI's release tier failed
+  for that commit in step "Project control files" (a broken link to the brief). The next commit `35f99c5`
+  added the brief and CI passed from there on. `main` was untouched.
+- Root-cause hypothesis: `./scripts/verify.sh` checks the working tree; a commit made from a subset of it
+  (here a pathspec exclusion) creates a tree that no local check saw.
+- One proposed workflow/skill/context change: `develop` § 9 step 4: a file a later commit adds is linked only
+  from that commit or after it, and after a partial commit the lead checks the committed tree in a detached
+  worktree before the push (the command stands there).
+- Expected metric and fixed evaluation set (plus held-out cases): red CI commits caused by a partial commit;
+  evaluation set: the committed trees of `56e5864` and `35f99c5` checked with the step-4 command. Held-out: the
+  partial commits of the following milestones.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, one red CI commit on the working branch (`56e5864`). With the step-4
+  command, measured on 2026-10-06: the tree of `56e5864` fails with the same broken-link error CI reported,
+  the tree of `35f99c5` passes.
+- Keep or revert, with reason: keep; the check takes under a minute and the working branch stays green commit
+  by commit, which the fast-forward rule for `main` relies on.
