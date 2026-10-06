@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-07 — M0 open: the second review round returned no upheld PASS; the fix round for its findings is briefed._
+_Last updated: 2026-10-07 — M0 open: the second review round returned no upheld PASS; the fix round for its findings was launched._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -30,12 +30,13 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring this bra
   [its brief](briefs/2026-10-06-m0-final-review-2b.md)): AVE-REQ-093, AVE-REQ-094 and AVE-REQ-097 FAIL with two
   blocking findings each; AVE-REQ-096 PASS refuted on AC-4 and AVE-REQ-098 PASS refuted on AC-2. All five are
   `in-progress` (Status logs hold each finding); the 13 blocking findings of the first round are closed.
-- Fix round briefed in [the fix brief](briefs/2026-10-07-m0-review-2-fixes.md): tracks A (AVE-REQ-093),
+- Fix round from [the fix brief](briefs/2026-10-07-m0-review-2-fixes.md) at `07eceb1`: tracks A (AVE-REQ-093),
   C (AVE-REQ-094), B1 (run environment, hooks) and B2 (checker, evidence tool), each with a statement audit
-  ([WF-010](WORKFLOW_LOG.md)). Not launched when this file was written: create a worktree per track from the
-  brief's commit (`git worktree add .claude/worktrees/m0-r2-fixes-<track> -b m0-r2-fixes-<track> <commit>`),
-  then run the Workflow tool with `docs/workflows/m0-review-2-fixes.js` and the arguments its header names.
-  The lead closes AVE-REQ-096 and the lead-owned documents beside it.
+  ([WF-010](WORKFLOW_LOG.md)), in worktrees on branches `m0-r2-fixes-a`, `-c`, `-b1`, `-b2`. Launched 2026-10-07
+  as workflow `wf_6c06f19f-506`; results not recorded; on resume without a recorded result, look for a commit on
+  each branch and re-run the Workflow tool with `docs/workflows/m0-review-2-fixes.js` and
+  `{base: '07eceb1aa1693df708c240642f837d8838be175a', only: [the open tracks]}` plus the trailer and model
+  arguments. The lead closes AVE-REQ-096 and the lead-owned documents beside it.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -48,7 +49,7 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring this bra
 
 ## Next recommended work
 
-1. Launch the fix round as § In progress states; merge its four branches here with `--no-commit`, apply the
+1. File the handbacks of the fix round; merge its four branches here with `--no-commit`, apply the
    proposed document text, pass `./scripts/verify.sh --tier release`, commit, push, wait for green CI.
 2. Third review round from a new brief (status `verification` first; two reviewer clones at most); on every
    upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
