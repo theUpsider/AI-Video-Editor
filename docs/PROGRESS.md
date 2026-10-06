@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: red-team and critic findings of AVE-REQ-093/097 fixed; the AVE-REQ-094 accelerator verdict next; then five reviews._
+_Last updated: 2026-10-06 — M0 open: every red-team and review finding is fixed; the final review round of the five M0 requirements is launched._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,22 +23,21 @@ from the drafts.
 
 ## In progress
 
-- AVE-REQ-093 and AVE-REQ-097 `in-progress`: the red-team pass ([brief](briefs/2026-10-03-m0-gates-red-team.md),
-  runs `wf_98f469f7-ec5` and `wf_44376763-43f`) is complete: 55 findings from six lenses, all fixed on this branch
-  with the disposition of each in [handback part 1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md)
-  (AVE-REQ-093) and [part 2](briefs/handbacks/2026-10-03-m0-gates-red-team.part-2.md) (AVE-REQ-097), and a
-  mutation check of the new rules (160 mutants, each caught by a named case). The critics returned four
-  findings for AVE-REQ-093 ([part 3](briefs/handbacks/2026-10-03-m0-gates-red-team.part-3.md)) and ten for
-  AVE-REQ-097 ([part 4](briefs/handbacks/2026-10-03-m0-gates-red-team.part-4.md)), all fixed here. Next: one
-  review each with a skeptic at the final commit.
-- AVE-REQ-094 `in-progress` here and `verification` on branch `ave-req-094-probe-evidence` (pushed, `eb73896`):
-  the review `wf_db16f332-fdf` returned FAIL for AC-1
-  ([handback part 5](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-5.md)): the accelerator verdict
-  counts names in `/dev`. Next: count GPU devices only on the task branch, add the reviewer's cases, release
-  tier there, review again.
-- AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883`, challenges upheld; the red-team fixes
-  changed files both rely on (the heavy-media lock, the Stop gate, check 12), so both are verified again at the
-  final commit together with AVE-REQ-093 and AVE-REQ-097.
+- Final review round of M0, launched 2026-10-06 as workflow `wf_7d9d015c-906`
+  ([script](workflows/verify-m0-final-wf_7d9d015c-906.js)): `verify-requirement` with a skeptic for AVE-REQ-093,
+  AVE-REQ-097, AVE-REQ-096 and AVE-REQ-098 at `2df637f` and for AVE-REQ-094 at `d4147d8` (branch
+  `ave-req-094-probe-evidence`, pushed, status `verification` there). Verdicts not recorded; on resume without a
+  recorded verdict, re-run the Workflow tool with that script and
+  `{commit: '2df637f', commit094: 'd4147d8'}` (`only: ['AVE-REQ-NNN', …]` limits the run).
+- What the round judges: the red-team pass ([brief](briefs/2026-10-03-m0-gates-red-team.md)) returned 55 lens
+  findings and 14 critic findings for AVE-REQ-093 and AVE-REQ-097, all fixed with their dispositions in handback
+  parts [1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md),
+  [2](briefs/handbacks/2026-10-03-m0-gates-red-team.part-2.md),
+  [3](briefs/handbacks/2026-10-03-m0-gates-red-team.part-3.md) and
+  [4](briefs/handbacks/2026-10-03-m0-gates-red-team.part-4.md) (160 mutants of the new rules, each caught by a
+  named case); AVE-REQ-094's accelerator verdict counts GPU devices only after the FAIL of `wf_db16f332-fdf`
+  ([handback part 5](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-5.md)); AVE-REQ-096 and
+  AVE-REQ-098 are verified again because the fixes changed files both rely on.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -67,8 +66,9 @@ from the drafts.
 
 ## Blockers
 
-Host disk: drive C: held 5.1 GB free of 237 GB on 2026-10-06 (measured by the AVE-REQ-094 review). The human
-frees space there; until then reviewer clones and release-tier runs go one at a time. External gaps, each with
+Host disk: drive C: held 5.2 GB free of 237 GB on 2026-10-06 (98 % used). A clone with its run data takes
+about 60 MB and its backend environment 24 MB, so reviews proceed; the human frees space before M1 adds render
+outputs (Docker's build cache holds about 9 GB that `docker builder prune` reclaims). External gaps, each with
 its unblock action:
 [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § External gaps (provider credentials, a GPU device
 visible to the container, downloaded speech and vision models).
@@ -87,8 +87,6 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS at `eb73896` on the AVE-REQ-094 task branch (development container,
-arm64; 12 of 12 steps); CI (x86_64) release tier green at `f894bbf` on this branch, the newest commit CI had
-verified when this file was written, and red for the one commit `56e5864` ([WF-006](WORKFLOW_LOG.md)). GitHub
-holds the state of later pushes. The fast tier (11 steps since the ignored-file step joined it) passes on every commit
-of this branch (Stop gate).
+`./scripts/verify.sh --tier release` PASS at `d4147d8` on the AVE-REQ-094 task branch, which holds the working
+branch merged in (development container, arm64; 13 of 13 steps). CI (x86_64) release tier green at `2df637f` on this branch, the newest commit CI had verified when this file was written; GitHub holds the state of later pushes. The fast tier (11 steps) passes on every
+commit of this branch (Stop gate).
