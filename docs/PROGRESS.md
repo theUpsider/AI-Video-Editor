@@ -31,7 +31,7 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring the bran
   the steps read, media stand-ins first on `PATH`, tags only in files a runner runs, the exact Stop command,
   GPU nodes counted as character devices that open; each non-blocking finding is fixed or stated as a limit.
 - AVE-REQ-093/094/096/097/098 `verification`. The review run starts from
-  [its brief](briefs/2026-10-06-m0-final-review-2.md); not launched when this file was written, and a launch is
+  [its brief](briefs/2026-10-06-m0-final-review-2b.md); not launched when this file was written, and a launch is
   recorded here with its run ID and re-run command. The working branch receives this branch after the reviews
   pass (`CLAUDE.md` § Delegation).
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
@@ -76,8 +76,8 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS at `d4147d8` on the AVE-REQ-094 task branch and in four reviewer
-clones at `2df637f` (development container, arm64; 13 of 13 steps). CI (x86_64) release tier green at `2df637f`,
-the newest commit CI had verified when this file was written; GitHub holds the state of later pushes. The fast
-tier (11 steps) passes on the working tree at every stop (Stop gate); the committed tree of `56e5864` failed it
+`./scripts/verify.sh --tier release` PASS on the integration tree before its first commit (development container,
+arm64; 13 of 13 steps); CI (x86_64) release tier green at `b573d65` on `m0-final-integration`, after the one
+failure at `fc66eb3` ([WF-009](WORKFLOW_LOG.md)); GitHub holds the state of later pushes. The fast tier (11
+steps) passes on the working tree at every stop (Stop gate); the committed tree of `56e5864` failed it
 ([WF-006](WORKFLOW_LOG.md)).

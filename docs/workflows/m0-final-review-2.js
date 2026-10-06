@@ -1,4 +1,4 @@
-// Second round of the final M0 review, from docs/briefs/2026-10-06-m0-final-review-2.md: one reviewer per
+// Second round of the final M0 review, from docs/briefs/2026-10-06-m0-final-review-2b.md: one reviewer per
 // requirement following verify-requirement in a private clone, and a skeptic for each PASS; two lanes at a time.
 // Launch arguments: {commit: '<full hash of the brief commit on m0-final-integration>', model: '<tier alias>',
 // effort: '<effort level>', only: ['AVE-REQ-NNN', ...] (optional)}. The model alias arrives as an argument, so
@@ -13,7 +13,7 @@ export const meta = {
 }
 
 const ROOT = 'C:/dev/AI-Video-Editor'
-const BRIEF = 'docs/briefs/2026-10-06-m0-final-review-2.md'
+const BRIEF = 'docs/briefs/2026-10-06-m0-final-review-2b.md'
 const COMMIT = args.commit
 const ONLY = args.only || null
 const AGENT = { model: args.model, effort: args.effort }
