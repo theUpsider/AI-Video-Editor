@@ -3,6 +3,10 @@
 CLAUDE.local.md
 .claude/worktrees/
 
+# Local state of agent tools. It is ignored here, in the tree: a rule in .git/info/exclude or a
+# global ignore file leaves the tree without a fingerprint (scripts/lib/verify-state.sh).
+.serena/
+
 # Local environment files and secrets
 .env
 .env.local
