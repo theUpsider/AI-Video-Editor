@@ -21,13 +21,13 @@ container (4 vCPU, 15 GiB, egress proxy); Git history holds its record.
 | Item | Observation | How observed |
 |---|---|---|
 | Host OS | Windows 11 Home 10.0.26200, ARM64; shell Git Bash (MSYS, x86_64 emulation) | `uname -a`, system information |
-| Host CPU / memory / disk | Snapdragon X Plus, 8 cores; 15.6 GiB; 16 GiB free of 237 GiB on `C:` (94 % used) on 2026-10-06, 19 GiB on 2026-10-02 | `Get-CimInstance`, `df -h`; probe `disk (repository)` |
+| Host CPU / memory / disk | Snapdragon X Plus, 8 cores; 15.6 GiB; 5.2 GiB free of 237 GiB on `C:` (98 % used) on 2026-10-06, 19 GiB on 2026-10-02 | `Get-CimInstance`, `df -h`; probe `disk (repository)` |
 | Host toolchain | Git 2.55.0, uv 0.11.29, Python 3.14 only, no `python3` command, no FFmpeg; Docker Desktop with the WSL 2 backend | command checks |
 | Native verification on the host | Unsupported: the fast tier failed 5 of 9 steps (no `python3`; backend unit tests reject Windows paths) | `./scripts/verify.sh` before ADR-009 |
 | Container OS / kernel | Ubuntu 24.04.5 LTS, Linux 6.18 (WSL 2) aarch64 | probe |
 | Container CPU / memory | 8 CPUs, 7.5 GiB plus 2 GiB swap; no cgroup limit (`memory.max` reads `max`), so `/proc/meminfo` shows the total of the Docker Desktop WSL 2 virtual machine; `lscpu` names no CPU model on this arm64 kernel (probe `cpu model unknown`) | probe, `free -h`; [research handback](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-1.md) § Oracles |
 | Container limits | 1 048 576 open files; runs as root (uid 0); the checkout is a writable bind mount at `/workspace` | `ulimit -n`; probe § Claude Code and session |
-| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`; probe verdict `accelerator: none (no device)`), so no GPU path is verifiable | probe § Accelerators |
+| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`; probe verdict `accelerator: none (no device)`), so no GPU path is verifiable. The verdict counts per-GPU nodes (`/dev/nvidia<N>`), render nodes (`/dev/dri/renderD<N>`) and a `nvidia-smi` GPU row with a memory figure; a render node of a software or virtual DRM driver also reads present, so `present` states that a device node exists and the tests of the requirement that uses the device show whether it works | probe § Accelerators |
 | CI | GitHub Actions `ubuntu-24.04` x86_64 runner, release tier on every push | `.github/workflows/verify.yml` |
 
 ## Tooling
@@ -127,8 +127,9 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 4. Live provider, agent-runtime, vision and GPU tests cannot run here (no credentials, no GPU device); their
    adapters get contract tests, and the release report lists each as externally unverified with the exact
    prerequisite (§ External gaps).
-5. Disk: 16 GiB free on the host on 2026-10-06 (19 GiB on 2026-10-02); the development image takes 1.3 GiB, and render outputs stay in gitignored
-   or container-local paths.
+5. Disk: 5.2 GiB free on the host on 2026-10-06 (19 GiB on 2026-10-02); the development image takes 1.3 GiB, and render outputs stay in gitignored
+   or container-local paths. Each private clone gets its own backend environment on the state volume, so reviewer clones and
+   release-tier runs go one at a time until the human frees space on `C:`.
 6. Evidence on the Docker Desktop bind mount: one reviewer clone observed a completed release run's directory
    and `latest-release.json` absent about 40 s after the run, while its harness had executed the background
    verify launch twice and the second run's manifest persisted; the lead has not reproduced it

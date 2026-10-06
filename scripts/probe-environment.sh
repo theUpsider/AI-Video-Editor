@@ -10,8 +10,9 @@
 # variable is set. The other Claude Code capabilities (workflow tool, subagents, models, hooks,
 # permission mode) are not visible to a shell; docs/ENVIRONMENT_CAPABILITIES.md records them.
 # Test inputs: AVE_PROBE_DEV_DIR replaces /dev (device nodes), AVE_PROBE_PROC_DIR replaces /proc
-# (meminfo, cpuinfo) and AVE_PROBE_ROOT replaces the repository root that the disk, Git and
-# writability lines measure.
+# (meminfo, cpuinfo), AVE_PROBE_ROOT replaces the repository root that the disk, Git and
+# writability lines measure, and AVE_PROBE_SMI_TIMEOUT replaces the 10 s limit of the nvidia-smi
+# query.
 # Not part of verify.sh: network results depend on the environment's policy.
 set -uo pipefail
 
@@ -22,7 +23,7 @@ OFFLINE=0
 case "${1:-}" in
   "") ;;
   --offline) OFFLINE=1 ;;
-  -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: ./scripts/probe-environment.sh [--offline]\n' >&2; exit 2 ;;
 esac
 
@@ -49,23 +50,39 @@ item "disk (repository)" "$(df -h "$ROOT" 2>/dev/null | awk 'NR == 2 { print $4 
 
 section "Accelerators"
 gpu=""
+# smi_query — the GPU list of nvidia-smi, cut off after the time limit: a driver query that hangs
+# counts as a failure.
+smi_query() {
+  if have timeout; then
+    timeout "${AVE_PROBE_SMI_TIMEOUT:-10}" nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+  else
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+  fi
+}
 if have nvidia-smi; then
-  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory>": without a driver
-  # or a device it prints a diagnostic and fails, and a diagnostic is no device.
-  if smi="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null)"; then
-    gpu="$(printf '%s\n' "$smi" | grep -m1 -E '^[^,]*[^,[:space:]][^,]*,[[:space:]]*[^,[:space:]][^,]*$')"
+  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory> MiB": without a
+  # driver or a device it prints a diagnostic and fails, and a line without a memory figure is a
+  # diagnostic or a header, no device.
+  if smi="$(smi_query 2>/dev/null)"; then
+    gpu="$(printf '%s\n' "$smi" | grep -m1 -E '^.*[^,[:space:]].*,[[:space:]]*[0-9]+ MiB$')"
   fi
   item "nvidia-smi" "${gpu:-no GPU reported}"
 else
   item "nvidia-smi" "not installed"
 fi
-nvidia_nodes="$(find "$DEV_DIR" -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
+# Listed: every entry named nvidia* and every entry of dri. Counted: the per-GPU nodes only,
+# nvidia<N> and dri/renderD<N>. Driver control nodes (nvidiactl, nvidia-uvm, nvidia-modeset,
+# nvidia-caps), display-only nodes (dri/card<N>) and directories (dri/by-path) exist on hosts
+# without a GPU this environment can compute on.
+nvidia_nodes="$(find "$DEV_DIR" -mindepth 1 -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
 dri_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 2>/dev/null | sort | tr '\n' ' ')"
+gpu_nodes="$(find "$DEV_DIR" -mindepth 1 -maxdepth 1 ! -type d -name 'nvidia[0-9]*' 2>/dev/null | sort | tr '\n' ' ')"
+render_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 ! -type d -name 'renderD[0-9]*' 2>/dev/null | sort | tr '\n' ' ')"
 item "/dev/nvidia* devices" "${nvidia_nodes:-none}"
 item "/dev/dri devices" "${dri_nodes:-none}"
-# The verdict counts devices only (a GPU row of nvidia-smi, device nodes): FFmpeg's built-in
-# hardware encoders (Media tools) need one.
-evidence="$(printf '%s' "${gpu:+$gpu }$nvidia_nodes$dri_nodes" | sed 's/ *$//')"
+# The verdict counts GPU devices only (a GPU row of nvidia-smi, per-GPU device nodes): FFmpeg's
+# built-in hardware encoders (Media tools) need one.
+evidence="$(printf '%s' "${gpu:+$gpu }$gpu_nodes$render_nodes" | sed 's/ *$//')"
 if [ -n "$evidence" ]; then
   printf 'accelerator: present (%s)\n' "$evidence"
 else

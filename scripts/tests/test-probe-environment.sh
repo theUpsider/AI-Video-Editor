@@ -283,6 +283,9 @@ check "no credential value is printed" '! printf "%s\n" "$OUT" | quiet -F "$SECR
 NAMES="$(printf '%s\n' "$OUT" | awk '/^## Product credential variables/ { on = 1; next } /^## / { on = 0 } on && NF { print $1 }')"
 UNLISTED=""; for name in $NAMES; do grep -q "^$name=" "$REPO/.env.example" 2>/dev/null || UNLISTED="$UNLISTED $name"; done
 check "every reported credential variable is listed in .env.example (missing:${UNLISTED:- none})" '[ -n "$NAMES" ] && [ -z "$UNLISTED" ]'
+# The provider variables of .env.example (every name outside the AVE_ settings), each reported once.
+PROVIDER_NAMES="$(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$REPO/.env.example" | grep -v '^AVE_' | sort | tr '\n' ' ')"
+check "the report names exactly the provider variables of .env.example ($PROVIDER_NAMES)" '[ "$(printf "%s\n" $NAMES | sort | tr "\n" " ")" = "$PROVIDER_NAMES" ]'
 
 OUT="$(PATH="$T/bin:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-gpu" "$PROBE" --offline 2>&1)"; CODE=$?
 # AVE-REQ-094 AC-1
@@ -320,6 +323,50 @@ smi_run gpunode 0 "$T/dev-gpu" "$GPU_ROW"
 check "GPU row and device node: accelerator: present names both" 'printf "%s\n" "$OUT" | quiet -xF "accelerator: present ($GPU_ROW $T/dev-gpu/nvidia0)"'
 smi_run drivernode 9 "$T/dev-gpu" "NVIDIA-SMI has failed"
 check "nvidia-smi fails while a device node exists: accelerator: present names the node alone" 'printf "%s\n" "$OUT" | quiet -xF "accelerator: present ($T/dev-gpu/nvidia0)"'
+
+# AVE-REQ-094 AC-1: the verdict counts GPU devices only. The per-GPU nodes nvidia<N> and
+# dri/renderD<N> count; driver control nodes, display-only nodes, directories and every other
+# entry of /dev are listed or ignored and never make an accelerator.
+mkdir -p "$T/dev-plain/shm" "$T/dev-ctl/nvidia-caps" "$T/dev-render/dri" "$T/dev-both/dri" \
+  "$T/dev-card/dri/by-path" "$T/nvidia-empty" "$T/dev-file" "$T/dev-dirnode/nvidia0" "$T/dev-dirnode/dri/renderD128"
+: > "$T/dev-plain/null"; : > "$T/dev-plain/sda"
+: > "$T/dev-ctl/nvidiactl"; : > "$T/dev-ctl/nvidia-uvm"; : > "$T/dev-ctl/nvidia-uvm-tools"; : > "$T/dev-ctl/nvidia-modeset"
+: > "$T/dev-render/dri/renderD128"
+: > "$T/dev-both/nvidia0"; : > "$T/dev-both/dri/renderD128"; : > "$T/dev-both/dri/card0"
+: > "$T/dev-card/dri/card0"
+: > "$T/dev-file/nvidia-readme.txt"
+NONE='accelerator: none (no device)'
+verdict() { printf '%s\n' "$OUT" | quiet -xF "$1" && [ "$(printf '%s\n' "$OUT" | grep -c '^accelerator:')" = 1 ]; }
+dev_run() { OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$1" "$PROBE" --offline 2>&1)"; CODE=$?; }
+dev_run "$T/dev-plain"
+check "ordinary /dev entries (null, sda, a directory): accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE" && has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none'
+dev_run "$T/dev-ctl"
+check "driver control nodes without a GPU node: listed, and accelerator: none (no device)" 'verdict "$NONE" && has "^/dev/nvidia\* devices +.*/nvidia-caps .*/nvidia-uvm .*/nvidiactl *$"'
+smi_run ctlnodevice 6 "$T/dev-ctl" "No devices were found"
+check "control nodes with nvidia-smi answering 'No devices were found' (exit 6): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
+dev_run "$T/dev-render"
+check "a DRI render node: accelerator: present names it" 'verdict "accelerator: present ($T/dev-render/dri/renderD128)"'
+dev_run "$T/dev-both"
+check "a GPU node and a render node: accelerator: present names both and leaves the display node out" 'verdict "accelerator: present ($T/dev-both/nvidia0 $T/dev-both/dri/renderD128)" && has "^/dev/dri devices +.*/card0 .*/renderD128 *$"'
+dev_run "$T/dev-card"
+check "a display-only DRI node and dri/by-path: listed, and accelerator: none (no device)" 'verdict "$NONE" && has "^/dev/dri devices +.*/by-path .*/card0 *$"'
+dev_run "$T/nvidia-empty"
+check "an empty device directory whose own name starts with nvidia: accelerator: none (no device)" 'verdict "$NONE" && has_line "/dev/nvidia* devices" none'
+dev_run "$T/dev-file"
+check "a file named nvidia-readme.txt is no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
+dev_run "$T/dev-dirnode"
+check "directories named nvidia0 and dri/renderD128 are no devices: accelerator: none (no device)" 'verdict "$NONE"'
+for ANSWER in "Sorry, no GPU is attached to this machine" "name, memory.total [MiB]" "[N/A], [N/A]"; do
+  smi_run comma 0 "$T/dev-none" "$ANSWER"
+  check "nvidia-smi exits 0 with '$ANSWER' (a comma, no memory figure): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
+done
+smi_run commaname 0 "$T/dev-none" "Acme GPU, Model X, 8192 MiB"
+check "a GPU name that holds a comma: the row is reported and counts" 'has_line nvidia-smi "Acme GPU, Model X, 8192 MiB" && verdict "accelerator: present (Acme GPU, Model X, 8192 MiB)"'
+mkdir -p "$T/smi-hang"
+printf '#!/bin/sh\nexec sleep 30\n' > "$T/smi-hang/nvidia-smi"; chmod +x "$T/smi-hang/nvidia-smi"
+STARTED=$SECONDS
+OUT="$(PATH="$T/smi-hang:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_SMI_TIMEOUT=1 "$PROBE" --offline 2>&1)"; CODE=$?
+check "an nvidia-smi that hangs is cut off at its time limit and counts as no GPU" '[ "$CODE" = 0 ] && [ "$((SECONDS - STARTED))" -lt 20 ] && has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
 
 # AVE-REQ-094 AC-1: fixture inputs that differ from this host: the CPU count follows getconf, the
 # memory and CPU model follow meminfo and cpuinfo, the OS user follows id, and writability follows
@@ -416,6 +463,10 @@ cat > "$FAKE/google-chrome" <<'EOF'
 #!/bin/sh
 printf '%s\n' 'Google Chrome 139.0.7258.66 probe-fake' 'google-chrome second line'
 EOF
+cat > "$FAKE/chromium-browser" <<'EOF'
+#!/bin/sh
+printf '%s\n' 'Chromium 138.0.7204.100 probe-fake-browser' 'chromium-browser second line'
+EOF
 chmod +x "$FAKE"/*
 make_fake_curl "$T/net-offline"
 FAKE_PATH="$FAKE:$T/net-offline/bin:$BARE_PATH"
@@ -429,7 +480,7 @@ for SPEC in "ffmpeg -hide_banner -version" "ffprobe -hide_banner -version" "pyth
   check "fake $TOOL first on PATH: equals the first line of '$SPEC' ($EXPECTED)" 'has_line "$TOOL" "$EXPECTED" && no_line "$NEXT"'
 done
 check "fake df first on PATH: disk equals its Avail and Size fields for the repository ($DISK_FAKE)" 'has_line "disk (repository)" "$DISK_FAKE"'
-for TOOL in chromium google-chrome; do
+for TOOL in chromium chromium-browser google-chrome; do
   EXPECTED="$(first_line "$FAKE_PATH" "$TOOL" --version)"; NEXT="$(second_line "$FAKE_PATH" "$TOOL" --version)"
   check "fake $TOOL on PATH: reported with the first line of its --version ($EXPECTED)" 'has_line "$TOOL" "$EXPECTED" && no_line "$NEXT"'
 done
@@ -472,8 +523,9 @@ net_run() {
   NET="$T/net-$name"
   make_fake_curl "$NET" "$@"
   OUT="$(PATH="$NET/bin:$NOCURL_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" ANTHROPIC_API_KEY="$SECRET" \
-    OPENAI_API_KEY="$SECRET" HF_TOKEN="$SECRET" "$PROBE" 2>&1)"; CODE=$?
+    OPENAI_API_KEY="$SECRET" OPENAI_BASE_URL="$SECRET" HF_TOKEN="$SECRET" "$PROBE" 2>&1)"; CODE=$?
   check "$name: probe exits 0" '[ "$CODE" = 0 ]'
+  check "$name: the four provider variables read set" 'has "^ANTHROPIC_API_KEY +set$" && has "^OPENAI_API_KEY +set$" && has "^OPENAI_BASE_URL +set$" && has "^HF_TOKEN +set$"'
   for rec in "$@"; do
     KEY="${rec%% *}"; result="${rec#* }"; result="${result%% *}"
     case "$result" in fail:*) WANT="unreachable" ;; *) WANT="HTTP $result" ;; esac
