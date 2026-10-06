@@ -203,13 +203,14 @@ def done(source=None):
     put(one(source), text.replace("status: " + status, "status: done", 1).replace("- [ ] AC-", "- [x] AC-"))
     add_log(source, "2026-10-03", "done", "verify-requirement PASS (lead)")
 
-def parent_done(pattern, tick=True):
+def parent_done(pattern, tick=True, logged=True):
     """Marks an epic or feature done on paper: status, ticked boxes and a done log line."""
     text = read(pattern)
     status = re.search(r"(?m)^status: (.*)$", text).group(1)
     text = text.replace("status: " + status, "status: done", 1)
     put(one(pattern), text.replace("- [ ] ", "- [x] ") if tick else text)
-    add_log(pattern, "2026-10-03", "done", "milestone-review PASS (lead)")
+    if logged:
+        add_log(pattern, "2026-10-03", "done", "milestone-review PASS (lead)")
 
 def rep_entry(group, old, new):
     """Replaces the first <old> at or after the heading of a roadmap group (M<n> or Deferred)."""
@@ -516,6 +517,18 @@ expect "heading behind a wide list marker fails"     1 "a heading inside a list 
 -     ## Acceptance criteria'"
 expect "heading behind an ordered marker in a quote fails" 1 "a heading inside a list item or quote ('> 1)   ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
 > 1)   ## Acceptance criteria'"
+expect "heading behind a star bullet fails"          1 "a heading inside a list item or quote ('* ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
+* ## Acceptance criteria'"
+expect "heading behind a plus bullet fails"          1 "a heading inside a list item or quote ('+ ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
++ ## Acceptance criteria'"
+expect "heading behind an ordered marker fails"      1 "a heading inside a list item or quote ('1. ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
+1. ## Acceptance criteria'"
+expect "heading right behind a quote sign fails"     1 "a heading inside a list item or quote ('>## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
+>## Acceptance criteria'"
+expect "bare hashes in a quote fail"                 1 "a heading inside a list item or quote ('> ###')" "sub '$R001' '## Edge cases' '## Edge cases
+> ###'"
+expect "bare hashes on a line fail"                  1 "'###' is no template heading of a REQ file" "sub '$R001' '## Edge cases' '## Edge cases
+###'"
 expect "underlined heading inside a quote fails"     1 "a line of = or - underlines a heading or draws a rule ('> ===')" "sub '$R001' '## Edge cases' '## Edge cases
 > Acceptance criteria
 > ===
@@ -529,6 +542,12 @@ expect "underlined heading inside a list item fails" 1 "a line of = or - underli
     ==='"
 expect "underline behind a list marker fails"        1 "a line of = or - underlines a heading or draws a rule ('- ---')" "sub '$R001' '## Edge cases' '## Edge cases
 - ---'"
+expect "underline with trailing spaces fails"        1 "a line of = or - underlines a heading or draws a rule ('===  ')" "sub '$R001' '## Edge cases' '## Edge cases
+Acceptance criteria
+===  '"
+expect "one-character underline fails"               1 "a line of = or - underlines a heading or draws a rule ('=')" "sub '$R001' '## Edge cases' '## Edge cases
+Acceptance criteria
+='"
 expect "underlined heading in a feature's list section fails" 1 "AVE-FEAT-001-projects-and-media-collection.md: canonical form: line 21: a line of = or - underlines a heading or draws a rule ('> ---')" "mut 'text = read(R + \"AVE-FEAT-001-*.md\"); line = [l for l in text.split(\"\n\") if \"](AVE-REQ-002-\" in l][0]; put(one(R + \"AVE-FEAT-001-*.md\"), text.replace(line, \"> Out of scope for version one\n> ---\n\" + line, 1))'"
 expect "list items and quotes without a heading pass" 0 "OK: baseline intact" "sub '$R001' '## Edge cases' '## Edge cases
 10. See the revised list.
@@ -543,6 +562,8 @@ expect "combining grapheme joiner fails"             1 "U+034F is no character o
 expect "Hangul choseong filler fails"                1 "U+115F is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x115F) + \"here.\n\")'"
 expect "letter outside the allow-list fails"         1 "U+00E9 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nCaf\" + chr(0xE9) + \".\n\")'"
 expect "tab fails"                                   1 "U+0009 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(9) + \"here.\n\")'"
+expect "delete character fails"                       1 "U+007F is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x7F) + \"here.\n\")'"
+expect "unit separator fails"                         1 "U+001F is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x1F) + \"here.\n\")'"
 expect "signs of the allow-list pass"                0 "OK: baseline intact" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nSigns: \" + \" \".join(chr(c) for c in (0xA7, 0xB1, 0x2013, 0x2014, 0x2192, 0x2265, 0x2282)) + \" and ~.\n\")'"
 expect "heading outside the template fails"          1 "'## Scope note' is no template heading of a REQ file" "sub '$R001' '## Edge cases' '## Scope note
 AC-2 is informational.
@@ -750,11 +771,16 @@ expect "feature done while its requirements are unfinished fails" 1 "AVE-FEAT-00
 expect "feature done with one unfinished requirement fails" 1 "AVE-FEAT-014-visual-indexing-and-understanding.md: status done while AVE-REQ-066 is 'ready' (1 unfinished of 3 children)" "mut 'done(req(65)); parent_done(R + \"AVE-FEAT-014-*.md\")'"
 expect "epic done while a feature is unfinished fails" 1 "AVE-EPIC-02-editing-and-composition.md: status done while AVE-FEAT-002 is 'ready' (2 unfinished of 2 children)" "mut 'parent_done(R + \"AVE-EPIC-02-*.md\")'"
 expect "feature box ticked before done fails"        1 "AVE-FEAT-002-manual-timeline-and-history.md: a box of § Feature acceptance is ticked while status is 'ready' and the Status log has no done line" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"- [x] \")'"
-expect "capital-X feature box before done fails"     1 "a box of § Feature acceptance is ticked while status is 'ready'" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"- [X] \")'"
+expect "capital-X feature box under a plus bullet fails" 1 "a box of § Feature acceptance is ticked while status is 'ready'" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"+ [X] \")'"
+expect "star-bullet feature box before done fails"   1 "a box of § Feature acceptance is ticked while status is 'ready'" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"* [x] \")'"
+expect "indented ordered feature box before done fails" 1 "a box of § Feature acceptance is ticked while status is 'ready'" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"  1. [x] \")'"
+expect "feature box ticked without a done log line fails" 1 "AVE-FEAT-016-publication-metadata.md: a box of § Feature acceptance is ticked while status is 'done' and the Status log has no done line" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\", logged=False)'"
+expect "epic box ticked before done fails"           1 "AVE-EPIC-02-editing-and-composition.md: a box of § Success criteria is ticked while status is 'ready'" "mut 'rep(R + \"AVE-EPIC-02-*.md\", \"## Success criteria\n\", \"## Success criteria\n- [x] Every feature shipped.\n\")'"
 expect "feature box ticked after reopening fails"    1 "a box of § Feature acceptance is ticked while status is 'in-progress'; the boxes are ticked only while the file is done" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\"); rep(R + \"AVE-FEAT-016-*.md\", \"status: done\", \"status: in-progress\"); add_log(R + \"AVE-FEAT-016-*.md\", \"2026-10-04\", \"in-progress\", \"reopened (lead)\")'"
 expect "done feature with every requirement done passes" 0 "OK: baseline intact" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\")'"
 expect "done feature leaves its deferred requirement out" 0 "OK: baseline intact" "mut 'done(req(65)); done(req(66)); parent_done(R + \"AVE-FEAT-014-*.md\")'"
 expect "done feature leaves a superseded requirement out" 0 "Supersession: AVE-REQ-071 → AVE-REQ-102 carries the baseline Description and criteria" "mut 'supersede(req(71)); successor(source=req(71), parent=\"AVE-FEAT-016\", feature=\"AVE-FEAT-016\", group=\"M6\", key=\"Requirements\", primary_gate=\"M6\"); done(R + \"AVE-REQ-102-*.md\"); parent_done(R + \"AVE-FEAT-016-*.md\")'"
+expect "feature superseded after done keeps its ticks" 0 "Supersession: AVE-REQ-071 → AVE-REQ-102 carries the baseline Description and criteria" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\"); supersede(req(71)); successor(source=req(71), parent=\"AVE-FEAT-015\", feature=\"AVE-FEAT-015\", group=\"M6\", key=\"Requirements\", primary_gate=\"M6\"); supersede(R + \"AVE-FEAT-016-*.md\", by=\"AVE-FEAT-015\")'"
 # (g) roadmap
 # AVE-REQ-093 AC-3: no version-one requirement leaves the plan and no exclusion enters it through the roadmap.
 expect "requirement dropped from the roadmap fails"  1 "docs/ROADMAP.md: AVE-REQ-001 stands on no list; a requirement that is not superseded stands on exactly one requirement list" "mut 'unschedule(req(1))'"
@@ -785,6 +811,8 @@ expect "requirement list with another bullet fails"  1 "docs/ROADMAP.md: milesto
 expect "milestone list under the Deferred label fails" 1 "docs/ROADMAP.md: milestone M1: '- **Requirements:**' $LABEL_ERROR" "mut 'rep_entry(\"M1\", \"- **Requirements (dependency order):**\", \"- **Requirements:**\")'"
 expect "Deferred list under the milestone label fails" 1 "docs/ROADMAP.md: the Deferred group: '- **Requirements (dependency order):**' $LABEL_ERROR" "mut 'rep_entry(\"Deferred\", \"- **Requirements:**\", \"- **Requirements (dependency order):**\")'"
 expect "Proposed line in the Deferred group fails"   1 "docs/ROADMAP.md: the Deferred group: '- **Proposed during reviews:**' $LABEL_ERROR" "mut 'put(ROADMAP, read(ROADMAP) + \"- **Proposed during reviews:** none\n\")'"
+expect "Proposed line under another label fails"     1 "docs/ROADMAP.md: milestone M1: '- **Proposed removals:**' $LABEL_ERROR" "mut 'rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Proposed removals:** none\")'"
+expect "indented upper-case list under a plus bullet fails" 1 "docs/ROADMAP.md: milestone M1: '  + **REQUIREMENTS (dependency order):**' $LABEL_ERROR" "mut 'rep_entry(\"M1\", \"- **Requirements (dependency order):**\", \"  + **REQUIREMENTS (dependency order):**\")'"
 expect "second requirement list in one entry fails"  1 "docs/ROADMAP.md: milestone M1 holds two '- **Requirements (dependency order):**' lines" "mut 'item = link(req(1)); unschedule(req(1)); rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Requirements (dependency order):** \" + item + \"\n- **Proposed during reviews:** none\")'"
 expect "second Proposed line in one entry fails"     1 "docs/ROADMAP.md: milestone M1 holds two '- **Proposed during later reviews:**' lines" "mut 'rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Proposed during reviews:** none\n- **Proposed during later reviews:** none\")'"
 expect "tilde fence around a roadmap list fails"     1 "a fence line reads \`\`\` or \`\`\`<language> at column 0 ('~~~')" "mut 'wrap_milestone(\"M1\", \"~~~\", \"~~~\")'"
@@ -792,6 +820,7 @@ expect "four-backtick fence in the roadmap fails"    1 "a fence line reads \`\`\
 expect "indented fence in the roadmap fails"         1 "a fence line reads \`\`\` or \`\`\`<language> at column 0 ('  \`\`\`')" "mut 'wrap_milestone(\"M1\", \"  \" + TICKS, \"  \" + TICKS)'"
 expect "roadmap list inside a fenced block is no list" 1 "docs/ROADMAP.md: AVE-REQ-001 stands on no list" "mut 'wrap_milestone(\"M1\", TICKS, TICKS)'"
 expect "unclosed fence in the roadmap fails"         1 "docs/ROADMAP.md: a fenced block stays open at the end of the file" "mut 'put(ROADMAP, read(ROADMAP) + TICKS + \"text\n\")'"
+NOT_WANT="docs/requirements/" expect "longer fence line inside a roadmap fence fails" 1 "a fenced block closes with \`\`\` at column 0 and holds no other fence line" "mut 'put(ROADMAP, read(ROADMAP) + TICKS + \"\n\" + TICKS + chr(96) + \"\n\" + TICKS + \"\n\")'"
 expect "derived requirement absent from the roadmap fails" 1 "AVE-REQ-102 stands on no list" "mut 'stub(group=None)'"
 expect "ready requirement on a Proposed line fails"  1 "AVE-REQ-102 is 'ready' and still stands on a 'Proposed during' line of M1" "mut 'stub(STUB.replace(\"status: proposed\", \"status: ready\").replace(\"proposed \" + DASH, \"ready \" + DASH))'"
 expect "listed requirement without a working file fails" 1 "AVE-REQ-404 is listed and has no working requirement file" "mut 'rep(ROADMAP, \"- **Proposed during reviews:** none\", \"- **Proposed during reviews:** [AVE-REQ-404](requirements/AVE-REQ-404-gone.md)\")'"

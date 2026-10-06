@@ -108,9 +108,9 @@ MILESTONE = re.compile(r"^### (M\d+) — ")
 MILESTONE_STATUS = re.compile(r"^- \*\*Status:\*\* (planned|in-progress|done)$")
 # The requirement lists of an entry, by the template's labels: (group, key, label pattern).
 ROADMAP_LISTS = (
-    ("milestone", "listed", re.compile(r"^- \*\*Requirements \(dependency order\):\*\*(?: |$)")),
-    ("milestone", "proposed", re.compile(r"^- \*\*Proposed during [A-Za-z0-9 ]+:\*\*(?: |$)")),
-    ("deferred", "listed", re.compile(r"^- \*\*Requirements:\*\*(?: |$)")),
+    ("milestone", "listed", re.compile(r"^- \*\*Requirements \(dependency order\):\*\*")),
+    ("milestone", "proposed", re.compile(r"^- \*\*Proposed during [A-Za-z0-9 ]+:\*\*")),
+    ("deferred", "listed", re.compile(r"^- \*\*Requirements:\*\*")),
 )
 # A line that presents itself as a requirement list: any bullet, indentation and letter case.
 LIST_LIKE = re.compile(r"^ *[-*+] +\*\*(?:requirements|proposed)", re.IGNORECASE)
