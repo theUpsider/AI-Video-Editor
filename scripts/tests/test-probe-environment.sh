@@ -9,7 +9,11 @@
 # name only; and the Network section, driven by a fake curl that answers from a script, records
 # every request and flags a request that downloads a body without a bound. Device nodes come from
 # a temp directory (AVE_PROBE_DEV_DIR) and every other external command is hidden or faked through
-# PATH, so the results hold on any host and no host is contacted. Exit 0 when every check passes.
+# PATH, so the results hold on any host and no host is contacted. A fake nvidia-smi drives the
+# accelerator verdict (a diagnostic, a failure or an empty answer is no device; a GPU row is one),
+# and fixture inputs that differ from this host (a fake getconf and id, AVE_PROBE_PROC_DIR,
+# AVE_PROBE_ROOT) prove that the CPU, memory, CPU model, OS user and writability lines are computed.
+# Exit 0 when every check passes.
 # Every probe run starts in the temp directory, outside the repository it measures.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
@@ -280,6 +284,64 @@ OUT="$(PATH="$T/bin:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-gpu" "$PROBE" --offlin
 # AVE-REQ-094 AC-1
 check "device node present: accelerator verdict names it" '[ "$CODE" = 0 ] && has "^accelerator: present \($T/dev-gpu/nvidia0\)$"'
 check "claude on PATH: its version is reported" 'has "^claude +9\.9\.9 \(Claude Code\)$"'
+
+# AVE-REQ-094 AC-1: nvidia-smi counts only when it exits 0 and lists a GPU. A fake nvidia-smi comes
+# first on PATH; without a device node, a diagnostic, a failure or an empty answer is no device.
+# smi_run <name> <exit status> <dev dir> <output line>... — runs the probe with that fake.
+smi_run() {
+  local name="$1" status="$2" dev="$3" dir="$T/smi-$1"
+  shift 3
+  mkdir -p "$dir"
+  if [ "$#" -gt 0 ]; then printf '%s\n' "$@"; fi > "$dir/output"
+  printf '#!/bin/sh\ncat %q\nexit %s\n' "$dir/output" "$status" > "$dir/nvidia-smi"
+  chmod +x "$dir/nvidia-smi"
+  OUT="$(PATH="$dir:$BARE_PATH" AVE_PROBE_DEV_DIR="$dev" "$PROBE" --offline 2>&1)"; CODE=$?
+}
+GPU_ROW="NVIDIA RTX A4000, 16376 MiB"
+smi_run driver 9 "$T/dev-none" "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running."
+check "nvidia-smi fails with a driver diagnostic, no device node: no GPU reported" '[ "$CODE" = 0 ] && has_line nvidia-smi "no GPU reported"'
+check "nvidia-smi fails with a driver diagnostic, no device node: accelerator: none (no device)" 'has "^accelerator: none \(no device\)$" && [ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
+smi_run nodevice 6 "$T/dev-none" "No devices were found"
+check "nvidia-smi exits 6 with 'No devices were found': accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && has "^accelerator: none \(no device\)$"'
+smi_run failrow 1 "$T/dev-none" "$GPU_ROW"
+check "nvidia-smi prints a GPU row and fails: accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && has "^accelerator: none \(no device\)$"'
+smi_run text 0 "$T/dev-none" "No devices were found"
+check "nvidia-smi exits 0 with a diagnostic and no GPU row: accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && has "^accelerator: none \(no device\)$"'
+smi_run empty 0 "$T/dev-none"
+check "nvidia-smi exits 0 with no output: accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && has "^accelerator: none \(no device\)$"'
+smi_run gpu 0 "$T/dev-none" "$GPU_ROW" "NVIDIA RTX A2000, 6138 MiB"
+check "nvidia-smi exits 0 with GPU rows: the first row is reported" '[ "$CODE" = 0 ] && has_line nvidia-smi "$GPU_ROW"'
+check "nvidia-smi exits 0 with GPU rows: accelerator: present names the row" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($GPU_ROW)" && [ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
+smi_run gpunode 0 "$T/dev-gpu" "$GPU_ROW"
+check "GPU row and device node: accelerator: present names both" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($GPU_ROW $T/dev-gpu/nvidia0)"'
+smi_run drivernode 9 "$T/dev-gpu" "NVIDIA-SMI has failed"
+check "nvidia-smi fails while a device node exists: accelerator: present names the node alone" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($T/dev-gpu/nvidia0)"'
+
+# AVE-REQ-094 AC-1: fixture inputs that differ from this host: the CPU count follows getconf, the
+# memory and CPU model follow meminfo and cpuinfo, the OS user follows id, and writability follows
+# the repository root, so a line fixed to this host's value fails here.
+FIX="$T/fixture-inputs"; mkdir -p "$FIX/bin" "$FIX/proc" "$FIX/root-writable"
+REAL_GETCONF="$(command -v getconf)"; REAL_ID="$(command -v id)"
+cat > "$FIX/bin/getconf" <<EOF
+#!/bin/sh
+case "\$1" in _NPROCESSORS_ONLN) printf '3\n' ;; *) exec "$REAL_GETCONF" "\$@" ;; esac
+EOF
+cat > "$FIX/bin/id" <<EOF
+#!/bin/sh
+case "\$*" in -un) printf 'probeuser\n' ;; -u) printf '4242\n' ;; *) exec "$REAL_ID" "\$@" ;; esac
+EOF
+chmod +x "$FIX/bin/getconf" "$FIX/bin/id"
+printf 'MemTotal:        2883584 kB\nMemFree:          100000 kB\n' > "$FIX/proc/meminfo"
+printf 'processor\t: 0\nmodel name\t: Probe Fixture CPU @ 9.99GHz\n' > "$FIX/proc/cpuinfo"
+OUT="$(PATH="$FIX/bin:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_PROC_DIR="$FIX/proc" AVE_PROBE_ROOT="$FIX/root-writable" "$PROBE" --offline 2>&1)"; CODE=$?
+check "fixture inputs: probe exits 0" '[ "$CODE" = 0 ]'
+check "fake getconf answers 3: cpus 3" 'has_line cpus 3'
+check "meminfo fixture with MemTotal 2883584 kB: memory 2.8 GiB" 'has_line memory "2.8 GiB"'
+check "cpuinfo fixture: cpu model is its model name" 'has_line "cpu model" "Probe Fixture CPU @ 9.99GHz"'
+check "fake id answers probeuser and 4242: os user probeuser (uid 4242)" 'has_line "os user" "probeuser (uid 4242)"'
+check "writable fixture root: repository writable yes with that root" 'has_line "repository writable" "yes ($FIX/root-writable)"'
+OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_ROOT="$FIX/root-missing" "$PROBE" --offline 2>&1)"; CODE=$?
+check "missing fixture root: repository writable no with that root" '[ "$CODE" = 0 ] && [ ! -e "$FIX/root-missing" ] && has_line "repository writable" "no ($FIX/root-missing)"'
 
 # AVE-REQ-094 AC-1: a tool hidden from PATH is reported as not installed.
 HIDDEN_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome ffmpeg ffprobe python3 uv git)"

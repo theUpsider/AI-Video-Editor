@@ -9,17 +9,20 @@
 # Read-only: prints a report and changes nothing. Never prints a credential value, only whether a
 # variable is set. The other Claude Code capabilities (workflow tool, subagents, models, hooks,
 # permission mode) are not visible to a shell; docs/ENVIRONMENT_CAPABILITIES.md records them.
-# AVE_PROBE_DEV_DIR replaces /dev as the directory searched for device nodes (tests).
+# Test inputs: AVE_PROBE_DEV_DIR replaces /dev (device nodes), AVE_PROBE_PROC_DIR replaces /proc
+# (meminfo, cpuinfo) and AVE_PROBE_ROOT replaces the repository root that the disk, Git and
+# writability lines measure.
 # Not part of verify.sh: network results depend on the environment's policy.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${AVE_PROBE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DEV_DIR="${AVE_PROBE_DEV_DIR:-/dev}"
+PROC_DIR="${AVE_PROBE_PROC_DIR:-/proc}"
 OFFLINE=0
 case "${1:-}" in
   "") ;;
   --offline) OFFLINE=1 ;;
-  -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: ./scripts/probe-environment.sh [--offline]\n' >&2; exit 2 ;;
 esac
 
@@ -35,15 +38,22 @@ section "Platform and resources"
 item "kernel" "$(uname -srm)"
 [ -r /etc/os-release ] && item "os" "$(. /etc/os-release && printf '%s' "$PRETTY_NAME")"
 item "cpus" "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
-item "cpu model" "$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
-item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' /proc/meminfo 2>/dev/null)"
+# arm64 kernels list no "model name" in cpuinfo: lscpu names the model there.
+cpu_model="$(grep -m1 'model name' "$PROC_DIR/cpuinfo" 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
+[ -n "$cpu_model" ] || cpu_model="$(lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -n 1)"
+item "cpu model" "${cpu_model:-unknown}"
+item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' "$PROC_DIR/meminfo" 2>/dev/null)"
 # The disk and Git lines measure the repository, whichever directory the probe starts in.
 item "disk (repository)" "$(df -h "$ROOT" 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
 
 section "Accelerators"
 gpu=""
 if have nvidia-smi; then
-  gpu="$(first nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
+  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory>": without a driver
+  # or a device it prints a diagnostic and fails, and a diagnostic is no device.
+  if smi="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null)"; then
+    gpu="$(printf '%s\n' "$smi" | grep -m1 -E '^[^,]*[^,[:space:]][^,]*,[[:space:]]*[^,[:space:]][^,]*$')"
+  fi
   item "nvidia-smi" "${gpu:-no GPU reported}"
 else
   item "nvidia-smi" "not installed"
@@ -52,7 +62,8 @@ nvidia_nodes="$(find "$DEV_DIR" -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort |
 dri_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 2>/dev/null | sort | tr '\n' ' ')"
 item "/dev/nvidia* devices" "${nvidia_nodes:-none}"
 item "/dev/dri devices" "${dri_nodes:-none}"
-# The verdict counts devices only: FFmpeg's built-in hardware encoders (Media tools) need one.
+# The verdict counts devices only (a GPU row of nvidia-smi, device nodes): FFmpeg's built-in
+# hardware encoders (Media tools) need one.
 evidence="$(printf '%s' "${gpu:+$gpu }$nvidia_nodes$dri_nodes" | sed 's/ *$//')"
 if [ -n "$evidence" ]; then
   printf 'accelerator: present (%s)\n' "$evidence"
