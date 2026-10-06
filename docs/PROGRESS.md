@@ -28,8 +28,10 @@ milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
   gates brief and part 6 of the probe brief (`docs/briefs/handbacks/`, linked from the fix brief).
 - Fix round, [brief](briefs/2026-10-06-m0-final-review-fixes.md): track A (baseline gate), track B1 (run
   environment, fingerprint by content, hooks), track B2 (evidence tool, suite runner, plugin, checker), one
-  writer each in a worktree from the commit that adds the brief, two at a time. Not launched when this file was
-  written; a launch is recorded here with its run ID and re-run command.
+  writer each in a worktree from `41973c5`, two at a time. Launched 2026-10-06 as workflow `wf_5cd13360-464`
+  ([script](workflows/m0-final-review-fixes.js)); handbacks not recorded; on resume without a recorded
+  handback, inspect the three worktree branches the script names (local until their handback) and re-run the
+  script for a track without a commit.
 - The lead's part: AVE-REQ-094 on branch `ave-req-094-probe-evidence` (pushed; only character devices named
   `nvidia<N>` or `renderD<N>` that open count), and the rule corrections of
   [WF-008](WORKFLOW_LOG.md) (review runs take a brief; every worktree writer confirms its base commit).
