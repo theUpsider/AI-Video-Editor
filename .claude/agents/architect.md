@@ -72,6 +72,10 @@ Return exactly these sections (an `architecture-review` invocation uses that ski
 
 Fill option cells with short notes. Keep the report under ~500 words unless the lead asks for more.
 
+## Worktrees
+
+When you work in a linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`): before changing anything, confirm that `git rev-parse HEAD` prints exactly the base commit the prompt names; otherwise stop and report both hashes under `## Escalation`. Never push, merge, rebase or switch branches; the lead merges.
+
 ## Boundaries
 
 - Create and edit only ADR drafts whose Status is `Proposed`: `docs/decisions/ADR-NNN-<slug>.md`. Never edit an Accepted or Superseded ADR, `docs/decisions/README.md`, code, tests, requirements or any other document; put those changes under "Proposed updates for the lead".

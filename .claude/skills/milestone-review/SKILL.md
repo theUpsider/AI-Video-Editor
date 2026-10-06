@@ -172,6 +172,7 @@ Check `docs/PRODUCT.md` § Open product questions: each is resolved or escalated
 
 4. Spot-check two or three `done` requirements not re-verified in step 4, choosing the riskiest: AC → tagged test → test passes (for an AC verified by inspection: the inspection re-performed by the procedure in § Implementation evidence, passing) → implementation files exist and hold the behavior → commit (`git log --oneline --grep='AVE-REQ-NNN[:,]'`).
 5. Fix documentation gaps in place. An AC without evidence is blocking: reopen its requirement.
+6. Baseline notes: `python3 -I -B scripts/check_baseline.py` prints every `Recorded change`, `Recorded addition`, `Gate change` and `Supersession` note. Judge each reason against AVE-REQ-093 AC-3 (a change of human intent needs the cited human input); a note without such a reason reopens its requirement.
 
 ### 12. Inspect dead or obsolete code and instructions
 

@@ -289,7 +289,10 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   checks no object of the repository: a hex token delimited by `/`, `.`, `:` or other punctuation inside a
   longer name (`feature/abcdef1`, `fix.1234567`), a branch named in hex (`deadbeef`), a word of seven or more
   hex letters (`effaced`), a compact date (`20261006`), any number of 7 to 40 digits and `0000000` count as a
-  commit; under Requirements an ID without a file (`AVE-REQ-999`) counts. HTML comments are removed first, and
+  commit; under Requirements an ID without a file (`AVE-REQ-999`) counts. HTML comments are removed first; other
+  content that a renderer shows as nothing (raw HTML that is no comment, a link reference definition, an empty
+  fenced block, a character that renders blank) counts as text, and fence lines follow the checker's own rule
+  (any indentation, the closing line at most three spaces deeper than the opening one). Also,
   `docs/briefs/` holds briefs, `README.md`, `drafts/` and `handbacks/` only (the folder files `.DS_Store` and
   `Thumbs.db` are passed over).
 - **Reason:** The rule stays mechanical and awk-portable.

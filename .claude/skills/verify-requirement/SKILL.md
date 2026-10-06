@@ -99,6 +99,7 @@ An AC whose only tests fail this checklist is unevidenced, which is blocking.
 - Frontmatter `status` is `verification` and matches the newest Status-log line; the ACs are still unticked. Exception: `milestone-review` re-verifies `done` requirements, where status `done`, ticked ACs and filled Test evidence are expected.
 - `parent` exists and lists this requirement; every requirement under Dependencies is `done`.
 - The `docs/TRACEABILITY.md` row exists with matching status; cited ADRs exist and are Accepted, or Proposed with an open escalation while only a fake implements their interface.
+- Baseline notes: `python3 -I -B scripts/check_baseline.py` (with the `./scripts/dev-container.sh` prefix on a host that verifies in the container) prints a `Recorded change`, `Recorded addition`, `Gate change` or `Supersession` note for every working file that differs from the baseline by a logged reason. List each note that names this requirement and judge its reason against AVE-REQ-093 AC-3: a change of human intent needs the cited human input, and a reason that only makes the work easier is a blocking finding.
 
 Inconsistencies are non-blocking findings with the exact fix, unless they hide a missing AC, test or check.
 

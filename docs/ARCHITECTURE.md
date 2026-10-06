@@ -266,7 +266,8 @@ In effect:
    A command that already holds the lock and starts verify.sh's media or release tier sets
    `AVE_HEAVY_LOCK_HELD=1`, so the run takes no second lock; the run first confirms that the lock is held and
    fails before any step when nobody holds it, when `flock` is missing, or when it cannot open or test the lock
-   file. `scripts/tests/test-verify-tiers.sh` tests the lock.
+   file. The run confirms that the lock is held; that the holder is its caller rests on the caller, as does
+   the `flock` form of every other heavy command. `scripts/tests/test-verify-tiers.sh` tests the lock.
 
 Commands: `cd backend && uv run pytest -m "not media and not slow"` (fast),
 `flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" uv run pytest -m "media or slow"` (media and
