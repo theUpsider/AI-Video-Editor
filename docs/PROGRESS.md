@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: the fixes of the final review are integrated on branch `m0-final-integration`, where the second review round was launched._
+_Last updated: 2026-10-07 — M0 open: the second review round returned no upheld PASS; its fix round was launched on branch `m0-final-integration`._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,18 +23,16 @@ milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## In progress
 
-- The state of M0 lives on branch `m0-final-integration` (pushed; `fc068d8` when this file was written): this
-  branch with the three tracks of the fix round `wf_5cd13360-464`
-  ([brief](briefs/2026-10-06-m0-final-review-fixes.md)) and the AVE-REQ-094 task branch merged in, the five M0
-  requirements in `verification`, CI green at `b573d65`. Its `docs/PROGRESS.md` holds the details.
-- Second review round, launched 2026-10-06 as workflow `wf_b18a5f3e-54e` at `f996c17` of that branch (reviewer
-  and skeptic per requirement, from the brief `docs/briefs/2026-10-06-m0-final-review-2b.md` there); verdicts not
-  recorded; on resume without a recorded verdict, check out that branch and re-run the Workflow tool with
-  `docs/workflows/m0-final-review-2.js` and `{commit: 'f996c170a4e75ad25b06f36babf8699843012c92'}` plus the
-  model arguments.
-- This branch receives the integration branch after the reviews pass (`CLAUDE.md` § Delegation); until then it
-  holds the state before the fix round (reports of the first round: handback parts 5 to 8 of the gates brief
-  and part 6 of the probe brief).
+- The state of M0 lives on branch `m0-final-integration` (pushed; `b318f29` when this file was written): this
+  branch with the fix round `wf_5cd13360-464` and the AVE-REQ-094 task branch merged in. Its `docs/PROGRESS.md`
+  holds the details and the re-run commands.
+- Second review round `wf_b18a5f3e-54e` at `f996c17` of that branch, verdicts recorded there on 2026-10-07:
+  AVE-REQ-093, AVE-REQ-094 and AVE-REQ-097 FAIL, AVE-REQ-096 and AVE-REQ-098 PASS refuted by the skeptic; the
+  five are `in-progress` there (on this branch their files still hold the state before the first fix round).
+- Fix round `wf_6c06f19f-506` from the brief `docs/briefs/2026-10-07-m0-review-2-fixes.md` of that branch at
+  `07eceb1`, launched 2026-10-07; results not recorded; on resume without a recorded result, check out that
+  branch and follow § In progress of its `docs/PROGRESS.md`.
+- This branch receives the integration branch after the reviews pass (`CLAUDE.md` § Delegation).
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -47,8 +45,8 @@ milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## Next recommended work
 
-1. Record the verdicts of `wf_b18a5f3e-54e` on the integration branch (handback parts of its brief); on every
-   upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+1. On the integration branch: file the handbacks of `wf_6c06f19f-506`, merge its four branches, pass the release
+   tier and CI, then run the third review round from a new brief; on every upheld PASS set `done`.
 2. Merge the integration branch into this branch, then `git push origin <commit>:main` after green CI.
 3. `milestone-review` M0; record the result in ROADMAP.md.
 4. Launch M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` in isolated worktrees from the commit
