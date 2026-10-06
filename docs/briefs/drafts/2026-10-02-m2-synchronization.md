@@ -36,8 +36,8 @@ Confirm `git log --oneline -1` shows that hash before changing anything; report 
 worktree branch when verification passes; never push, merge or rebase.
 
 ## Allowed paths
-`backend/src/ave/sync/**`, `backend/src/ave/fixtures/**` (add fixtures; keep existing ones and their cache keys
-stable), `backend/src/ave/domain/sync_layout.py`, new `backend/src/ave/domain/coverage.py`,
+`backend/src/ave/sync/**`, `backend/src/ave/fixtures/**` (add fixtures; keep the specifications of the existing
+ones unchanged; an edit to the generator's sources gives every fixture a new cache key by design), `backend/src/ave/domain/sync_layout.py`, new `backend/src/ave/domain/coverage.py`,
 `backend/tests/sync/**` (new), `backend/tests/unit/test_sync_*.py`, `backend/tests/media/test_sync_*.py`,
 `backend/tests/media/derived.py` (add variants only).
 
@@ -66,14 +66,22 @@ scipy suffice; report any other dependency); `docs/**`, `scripts/**`, `.github/*
 - Tag every criterion test with `@pytest.mark.req("AVE-REQ-NNN AC-n", ...)` and scenario tests with
   `@pytest.mark.scenario("AT-NN")`; long fixtures under `media`, populations under `slow`.
 - One heavy media job at a time.
+- Host and gates: on this Windows host `./scripts/verify.sh` enters the Linux development container by itself
+  (ADR-009); every other check or test command takes the prefix `./scripts/dev-container.sh`. The fast tier
+  resolves FFmpeg and FFprobe to a stand-in that exits 1, so every test that calls a media tool carries
+  `@pytest.mark.media` (populations `slow`). A run fails on a file Git ignores inside `backend/src` or
+  `backend/tests` (bytecode directories excepted), on a skipped, expected-to-fail or deselected test, and on a
+  tag that names no criterion.
 
 ## Test commands
 - `./scripts/verify.sh --tier media` must pass.
-- `python3 scripts/evidence.py show AVE-REQ-023 AVE-REQ-024 AVE-REQ-025 AVE-REQ-026 AVE-REQ-027 AVE-REQ-028
-  AVE-REQ-030`: report per-criterion states in the handback, with the population outcome counts.
+- `./scripts/dev-container.sh python3 -B scripts/evidence.py show AVE-REQ-023 AVE-REQ-024 AVE-REQ-025 AVE-REQ-026
+  AVE-REQ-027 AVE-REQ-028 AVE-REQ-030 --tier media`: report per-criterion states in the handback, with the
+  population outcome counts.
 
 ## Handback schema
 `## Result: COMPLETE | PARTIAL | BLOCKED`, then: branch and commit hash; per requirement and AC: status, tests
 (node IDs) and what they prove; population outcome counts (wrong / correct / ambiguous / insufficient); commands
 with results; needed changes in forbidden paths (exact); decisions taken (proposed ASSUMPTIONS entries);
-deviations and follow-ups; documentation updates for the lead.
+deviations and follow-ups; documentation updates for the lead. The lead writes the returned report to
+`docs/briefs/handbacks/` (the task changes no file under `docs/`).
