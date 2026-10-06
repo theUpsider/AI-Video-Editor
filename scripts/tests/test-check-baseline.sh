@@ -63,7 +63,7 @@ def add_log(pattern, date, status, text):
     put(one(pattern), read(pattern).rstrip("\n") + "\n" + log(date, status, text) + "\n")
 
 def mark(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 def criteria(pattern):
     return re.findall(r"(?m)^- \[[ x]\] (AC-\d+) (.*)$", read(pattern))
@@ -73,7 +73,7 @@ def description(pattern):
 
 def link(pattern):
     name = os.path.basename(one(pattern))
-    return "[%s](requirements/%s)" % (name[:11], name)
+    return "[%s](requirements/%s)" % (re.match(r"AVE-[A-Z]+-\d+", name).group(0), name)
 
 def unschedule(pattern):
     text, item = read(ROADMAP), link(pattern)
@@ -203,6 +203,41 @@ def done(source=None):
     put(one(source), text.replace("status: " + status, "status: done", 1).replace("- [ ] AC-", "- [x] AC-"))
     add_log(source, "2026-10-03", "done", "verify-requirement PASS (lead)")
 
+def parent_done(pattern, tick=True):
+    """Marks an epic or feature done on paper: status, ticked boxes and a done log line."""
+    text = read(pattern)
+    status = re.search(r"(?m)^status: (.*)$", text).group(1)
+    text = text.replace("status: " + status, "status: done", 1)
+    put(one(pattern), text.replace("- [ ] ", "- [x] ") if tick else text)
+    add_log(pattern, "2026-10-03", "done", "milestone-review PASS (lead)")
+
+def rep_entry(group, old, new):
+    """Replaces the first <old> at or after the heading of a roadmap group (M<n> or Deferred)."""
+    text = read(ROADMAP)
+    head = text.index("### " + group + " ")
+    assert old in text[head:], (group, old)
+    put(ROADMAP, text[:head] + text[head:].replace(old, new, 1))
+
+def milestone_status(group, line):
+    """Replaces the Status line of a roadmap milestone entry by <line>; None removes it."""
+    rep_entry(group, "- **Status:** planned\n", "" if line is None else line + "\n")
+
+def wrap_milestone(group, opening, closing):
+    """Puts the lines of a roadmap milestone entry (heading excluded) between two fence lines."""
+    lines = read(ROADMAP).split("\n")
+    head = lines.index([l for l in lines if l.startswith("### " + group + " ")][0])
+    tail = head + 1
+    while lines[tail]:
+        tail += 1
+    put(ROADMAP, "\n".join(lines[:head + 1] + [opening] + lines[head + 1:tail] + [closing] + lines[tail:]))
+
+def planted_future(directory):
+    """Writes a module named __future__ that reports an intact baseline and ends the process."""
+    os.makedirs(directory, exist_ok=True)
+    put(os.path.join(directory, "__future__.py"),
+        "import sys\nprint(\"OK: baseline intact; reported by the planted module\")\n"
+        "sys.stdout.flush()\nsys.exit(0)\n")
+
 def tamper_importer(prefix=None):
     """Plants a bytecode cache of a modified import tool that maps AVE-REQ-001 to priority should."""
     source = os.path.abspath("scripts/requirements/import_baseline.py")
@@ -328,8 +363,8 @@ with path.open("w", encoding="utf-8", newline="\n") as handle:
 PY
 }
 
-# mark <text> — the eight-digit mark that ties a recorded change to its text (reqfile.digest).
-mark() { printf '%s' "$1" | sha256sum | cut -c1-8; }
+# mark <text> — the sixteen-digit mark that ties a recorded change to its text (reqfile.digest).
+mark() { printf '%s' "$1" | sha256sum | cut -c1-16; }
 
 # expect <name> <exit> <expected substring or ""> <mutation...> — runs check_baseline.py.
 expect() { run_case check "$@"; }
@@ -418,6 +453,11 @@ expect "planted bytecode cache of the import tool is ignored" 1 "$PRIORITY_ERROR
 RUN_ENV="PYTHONPYCACHEPREFIX=$C/pfx" expect "bytecode cache under PYTHONPYCACHEPREFIX is ignored" 1 "$PRIORITY_ERROR" "$DEMOTED && mut 'tamper_importer(\"pfx\")'"
 expect "hashlib beside the checker is ignored"       1 "$HASH_ERROR" "mut 'lying_hashlib(\"scripts\")'"
 RUN_ENV="PYTHONPATH=$C/shadow" expect "hashlib on PYTHONPATH is ignored" 1 "$HASH_ERROR" "mut 'lying_hashlib(\"shadow\")'"
+# AVE-REQ-093 AC-1, AVE-REQ-093 AC-3: the restart is the first statement the checker executes, so a module
+# named __future__ beside it or on PYTHONPATH never runs (the default start `python3 <script>` of this suite).
+NOT_WANT="planted module" expect "__future__ beside the checker is ignored" 1 "$PRIORITY_ERROR" "$DEMOTED && mut 'planted_future(\"scripts\")'"
+NOT_WANT="planted module" RUN_ENV="PYTHONPATH=$C/shadow" expect "__future__ on PYTHONPATH is ignored" 1 "$PRIORITY_ERROR" "$DEMOTED && mut 'planted_future(\"shadow\")'"
+CHECK_CMD="python3 -B" expect "__future__ beside the checker is ignored with -B" 1 "$PRIORITY_ERROR" "$DEMOTED && mut 'planted_future(\"scripts\")'"
 CHECK_CMD="python3 -I -B" expect "isolated start as verify.sh runs it passes" 0 "OK: baseline intact" true
 # (b) canonical form: one reading of every working file
 # AVE-REQ-093 AC-3, AVE-REQ-093 AC-4: a file both gates accept has one frontmatter, one set of
@@ -462,6 +502,48 @@ expect "heading inside a list item fails"            1 "a heading inside a list 
 - ## Acceptance criteria'"
 expect "heading inside a quote fails"                1 "a heading inside a list item or quote" "sub '$R001' '## Edge cases' '## Edge cases
 > ## Acceptance criteria'"
+# AVE-REQ-093 AC-3: a line is judged after its leading spaces and after each container marker, so the
+# headings a Markdown reader renders on a continuation line of a list item, behind a wide marker and as an
+# underline inside a quote or a list item fail (requirement and feature files).
+expect "heading on an ordered-list continuation line fails" 1 "'    ## Acceptance criteria' is no template heading of a REQ file" "sub '$R001' '## Edge cases' '## Edge cases
+10. See the revised list.
+    ## Acceptance criteria
+    - [ ] AC-2 Saved projects are restored on a best-effort basis.'"
+expect "heading on a wide bullet continuation line fails" 1 "'    ## Acceptance criteria' is no template heading of a REQ file" "sub '$R001' '## Edge cases' '## Edge cases
+-   Revised list.
+    ## Acceptance criteria'"
+expect "heading behind a wide list marker fails"     1 "a heading inside a list item or quote ('-     ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
+-     ## Acceptance criteria'"
+expect "heading behind an ordered marker in a quote fails" 1 "a heading inside a list item or quote ('> 1)   ## Acceptance criteria')" "sub '$R001' '## Edge cases' '## Edge cases
+> 1)   ## Acceptance criteria'"
+expect "underlined heading inside a quote fails"     1 "a line of = or - underlines a heading or draws a rule ('> ===')" "sub '$R001' '## Edge cases' '## Edge cases
+> Acceptance criteria
+> ===
+> AC-2 is informational for version one.'"
+expect "dash-underlined heading inside a quote fails" 1 "a line of = or - underlines a heading or draws a rule ('> ---')" "sub '$R001' '## Edge cases' '## Edge cases
+> Acceptance criteria
+> ---
+> AC-2 is informational for version one.'"
+expect "underlined heading inside a list item fails" 1 "a line of = or - underlines a heading or draws a rule ('    ===')" "sub '$R001' '## Edge cases' '## Edge cases
+10. Acceptance criteria
+    ==='"
+expect "underline behind a list marker fails"        1 "a line of = or - underlines a heading or draws a rule ('- ---')" "sub '$R001' '## Edge cases' '## Edge cases
+- ---'"
+expect "underlined heading in a feature's list section fails" 1 "AVE-FEAT-001-projects-and-media-collection.md: canonical form: line 21: a line of = or - underlines a heading or draws a rule ('> ---')" "mut 'text = read(R + \"AVE-FEAT-001-*.md\"); line = [l for l in text.split(\"\n\") if \"](AVE-REQ-002-\" in l][0]; put(one(R + \"AVE-FEAT-001-*.md\"), text.replace(line, \"> Out of scope for version one\n> ---\n\" + line, 1))'"
+expect "list items and quotes without a heading pass" 0 "OK: baseline intact" "sub '$R001' '## Edge cases' '## Edge cases
+10. See the revised list.
+    - A nested item with # in its text and a-b = c.
+> A quoted note; 2) is no marker here.
+-   A wide item.'"
+# AVE-REQ-093 AC-3: characters follow an allow-list (U+0020 to U+007E and the signs listed in
+# scripts/reqfile.py), so an invisible character of any Unicode class and a letter outside the list fail.
+expect "Hangul filler fails"                         1 "U+3164 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x3164) + \"here.\n\")'"
+expect "braille blank fails"                         1 "U+2800 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x2800) + \"here.\n\")'"
+expect "combining grapheme joiner fails"             1 "U+034F is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x034F) + \"here.\n\")'"
+expect "Hangul choseong filler fails"                1 "U+115F is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(0x115F) + \"here.\n\")'"
+expect "letter outside the allow-list fails"         1 "U+00E9 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nCaf\" + chr(0xE9) + \".\n\")'"
+expect "tab fails"                                   1 "U+0009 is no character of a requirement file" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nNote\" + chr(9) + \"here.\n\")'"
+expect "signs of the allow-list pass"                0 "OK: baseline intact" "mut 'rep(req(1), \"## Edge cases\n\", \"## Edge cases\nSigns: \" + \" \".join(chr(c) for c in (0xA7, 0xB1, 0x2013, 0x2014, 0x2192, 0x2265, 0x2282)) + \" and ~.\n\")'"
 expect "heading outside the template fails"          1 "'## Scope note' is no template heading of a REQ file" "sub '$R001' '## Edge cases' '## Scope note
 AC-2 is informational.
 
@@ -556,6 +638,10 @@ expect "log line outside ## Status does not count"   1 "AC-2 differs from the ba
 expect "log line quoting the rule does not count"    1 "AC-2 differs from the baseline text" "sub '$R001' 'project metadata are unchanged.' 'x.' && printf -- '- 2026-10-02 — ready — the checker requires \`AC-2 changed [$M_X]: <reason>\` lines (lead)\n' >> $R001"
 expect "placeholder reason does not count"           1 "AC-2 differs from the baseline text" "sub '$R001' 'project metadata are unchanged.' 'x.' && printf -- '- 2026-10-02 — ready — AC-2 changed [$M_X]: <reason>\n' >> $R001"
 expect "marker behind another requirement ID does not count" 1 "AC-2 differs from the baseline text" "sub '$R001' 'project metadata are unchanged.' 'x.' && printf -- '- 2026-10-02 — ready — see AVE-REQ-002 AC-2 changed [$M_X]: tracked there (lead)\n' >> $R001"
+# AVE-REQ-093 AC-3: a marker reason holds a letter or a digit, and the mark has sixteen digits.
+expect "reason of punctuation alone does not count"  1 "AC-4 is missing and the Status log has no line '$LINE AC-4 removed: <reason>'" "sub '$R001' '$AC4' '' && printf -- '- 2026-10-02 — ready — AC-4 removed: — (...)\n' >> $R001"
+expect "reason of one invisible character does not count" 1 "AC-4 is missing and the Status log has no line '$LINE AC-4 removed: <reason>'" "sub '$R001' '$AC4' '' && mut 'add_log(req(1), \"2026-10-02\", \"ready\", \"AC-4 removed: \" + chr(0x3164))'"
+expect "mark of eight digits does not count"         1 "AC-2 differs from the baseline text and the Status log has no line '$LINE AC-2 changed [$M_CLEAR]: <reason>'" "sub '$R001' 'project metadata are unchanged.' 'project metadata are unchanged after a restart.' && printf -- '- 2026-10-02 — ready — AC-2 changed [${M_CLEAR:0:8}]: wording clarified (lead)\n' >> $R001"
 expect "one line does not cover several removals"    1 "AC-3 is missing and the Status log has no line" "mut 'text = read(req(1)); put(one(req(1)), \"\n\".join(l for l in text.split(\"\n\") if not l.startswith((\"- [ ] AC-2 \", \"- [ ] AC-3 \")))); add_log(req(1), \"2026-10-02\", \"ready\", \"AC-2 removed: x; AC-3 removed: x\")'"
 expect "second rewording under the first line fails" 1 "AC-2 differs from the baseline text and the Status log has no line '$LINE AC-2 changed [$M_MOSTLY]: <reason>'" "sub '$R001' 'project metadata are unchanged.' 'project metadata are mostly unchanged.' && printf -- '- 2026-10-02 — ready — AC-2 changed [$M_CLEAR]: wording clarified (lead)\n' >> $R001"
 expect "criterion removed under an earlier changed line fails" 1 "AC-2 is missing and the Status log has no line '$LINE AC-2 removed: <reason>'" "sub '$R001' '$AC2
@@ -608,6 +694,13 @@ expect "successor under a deferred feature fails"    1 "a version-one requiremen
 expect "successor absent from the roadmap fails"     1 "AVE-REQ-102 stands on no list" "mut 'supersede(); successor(group=None)'"
 expect "superseded without a superseded log line fails" 1 "Status log has no 'superseded' line" "mut 'supersede(logged=False); successor()'"
 expect "chain to a successor that drops a criterion fails" 1 "AC-4 of the baseline is absent from the successor AVE-REQ-103" "mut 'supersede(); successor(); successor(rid=\"AVE-REQ-103\", drop=(\"AC-4\",)); supersede(R + \"AVE-REQ-102-*.md\", by=\"AVE-REQ-103\")'"
+# AVE-REQ-093 AC-3: every requirement on the chain of a human requirement keeps source human, and a
+# replacement under another milestone than the baseline gate is reported.
+CHAIN="supersede(); successor(); successor(rid=\"AVE-REQ-103\"); supersede(R + \"AVE-REQ-102-*.md\", by=\"AVE-REQ-103\")"
+expect "faithful chain through a superseded successor is reported" 0 "Supersession: AVE-REQ-001 → AVE-REQ-103 carries the baseline Description and criteria" "mut '$CHAIN'"
+expect "derived requirement in the middle of a human chain fails" 1 "AVE-REQ-102-derived-stub.md: a requirement added after the import has source derived, or human when it replaces a human baseline requirement (expected 'human')" "mut '$CHAIN; rep(R + \"AVE-REQ-102-*.md\", \"source: human\", \"source: derived\")'"
+expect "successor under another milestone is reported" 0 "Gate change: AVE-REQ-001 → AVE-REQ-102 primary_gate M7 (baseline M1)" "mut 'supersede(); successor(primary_gate=\"M7\", group=\"M7\", key=\"Requirements\")'"
+NOT_WANT="Gate change" expect "successor under the baseline gate reports no gate change" 0 "Supersession: AVE-REQ-001 → AVE-REQ-102" "mut 'supersede(); successor()'"
 # AVE-REQ-093 AC-3: an exclusion (future scope) never enters version one through a supersession.
 FUTURE102="successor(\"could\", source=req(67), group=\"Deferred\", key=\"Requirements\", scope=\"future\", primary_gate=\"FUTURE\", status=\"deferred\"); rep(R + \"AVE-REQ-102-*.md\", \"proposed \" + DASH, \"deferred \" + DASH)"
 expect "future requirement superseded into version one fails" 1 "a future-scope requirement cannot be superseded by AVE-REQ-102 (scope 'v1', status 'proposed')" "mut 'supersede(req(67)); successor(source=req(67))'"
@@ -622,6 +715,12 @@ expect "derived requirement accepted"                0 "OK: baseline intact" "mu
 expect "derived requirement missing from its parent's list fails" 1 "§ Requirements must link AVE-REQ-102-derived-stub.md" "mut 'stub(feature=None)'"
 expect "v1 requirement depends on a deferred one"    1 "version-one requirement depends on deferred AVE-REQ-067" "mut 'dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-001\", \"AVE-REQ-067\"])'"
 expect "v1 requirement depends on a superseded exclusion fails" 1 "version-one requirement depends on the future-scope AVE-REQ-067" "mut 'supersede(req(67), by=\"AVE-REQ-103\"); successor(\"could\", source=req(67), rid=\"AVE-REQ-103\", group=\"Deferred\", key=\"Requirements\", scope=\"future\", primary_gate=\"FUTURE\", status=\"deferred\"); rep(R + \"AVE-REQ-103-*.md\", \"proposed \" + DASH, \"deferred \" + DASH); dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-067\"])'"
+# AVE-REQ-093 AC-3: a dependency on a superseded version-one requirement counts through the end of its
+# chain: a deferred replacement or a missing one fails.
+FUTURE_STUB="stub(STUB.replace(\"scope: v1\", \"scope: future\").replace(\"primary_gate: M1\", \"primary_gate: FUTURE\").replace(\"status: proposed\", \"status: deferred\").replace(\"proposed \" + DASH, \"deferred \" + DASH), rid=\"AVE-REQ-104\", group=\"Deferred\", key=\"Requirements\")"
+expect "v1 requirement depends on one replaced by a deferred requirement fails" 1 "AVE-REQ-102-derived-stub.md: version-one requirement depends on AVE-REQ-103, whose replacement is the deferred AVE-REQ-104" "mut 'dep_stub(\"AVE-REQ-103\", []); $FUTURE_STUB; supersede(R + \"AVE-REQ-103-*.md\", by=\"AVE-REQ-104\"); dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-103\"])'"
+expect "v1 requirement depends on one whose replacement is missing fails" 1 "AVE-REQ-102-derived-stub.md: version-one requirement depends on AVE-REQ-103, whose replacement is missing" "mut 'dep_stub(\"AVE-REQ-103\", []); supersede(R + \"AVE-REQ-103-*.md\", by=\"AVE-REQ-404\"); dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-103\"])'"
+expect "v1 requirement depends on one replaced by a version-one requirement passes" 0 "OK: baseline intact" "mut 'dep_stub(\"AVE-REQ-103\", []); dep_stub(\"AVE-REQ-104\", []); supersede(R + \"AVE-REQ-103-*.md\", by=\"AVE-REQ-104\"); dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-103\"])'"
 expect "Dependencies section without the frontmatter dependency fails" 1 "§ Dependencies links no requirement while frontmatter dependencies names AVE-REQ-001" "mut 'stub(re.sub(r\"(?s)## Dependencies\n.*?\n\n\", \"## Dependencies\nNone.\n\n\", STUB, count=1))'"
 expect "Dependencies section with an unlisted dependency fails" 1 "§ Dependencies links AVE-REQ-101 while frontmatter dependencies names none" "mut 'rep(req(1), \"## Dependencies\nNone.\n\", \"## Dependencies\n- [AVE-REQ-101](AVE-REQ-101-object-and-motion-tracking.md)\n\")'"
 expect "self-dependency fails"                       1 "AVE-REQ-102 depends on itself" "mut 'dep_stub(\"AVE-REQ-102\", [\"AVE-REQ-102\"])'"
@@ -640,6 +739,22 @@ expect "derived deferred needs future scope"         1 "status deferred requires
 expect "second file for a baseline feature"          1 "AVE-FEAT-015 must have exactly one working file" "cp $R/AVE-FEAT-015-*.md $R/AVE-FEAT-015-other.md"
 expect "new ID inside the baseline range"            1 "AVE-REQ-000 lies inside the baseline ID range but has no baseline entry" "mut 'stub(rid=\"AVE-REQ-000\")'"
 expect "new epic after the baseline range accepted"  0 "OK: baseline intact" "sed 's/AVE-EPIC-10/AVE-EPIC-11/g' $R/AVE-EPIC-10-*.md > $R/AVE-EPIC-11-new-epic.md"
+# AVE-REQ-093 AC-1: one number of a kind names one working file, whatever its zero padding.
+expect "second ID for one number fails"              1 "AVE-REQ number 102 names several working files (AVE-REQ-0102-derived-stub.md, AVE-REQ-102-derived-stub.md)" "mut 'stub(); stub(rid=\"AVE-REQ-0102\")'"
+expect "baseline number under another padding fails" 1 "AVE-REQ number 1 names several working files (AVE-REQ-0001-derived-stub.md, AVE-REQ-001-persistent-projects-and-project-settings.md)" "mut 'stub(rid=\"AVE-REQ-0001\")'"
+# AVE-REQ-093 AC-3, AVE-REQ-093 AC-4: no status move hides unfinished work: an imported requirement never
+# returns to proposed, and an epic or feature is done, with its boxes ticked, only when every child that
+# is neither superseded nor deferred is done.
+expect "imported requirement set back to proposed fails" 1 "an imported requirement starts ready and never returns to proposed" "sub '$R001' 'status: ready' 'status: proposed' && mut 'add_log(req(1), \"2026-10-02\", \"proposed\", \"back to refinement (lead)\"); move(req(1), \"M1\", \"Proposed during\")'"
+expect "feature done while its requirements are unfinished fails" 1 "AVE-FEAT-002-manual-timeline-and-history.md: status done while AVE-REQ-011 is 'ready' (7 unfinished of 7 children)" "mut 'parent_done(R + \"AVE-FEAT-002-*.md\")'"
+expect "feature done with one unfinished requirement fails" 1 "AVE-FEAT-014-visual-indexing-and-understanding.md: status done while AVE-REQ-066 is 'ready' (1 unfinished of 3 children)" "mut 'done(req(65)); parent_done(R + \"AVE-FEAT-014-*.md\")'"
+expect "epic done while a feature is unfinished fails" 1 "AVE-EPIC-02-editing-and-composition.md: status done while AVE-FEAT-002 is 'ready' (2 unfinished of 2 children)" "mut 'parent_done(R + \"AVE-EPIC-02-*.md\")'"
+expect "feature box ticked before done fails"        1 "AVE-FEAT-002-manual-timeline-and-history.md: a box of § Feature acceptance is ticked while status is 'ready' and the Status log has no done line" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"- [x] \")'"
+expect "capital-X feature box before done fails"     1 "a box of § Feature acceptance is ticked while status is 'ready'" "mut 'rep(R + \"AVE-FEAT-002-*.md\", \"- [ ] \", \"- [X] \")'"
+expect "feature box ticked after reopening fails"    1 "a box of § Feature acceptance is ticked while status is 'in-progress'; the boxes are ticked only while the file is done" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\"); rep(R + \"AVE-FEAT-016-*.md\", \"status: done\", \"status: in-progress\"); add_log(R + \"AVE-FEAT-016-*.md\", \"2026-10-04\", \"in-progress\", \"reopened (lead)\")'"
+expect "done feature with every requirement done passes" 0 "OK: baseline intact" "mut 'done(req(71)); parent_done(R + \"AVE-FEAT-016-*.md\")'"
+expect "done feature leaves its deferred requirement out" 0 "OK: baseline intact" "mut 'done(req(65)); done(req(66)); parent_done(R + \"AVE-FEAT-014-*.md\")'"
+expect "done feature leaves a superseded requirement out" 0 "Supersession: AVE-REQ-071 → AVE-REQ-102 carries the baseline Description and criteria" "mut 'supersede(req(71)); successor(source=req(71), parent=\"AVE-FEAT-016\", feature=\"AVE-FEAT-016\", group=\"M6\", key=\"Requirements\", primary_gate=\"M6\"); done(R + \"AVE-REQ-102-*.md\"); parent_done(R + \"AVE-FEAT-016-*.md\")'"
 # (g) roadmap
 # AVE-REQ-093 AC-3: no version-one requirement leaves the plan and no exclusion enters it through the roadmap.
 expect "requirement dropped from the roadmap fails"  1 "docs/ROADMAP.md: AVE-REQ-001 stands on no list; a requirement that is not superseded stands on exactly one requirement list" "mut 'unschedule(req(1))'"
@@ -650,6 +765,33 @@ expect "primary_gate naming no roadmap milestone fails" 1 "primary_gate M99 name
 expect "exclusion on a version-one milestone list fails" 1 "the exclusion AVE-REQ-101 stands under M3; it belongs to the Deferred group" "mut 'move(req(101), \"M3\")'"
 expect "version-one requirement in the Deferred group fails" 1 "the version-one requirement AVE-REQ-001 stands in the Deferred group" "mut 'move(req(1), \"Deferred\")'"
 expect "done milestone with an unfinished requirement fails" 1 "milestone M1 has Status done while AVE-REQ-001 is 'ready'" "mut 'text = read(ROADMAP); head = text.index(\"### M1 \"); put(ROADMAP, text[:head] + text[head:].replace(\"- **Status:** planned\", \"- **Status:** done\", 1))'"
+# AVE-REQ-093 AC-3: every milestone entry holds one Status line with one of three words and nothing else,
+# so no spelling of a finished milestone escapes the rule above.
+STATUS_ERROR="docs/ROADMAP.md: milestone M1: the Status line reads '- **Status:** planned', 'in-progress' or 'done' and nothing else"
+expect "milestone Status done with a full stop fails" 1 "$STATUS_ERROR ('- **Status:** done.')" "mut 'milestone_status(\"M1\", \"- **Status:** done.\")'"
+expect "capitalised milestone Status fails"          1 "$STATUS_ERROR ('- **Status:** Done')" "mut 'milestone_status(\"M1\", \"- **Status:** Done\")'"
+expect "milestone Status with a note fails"          1 "$STATUS_ERROR ('- **Status:** done, reviewed 2026-10-06')" "mut 'milestone_status(\"M1\", \"- **Status:** done, reviewed 2026-10-06\")'"
+expect "bold milestone Status word fails"            1 "$STATUS_ERROR ('- **Status:** **done**')" "mut 'milestone_status(\"M1\", \"- **Status:** **done**\")'"
+expect "unknown milestone Status word fails"         1 "$STATUS_ERROR ('- **Status:** complete')" "mut 'milestone_status(\"M1\", \"- **Status:** complete\")'"
+expect "indented milestone Status line fails"        1 "$STATUS_ERROR ('  - **Status:** done')" "mut 'milestone_status(\"M1\", \"  - **Status:** done\")'"
+expect "milestone without a Status line fails"       1 "docs/ROADMAP.md: milestone M1 holds 0 Status lines" "mut 'milestone_status(\"M1\", None)'"
+expect "milestone with two Status lines fails"       1 "docs/ROADMAP.md: milestone M1 holds 2 Status lines" "mut 'milestone_status(\"M1\", \"- **Status:** done\n- **Status:** planned\")'"
+expect "milestone Status in-progress passes"         0 "OK: baseline intact" "mut 'milestone_status(\"M1\", \"- **Status:** in-progress\")'"
+# AVE-REQ-093 AC-3: the gate reads the lists with the template's labels, one of each per entry, and a fence
+# line of the roadmap follows the rule of the requirement files, so a list it reads is a list readers see.
+LABEL_ERROR="is no requirement-list label of the template"
+expect "requirement list under another label fails"  1 "docs/ROADMAP.md: milestone M1: '- **Requirements removed from version one (not built):**' $LABEL_ERROR" "mut 'item = link(req(1)); unschedule(req(1)); rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Requirements removed from version one (not built):** \" + item + \"\n- **Proposed during reviews:** none\")'"
+expect "requirement list with another bullet fails"  1 "docs/ROADMAP.md: milestone M1: '* **Requirements (dependency order):**' $LABEL_ERROR" "mut 'rep_entry(\"M1\", \"- **Requirements (dependency order):**\", \"* **Requirements (dependency order):**\")'"
+expect "milestone list under the Deferred label fails" 1 "docs/ROADMAP.md: milestone M1: '- **Requirements:**' $LABEL_ERROR" "mut 'rep_entry(\"M1\", \"- **Requirements (dependency order):**\", \"- **Requirements:**\")'"
+expect "Deferred list under the milestone label fails" 1 "docs/ROADMAP.md: the Deferred group: '- **Requirements (dependency order):**' $LABEL_ERROR" "mut 'rep_entry(\"Deferred\", \"- **Requirements:**\", \"- **Requirements (dependency order):**\")'"
+expect "Proposed line in the Deferred group fails"   1 "docs/ROADMAP.md: the Deferred group: '- **Proposed during reviews:**' $LABEL_ERROR" "mut 'put(ROADMAP, read(ROADMAP) + \"- **Proposed during reviews:** none\n\")'"
+expect "second requirement list in one entry fails"  1 "docs/ROADMAP.md: milestone M1 holds two '- **Requirements (dependency order):**' lines" "mut 'item = link(req(1)); unschedule(req(1)); rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Requirements (dependency order):** \" + item + \"\n- **Proposed during reviews:** none\")'"
+expect "second Proposed line in one entry fails"     1 "docs/ROADMAP.md: milestone M1 holds two '- **Proposed during later reviews:**' lines" "mut 'rep_entry(\"M1\", \"- **Proposed during reviews:** none\", \"- **Proposed during reviews:** none\n- **Proposed during later reviews:** none\")'"
+expect "tilde fence around a roadmap list fails"     1 "a fence line reads \`\`\` or \`\`\`<language> at column 0 ('~~~')" "mut 'wrap_milestone(\"M1\", \"~~~\", \"~~~\")'"
+expect "four-backtick fence in the roadmap fails"    1 "a fence line reads \`\`\` or \`\`\`<language> at column 0 ('\`\`\`\`')" "mut 'wrap_milestone(\"M1\", TICKS + chr(96), TICKS + chr(96))'"
+expect "indented fence in the roadmap fails"         1 "a fence line reads \`\`\` or \`\`\`<language> at column 0 ('  \`\`\`')" "mut 'wrap_milestone(\"M1\", \"  \" + TICKS, \"  \" + TICKS)'"
+expect "roadmap list inside a fenced block is no list" 1 "docs/ROADMAP.md: AVE-REQ-001 stands on no list" "mut 'wrap_milestone(\"M1\", TICKS, TICKS)'"
+expect "unclosed fence in the roadmap fails"         1 "docs/ROADMAP.md: a fenced block stays open at the end of the file" "mut 'put(ROADMAP, read(ROADMAP) + TICKS + \"text\n\")'"
 expect "derived requirement absent from the roadmap fails" 1 "AVE-REQ-102 stands on no list" "mut 'stub(group=None)'"
 expect "ready requirement on a Proposed line fails"  1 "AVE-REQ-102 is 'ready' and still stands on a 'Proposed during' line of M1" "mut 'stub(STUB.replace(\"status: proposed\", \"status: ready\").replace(\"proposed \" + DASH, \"ready \" + DASH))'"
 expect "listed requirement without a working file fails" 1 "AVE-REQ-404 is listed and has no working requirement file" "mut 'rep(ROADMAP, \"- **Proposed during reviews:** none\", \"- **Proposed during reviews:** [AVE-REQ-404](requirements/AVE-REQ-404-gone.md)\")'"

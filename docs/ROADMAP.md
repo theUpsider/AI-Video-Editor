@@ -24,9 +24,18 @@ When working, read only the current milestone entry; [PROGRESS.md](PROGRESS.md)
 8. Every requirement that is not superseded stands on exactly one requirement list: a version-one
    requirement under the milestone its `primary_gate` names (on a `Proposed during …` line while it
    is `proposed`), an exclusion in the Deferred group. A milestone with Status done lists finished
-   requirements only. `scripts/check_baseline.py` reads the lists of the milestone entries
-   (`### M<n> — …`, `- **Requirements …:**`, `- **Proposed during …:**`) and fails on a difference;
-   this file holds no HTML comment, so every list the gate reads is a list readers see.
+   requirements only. `scripts/check_baseline.py` reads the entries `### M<n> — …` and
+   `### Deferred …` and fails on a difference. In an entry it reads the lines that open, at column 0,
+   with a label of the template: `- **Requirements (dependency order):**` and
+   `- **Proposed during <words>:**` (letters, digits and spaces) under a milestone,
+   `- **Requirements:**` in the Deferred group, one of each per entry; a line that opens with a
+   bullet (`-`, `*`, `+`, indented or at column 0) and bold `Requirements` or `Proposed`, in any
+   letter case, under any other label fails. Every milestone entry holds exactly one Status line,
+   and it reads `- **Status:** planned`, `- **Status:** in-progress` or `- **Status:** done` with
+   nothing after the word; any other line of the entry that holds `**Status` in any letter case
+   fails. A fence line reads three backticks at column 0, alone or with a language word, as in the
+   requirement files, and this file holds no HTML comment, so every list the gate reads is a list
+   readers see. Other text of an entry is free text that the diff review judges.
 
 ## Planning rules
 
