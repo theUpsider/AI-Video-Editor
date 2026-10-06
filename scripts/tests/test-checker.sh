@@ -7,6 +7,10 @@
 # Checks and mutations are strings run by eval, which reads the variables they name.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALL_AWKS=0
 case "${1:-}" in
@@ -54,7 +58,7 @@ expect() {
   "$W/make-fixture.sh" "$T/case" ${FIXTURE_MODE-with-reqs} >/dev/null
   ( cd "$T/case" && eval "$*" ) || { echo "SETUP FAIL: $name"; FAIL=$((FAIL+1)); return; }
   out="$(cd "$T/case" && PATH="${CHECK_PATH:-${SHIM:+$SHIM:}$PATH}" ./scripts/check-project-control.sh 2>&1)"; code=$?
-  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | grep -qF -- "$want"; }; then
+  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | quiet -F -- "$want"; }; then
     PASS=$((PASS+1)); printf '  ok   %-44s %s\n' "$name" "$(printf '%s\n' "$out" | grep -F -m1 -- "${want:-OK:}")"
   else
     FAIL=$((FAIL+1)); printf '  FAIL %-44s exit=%s (want %s)\n%s\n' "$name" "$code" "$want_exit" "$out"

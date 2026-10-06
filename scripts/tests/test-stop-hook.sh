@@ -5,6 +5,10 @@
 # Checks and mutations are strings run by eval, which reads the variables they name.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/stop-hook-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
@@ -50,7 +54,7 @@ check "gate ran no media or release marker step" '! grep -Eq "^==> Marker (media
 check "exit 0 on pass" '[ "$CODE" = 0 ]'
 check "stdout empty on pass" '[ -z "$OUT" ]'
 check "last-pass = current fingerprint" '[ "$(state last-pass)" = "$(fp)" ]'
-check "last-result PASS ISO-8601 fp" 'state last-result | grep -Eq "^PASS [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z [0-9a-f]{40}$"'
+check "last-result PASS ISO-8601 fp" 'state last-result | quiet -E "^PASS [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z [0-9a-f]{40}$"'
 check "attempts reset to 0" '[ "$(state attempts)" = 0 ]'
 check "last.log holds verify output" 'grep -q "verify.sh: PASS" "$R/.git/claude-verify/last.log"'
 check "verify.sh ran the working-tree step, then recorded the evidence manifest" '[ "$(grep "^==> " "$R/.git/claude-verify/last.log" | tail -2 | tr "\n" "|")" = "==> Working tree unchanged by verification|==> Evidence manifest|" ] && grep -q "PASS: Working tree unchanged by verification" "$R/.git/claude-verify/last.log" && grep -q "PASS: Evidence manifest" "$R/.git/claude-verify/last.log"'
@@ -99,38 +103,38 @@ printf '\n[broken](no-such-file.md)\n' >> "$R/docs/ARCHITECTURE.md"
 hook "$J_FALSE"
 check "exit 2 on failure" '[ "$CODE" = 2 ]'
 check "stdout empty when blocking" '[ -z "$OUT" ]'
-check "stderr header with attempt 1 of 3" 'printf "%s" "$ERR" | grep -q "gate attempt 1 of 3"'
-check "stderr carries the log tail" 'printf "%s" "$ERR" | grep -q "broken link to .no-such-file.md."'
-check "stderr names the full log path" 'printf "%s" "$ERR" | grep -qF "full log: $R/.git/claude-verify/last.log"'
-check "stderr carries the guidance" 'printf "%s" "$ERR" | grep -q "never weaken checks" && printf "%s" "$ERR" | grep -q "Known failures"'
-check "guidance sends credential checks to fakes" 'printf "%s" "$ERR" | grep -q "A check that needs a credential belongs on its fake. If the fix needs the human (a tool or dependency the environment cannot install, an external outage)"'
+check "stderr header with attempt 1 of 3" 'printf "%s" "$ERR" | quiet "gate attempt 1 of 3"'
+check "stderr carries the log tail" 'printf "%s" "$ERR" | quiet "broken link to .no-such-file.md."'
+check "stderr names the full log path" 'printf "%s" "$ERR" | quiet -F "full log: $R/.git/claude-verify/last.log"'
+check "stderr carries the guidance" 'printf "%s" "$ERR" | quiet "never weaken checks" && printf "%s" "$ERR" | quiet "Known failures"'
+check "guidance sends credential checks to fakes" 'printf "%s" "$ERR" | quiet "A check that needs a credential belongs on its fake. If the fix needs the human (a tool or dependency the environment cannot install, an external outage)"'
 check "stderr tail capped (<= 44 lines)" '[ "$(printf "%s\n" "$ERR" | wc -l)" -le 44 ]'
 check "attempts = 1" '[ "$(state attempts)" = 1 ]'
-check "last-result FAIL" 'state last-result | grep -q "^FAIL "'
+check "last-result FAIL" 'state last-result | quiet "^FAIL "'
 check "last-pass kept from the previous pass" '[ -n "$(state last-pass)" ] && [ "$(state last-pass)" != "$(fp)" ]'
 
 # AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: the gate is bounded; it releases after its attempt limit.
 echo "## escalation and release"
 hook "$J_TRUE"
-check "attempt 2 blocks (stop_hook_active=true)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 2 of 3"'
+check "attempt 2 blocks (stop_hook_active=true)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 2 of 3"'
 hook "$J_TRUE"
 check "attempt 3 releases with exit 0" '[ "$CODE" = 0 ]'
 check "release prints valid JSON systemMessage" 'printf "%s" "$OUT" | jq -e ".systemMessage | test(\"still fails\")" >/dev/null'
-check "systemMessage names the log path" 'printf "%s" "$OUT" | jq -r .systemMessage | grep -qF "$R/.git/claude-verify/last.log"'
+check "systemMessage names the log path" 'printf "%s" "$OUT" | jq -r .systemMessage | quiet -F "$R/.git/claude-verify/last.log"'
 check "release writes nothing to stderr" '[ -z "$ERR" ]'
 hook "$J_TRUE"
 check "further continued stops stay released" '[ "$CODE" = 0 ] && [ -n "$OUT" ]'
 
 echo "## reset on a fresh stop"
 hook "$J_FALSE"
-check "stop_hook_active=false resets attempts (attempt 1 again)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 1 of 3" && [ "$(state attempts)" = 1 ]'
+check "stop_hook_active=false resets attempts (attempt 1 again)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3" && [ "$(state attempts)" = 1 ]'
 
 echo "## stdin parsing"
 PRETTY="$(printf '{\n  "session_id": "t",\n  "last_assistant_message": "I set \\"stop_hook_active\\": true in a test",\n  "stop_hook_active" :\n    false\n}\n')"
 hook "$PRETTY"
-check "pretty JSON with an embedded escaped key parses as false (reset)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 1 of 3"'
+check "pretty JSON with an embedded escaped key parses as false (reset)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
 hook ""
-check "empty stdin counts as a continued stop (attempt 2)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 2 of 3"'
+check "empty stdin counts as a continued stop (attempt 2)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 2 of 3"'
 
 # AVE-REQ-097 AC-3: no recursive Stop-hook loop, even without the stop_hook_active flag.
 echo "## stop_hook_active absent: the gate stays bounded"
@@ -141,13 +145,13 @@ check "missing key with failing verify: blocks 2,2 then releases 0 ($codes)" '[ 
 hook '{"stop_hook_active":"yes"}'
 check "unparsable value counts as a continued stop (stays released)" '[ "$CODE" = 0 ] && [ -n "$OUT" ]'
 hook "$J_FALSE"
-check "explicit false starts a fresh count" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "attempt 1 of 3"'
+check "explicit false starts a fresh count" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
 
 echo "## max attempts override"
 OUT="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS=1 CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>/dev/null)"; CODE=$?
 check "CLAUDE_VERIFY_MAX_ATTEMPTS=1 releases on the first failure" '[ "$CODE" = 0 ] && printf "%s" "$OUT" | jq -e .systemMessage >/dev/null'
 ERR="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS=abc CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>&1 >/dev/null)"; CODE=$?
-check "invalid CLAUDE_VERIFY_MAX_ATTEMPTS falls back to 3" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "of 3"'
+check "invalid CLAUDE_VERIFY_MAX_ATTEMPTS falls back to 3" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "of 3"'
 
 echo "## gate off"
 logrm
@@ -167,8 +171,8 @@ EOF
 hook "$J_FALSE"
 check "progress log: blocked" '[ "$CODE" = 2 ]'
 check "progress log: stderr at most 10,000 bytes ($(printf "%s" "$ERR" | wc -c) bytes)" '[ "$(printf "%s" "$ERR" | wc -c)" -le 10000 ]'
-check "progress log: keeps FAIL: x and the guidance" 'printf "%s" "$ERR" | grep -q "FAIL: x" && printf "%s" "$ERR" | grep -q "Diagnose and fix the root cause"'
-check "progress log: long line cut" 'printf "%s" "$ERR" | grep -q "^long y*y \[cut\]$" && printf "%s" "$ERR" | grep -q "(long lines cut)"'
+check "progress log: keeps FAIL: x and the guidance" 'printf "%s" "$ERR" | quiet "FAIL: x" && printf "%s" "$ERR" | quiet "Diagnose and fix the root cause"'
+check "progress log: long line cut" 'printf "%s" "$ERR" | quiet "^long y*y \[cut\]$" && printf "%s" "$ERR" | quiet "(long lines cut)"'
 cp "$T/verify.sh.saved" "$R/scripts/verify.sh"; rm -f "$T/verify.sh.saved"
 
 echo "## repair"
@@ -176,13 +180,13 @@ python3 - "$R/docs/ARCHITECTURE.md" <<'PY'
 import sys; p=sys.argv[1]; s=open(p).read(); open(p,'w').write(s.replace('\n[broken](no-such-file.md)\n',''))
 PY
 hook "$J_TRUE"
-check "repair back to the last passing tree: cache hit restores PASS record and attempts=0" '[ "$CODE" = 0 ] && [ -z "$OUT" ] && [ "$(state attempts)" = 0 ] && state last-result | grep -q "^PASS"'
+check "repair back to the last passing tree: cache hit restores PASS record and attempts=0" '[ "$CODE" = 0 ] && [ -z "$OUT" ] && [ "$(state attempts)" = 0 ] && state last-result | quiet "^PASS"'
 
 # AVE-REQ-097 AC-4: a missing or broken verification script fails the gate.
 echo "## missing or non-executable verify.sh"
 chmod -x "$R/scripts/verify.sh"
 hook "$J_FALSE"
-check "non-executable verify.sh fails the gate" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | grep -q "missing or not executable"'
+check "non-executable verify.sh fails the gate" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "missing or not executable"'
 chmod +x "$R/scripts/verify.sh"
 
 echo "## verify.sh: working tree unchanged by verification"
@@ -195,10 +199,10 @@ assert anchor in s
 open(p,'w').write(s.replace(anchor, '  run_step "Write a report" sh -c "date > report.txt"\n' + anchor, 1))
 PY2
 OUT="$(cd "$R" && ./scripts/verify.sh 2>&1)"; CODE=$?
-check "a step that leaves an untracked file fails the last step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | grep -q "FAIL: Working tree unchanged by verification" && printf "%s\n" "$OUT" | grep -q "A verification step changed the working tree" && printf "%s\n" "$OUT" | grep -q "^?? report.txt$"'
+check "a step that leaves an untracked file fails the last step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet "FAIL: Working tree unchanged by verification" && printf "%s\n" "$OUT" | quiet "A verification step changed the working tree" && printf "%s\n" "$OUT" | quiet "^?? report.txt$"'
 rm -f "$R/report.txt"; printf 'report.txt\n' >> "$R/.gitignore"
 OUT="$(cd "$R" && ./scripts/verify.sh 2>&1)"; CODE=$?
-check "output to a .gitignore-d path passes" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | grep -q "PASS: Working tree unchanged by verification"'
+check "output to a .gitignore-d path passes" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | quiet "PASS: Working tree unchanged by verification"'
 cp "$T/verify.sh.saved" "$R/scripts/verify.sh"; rm -f "$T/verify.sh.saved" "$R/report.txt"
 (cd "$R" && git checkout -q -- .gitignore)
 logrm; hook "$J_FALSE"; logrm; hook "$J_FALSE"

@@ -7,6 +7,10 @@
 # Checks are strings run by eval, which reads the variables they name.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/verify-tiers.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
@@ -27,9 +31,9 @@ run() {  # run [args...] -> CODE, OUT (combined output); VERIFY_TIER comes from 
 run_bounded() {
   OUT="$(cd "$R" && timeout 60 ./scripts/verify.sh "$@" 2>&1 8>&-)"; CODE=$?
 }
-ran() { printf '%s\n' "$OUT" | grep -qx "<== PASS: $1 step.*"; }
-passed() { printf '%s\n' "$OUT" | grep -qx "<== PASS: $1 (.*"; }
-waited() { printf '%s\n' "$OUT" | grep -q "^verify.sh: waiting for the heavy-media lock"; }
+ran() { printf '%s\n' "$OUT" | quiet -x "<== PASS: $1 step.*"; }
+passed() { printf '%s\n' "$OUT" | quiet -x "<== PASS: $1 (.*"; }
+waited() { printf '%s\n' "$OUT" | quiet "^verify.sh: waiting for the heavy-media lock"; }
 # path_without <command>... — prints PATH with the named commands hidden: a directory that holds
 # one of them is replaced by a mirror of its other entries.
 path_without() {
@@ -75,7 +79,7 @@ STEPS
 # AVE-REQ-097 AC-1
 echo "## tier membership"
 run
-check "default tier is fast" '[ "$CODE" = 0 ] && ran fast && ! ran media && ! ran release && printf "%s" "$OUT" | grep -q "PASS — tier fast"'
+check "default tier is fast" '[ "$CODE" = 0 ] && ran fast && ! ran media && ! ran release && printf "%s" "$OUT" | quiet "PASS — tier fast"'
 run --tier media
 check "--tier media adds the media steps" '[ "$CODE" = 0 ] && ran fast && ran media && ! ran release'
 run --tier=release
@@ -88,11 +92,11 @@ check "--tier overrides VERIFY_TIER" '[ "$CODE" = 0 ] && ! ran media'
 # AVE-REQ-097 AC-1
 echo "## usage errors"
 run --tier full
-check "unknown tier exits 2" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "unknown tier: full"'
+check "unknown tier exits 2" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | quiet "unknown tier: full"'
 run --tier
 check "missing tier value exits 2" '[ "$CODE" = 2 ]'
 run --fast
-check "unexpected argument exits 2" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "unexpected argument"'
+check "unexpected argument exits 2" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | quiet "unexpected argument"'
 
 # AVE-REQ-096 AC-4
 echo "## one heavy media job at a time: the heavy-media lock"
@@ -104,7 +108,7 @@ exec 8>>"$AVE_HEAVY_LOCK"
 flock -n 8 || { echo "test-verify-tiers.sh: cannot take $AVE_HEAVY_LOCK" >&2; exit 2; }
 # The suite now holds the lock, like a media run of another agent.
 run_bounded
-check "fast tier takes no lock (runs while another process holds it)" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | grep -qx "lock state: AVE_HEAVY_LOCK_HELD=unset" && ! waited'
+check "fast tier takes no lock (runs while another process holds it)" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | quiet -x "lock state: AVE_HEAVY_LOCK_HELD=unset" && ! waited'
 AVE_HEAVY_LOCK_HELD=1 run_bounded --tier media
 check "a caller that holds the lock sets AVE_HEAVY_LOCK_HELD=1: no second lock" '[ "$CODE" = 0 ] && passed "media tier holds the lock" && ! waited'
 mkfifo "$T/out.fifo"
@@ -112,13 +116,13 @@ mkfifo "$T/out.fifo"
 pid=$!
 exec 7<"$T/out.fifo"
 FIRST=""; IFS= read -r -t 60 FIRST <&7
-check "a media run while the lock is held prints one waiting line" 'printf "%s" "$FIRST" | grep -q "^verify.sh: waiting for the heavy-media lock $AVE_HEAVY_LOCK "'
+check "a media run while the lock is held prints one waiting line" 'printf "%s" "$FIRST" | quiet "^verify.sh: waiting for the heavy-media lock $AVE_HEAVY_LOCK "'
 read -r -t 2 NEXT <&7; READ_STATUS=$?
 check "it runs no step while the lock is held (no output for 2 s, process alive)" '[ "$READ_STATUS" -gt 128 ] && kill -0 "$pid" 2>/dev/null'
 exec 8>&-  # release: the waiting run takes the lock and proceeds
 OUT="$(cat <&7)"; exec 7<&-
 wait "$pid"; CODE=$?
-check "after the release it runs the media tier under the lock" '[ "$CODE" = 0 ] && passed "media tier holds the lock" && printf "%s" "$OUT" | grep -q "PASS — tier media" && ! waited'
+check "after the release it runs the media tier under the lock" '[ "$CODE" = 0 ] && passed "media tier holds the lock" && printf "%s" "$OUT" | quiet "PASS — tier media" && ! waited'
 mkdir -p "$T/tmpdir"
 OUT="$(cd "$R" && env -u AVE_HEAVY_LOCK TMPDIR="$T/tmpdir" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
 check "default lock file: \$TMPDIR/ave-heavy-media.lock" '[ "$CODE" = 0 ] && passed "media tier holds the lock" && [ -f "$T/tmpdir/ave-heavy-media.lock" ]'
@@ -128,7 +132,7 @@ check "a process a step leaves behind keeps no lock after the run" '[ "$CODE" = 
 [ -z "$LEFT" ] || kill "$LEFT" 2>/dev/null
 NO_FLOCK_PATH="$(path_without flock)"
 OUT="$(cd "$R" && PATH="$NO_FLOCK_PATH" ./scripts/verify.sh --tier media 2>&1)"; CODE=$?
-check "without flock the media tier fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | grep -q "needs flock" && ! printf "%s" "$OUT" | grep -q "^==> "'
+check "without flock the media tier fails before any step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet "needs flock" && ! printf "%s" "$OUT" | quiet "^==> "'
 OUT="$(cd "$R" && PATH="$NO_FLOCK_PATH" ./scripts/verify.sh 2>&1)"; CODE=$?
 check "without flock the fast tier still runs" '[ "$CODE" = 0 ]'
 
@@ -138,7 +142,7 @@ sed -i 's/media_step "media step" true/media_step "media step" false/' "$R/scrip
 run
 check "fast tier still passes (the failing step is not in it)" '[ "$CODE" = 0 ]'
 run --tier media
-check "media tier fails with exit 1 and names the step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | grep -q -- "- media step (exit 1)"'
+check "media tier fails with exit 1 and names the step" '[ "$CODE" = 1 ] && printf "%s" "$OUT" | quiet -- "- media step (exit 1)"'
 check "the failed run's manifest records FAIL" 'm="$(ls "$R"/var/verify/runs/*/manifest.json | tail -1)" && python3 -c "import json,sys; assert json.load(open(sys.argv[1]))[\"result\"] == \"FAIL\"" "$m"'
 run --tier release
 check "release tier fails too" '[ "$CODE" = 1 ]'

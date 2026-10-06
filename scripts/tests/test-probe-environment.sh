@@ -17,6 +17,10 @@
 # Every probe run starts in the temp directory, outside the repository it measures.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$W/../.." && pwd)"
 PROBE="$W/../probe-environment.sh"
@@ -24,11 +28,11 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/probe-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
 PASS=0; FAIL=0
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1   [$2]"; fi; }
-has() { printf '%s\n' "$OUT" | grep -Eq -- "$1"; }
+has() { printf '%s\n' "$OUT" | quiet -E -- "$1"; }
 # line <label> <value> — one report line laid out as the probe prints it (`%-28s %s`).
 line() { printf '%-28s %s' "$1" "$2"; }
 # has_line <label> <value> — $OUT holds exactly that line.
-has_line() { printf '%s\n' "$OUT" | grep -qxF -- "$(line "$1" "$2")"; }
+has_line() { printf '%s\n' "$OUT" | quiet -xF -- "$(line "$1" "$2")"; }
 # lines_of <label> — how many lines of $OUT start with the label and a space.
 lines_of() { printf '%s\n' "$OUT" | awk -v p="$1 " 'index($0, p) == 1 { n++ } END { print n + 0 }'; }
 # pw_entries — the entries of the `playwright browsers` lines of $OUT, sorted, space-separated.
@@ -65,7 +69,7 @@ first_line() {
 # second_line <path> <command>... — the second output line of the command found through <path>.
 second_line() { local p="$1"; shift; (PATH="$p"; "$@" 2>/dev/null | sed -n 2p); }
 # no_line <text> — $OUT holds no line equal to <text> (always true for an empty text).
-no_line() { [ -z "$1" ] || ! printf '%s\n' "$OUT" | grep -qxF -- "$1"; }
+no_line() { [ -z "$1" ] || ! printf '%s\n' "$OUT" | quiet -xF -- "$1"; }
 # disk_free <dir> — "<Avail> free of <Size>" from the second line of `df -h <dir>`, read by this suite.
 disk_free() { df -h "$1" 2>/dev/null | { read -r _ && read -r _ size _ avail _ && printf '%s free of %s' "$avail" "$size"; }; }
 
@@ -243,7 +247,7 @@ BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
 check "offline probe exits 0" '[ "$CODE" = 0 ]'
 for heading in "Platform and resources" "Accelerators" "Media tools" "Toolchains" "Browsers" "Git" \
   "Claude Code and session" "Product credential variables" "Network"; do
-  check "reports section: $heading" 'printf "%s\n" "$OUT" | grep -q "^## $heading"'
+  check "reports section: $heading" 'printf "%s\n" "$OUT" | quiet "^## $heading"'
 done
 # AVE-REQ-094 AC-1: resources equal this suite's own measurement.
 check "cpus equals getconf _NPROCESSORS_ONLN ($(getconf _NPROCESSORS_ONLN))" 'has "^cpus +$(getconf _NPROCESSORS_ONLN)\$"'
@@ -265,16 +269,16 @@ check "branch equals git rev-parse --abbrev-ref HEAD ($BRANCH)" 'has_line branch
 check "no device, no nvidia-smi: nvidia-smi not installed" 'has "^nvidia-smi +not installed$"'
 check "no device, no nvidia-smi: accelerator: none (no device)" 'has "^accelerator: none \(no device\)$"'
 check "exactly one accelerator verdict" '[ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
-check "no line claims a GPU" '! printf "%s\n" "$OUT" | grep -Eqi "gpu (available|present|found)"'
+check "no line claims a GPU" '! printf "%s\n" "$OUT" | quiet -Ei "gpu (available|present|found)"'
 # AVE-REQ-094 AC-1: the shell-observable part of the Claude Code and permission rows.
 check "claude absent from PATH: not installed" 'has "^claude +not installed$"'
 check "os user is the user running the probe" 'has "^os user +$(id -un) \(uid $(id -u)\)$"'
 WRITABLE=no; [ -w "$REPO" ] && WRITABLE=yes
-check "repository writability matches the file system ($WRITABLE)" 'printf "%s\n" "$OUT" | grep -qxF "$(printf "%-28s %s" "repository writable" "$WRITABLE ($REPO)")"'
+check "repository writability matches the file system ($WRITABLE)" 'printf "%s\n" "$OUT" | quiet -xF "$(printf "%-28s %s" "repository writable" "$WRITABLE ($REPO)")"'
 check "network probes skipped offline" 'has "skipped \(--offline\)"'
 check "a set credential is reported as set" 'has "^HF_TOKEN +set$"'
 check "an empty credential is reported as unset" 'has "^ANTHROPIC_API_KEY +unset$"'
-check "no credential value is printed" '! printf "%s\n" "$OUT" | grep -qF "$SECRET"'
+check "no credential value is printed" '! printf "%s\n" "$OUT" | quiet -F "$SECRET"'
 # AVE-REQ-098 AC-3: every credential the probe reports is documented in .env.example.
 NAMES="$(printf '%s\n' "$OUT" | awk '/^## Product credential variables/ { on = 1; next } /^## / { on = 0 } on && NF { print $1 }')"
 UNLISTED=""; for name in $NAMES; do grep -q "^$name=" "$REPO/.env.example" 2>/dev/null || UNLISTED="$UNLISTED $name"; done
@@ -311,11 +315,11 @@ smi_run empty 0 "$T/dev-none"
 check "nvidia-smi exits 0 with no output: accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && has "^accelerator: none \(no device\)$"'
 smi_run gpu 0 "$T/dev-none" "$GPU_ROW" "NVIDIA RTX A2000, 6138 MiB"
 check "nvidia-smi exits 0 with GPU rows: the first row is reported" '[ "$CODE" = 0 ] && has_line nvidia-smi "$GPU_ROW"'
-check "nvidia-smi exits 0 with GPU rows: accelerator: present names the row" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($GPU_ROW)" && [ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
+check "nvidia-smi exits 0 with GPU rows: accelerator: present names the row" 'printf "%s\n" "$OUT" | quiet -xF "accelerator: present ($GPU_ROW)" && [ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
 smi_run gpunode 0 "$T/dev-gpu" "$GPU_ROW"
-check "GPU row and device node: accelerator: present names both" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($GPU_ROW $T/dev-gpu/nvidia0)"'
+check "GPU row and device node: accelerator: present names both" 'printf "%s\n" "$OUT" | quiet -xF "accelerator: present ($GPU_ROW $T/dev-gpu/nvidia0)"'
 smi_run drivernode 9 "$T/dev-gpu" "NVIDIA-SMI has failed"
-check "nvidia-smi fails while a device node exists: accelerator: present names the node alone" 'printf "%s\n" "$OUT" | grep -qxF "accelerator: present ($T/dev-gpu/nvidia0)"'
+check "nvidia-smi fails while a device node exists: accelerator: present names the node alone" 'printf "%s\n" "$OUT" | quiet -xF "accelerator: present ($T/dev-gpu/nvidia0)"'
 
 # AVE-REQ-094 AC-1: fixture inputs that differ from this host: the CPU count follows getconf, the
 # memory and CPU model follow meminfo and cpuinfo, the OS user follows id, and writability follows
@@ -480,7 +484,7 @@ net_run() {
   [ -s "$NET/violations" ] && sed 's/^/         /' "$NET/violations"
   check "$name: every request has a time limit of at most 10 s (-m/--max-time)" 'time_limits_ok "$NET/calls"'
   check "$name: only the seven hosts are requested" '[ -s "$NET/calls" ] && ! grep -q "^UNEXPECTED " "$NET/calls"'
-  check "$name: no credential value reaches curl" '! grep -qF "$SECRET" "$NET/calls" && ! printf "%s\n" "$OUT" | grep -qF "$SECRET"'
+  check "$name: no credential value reaches curl" '! grep -qF "$SECRET" "$NET/calls" && ! printf "%s\n" "$OUT" | quiet -F "$SECRET"'
 }
 # AVE-REQ-094 AC-1: each host answers in one scenario and gets no response in the other; a 4xx
 # still proves that the host answers; pypi.org/simple/ and github.com/ answer with a large body.
