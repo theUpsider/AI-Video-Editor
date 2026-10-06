@@ -10,8 +10,10 @@ weakening or omitting requirements, keeping the package as an immutable baseline
 bootstrap format used generic `EPIC-/FEAT-/REQ-NNN` IDs and had no product files yet.
 
 ## Decision
-1. Commit the package unchanged under `ai-video-editor-requirements/`; its `MANIFEST.json` hashes and
-   `tools/validate_package.py` prove immutability.
+1. Commit the package unchanged under `ai-video-editor-requirements/`; `BASELINE_MANIFEST_SHA256` in
+   `scripts/check_baseline.py` pins its `MANIFEST.json`, and the checker verifies the manifest's inventory and
+   every file hash itself before it runs `tools/validate_package.py` (package consistency), so immutability is
+   proven from outside the package.
 2. Working IDs are the baseline IDs verbatim (`AVE-EPIC-NN`, `AVE-FEAT-NNN`, `AVE-REQ-NNN`); the generic kinds
    are retired from the format. Discovered work continues at `AVE-REQ-102`.
 3. `scripts/requirements/import_baseline.py` generates one working file per epic, feature and requirement in

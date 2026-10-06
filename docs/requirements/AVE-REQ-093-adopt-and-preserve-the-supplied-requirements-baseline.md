@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -45,7 +45,29 @@ The implementing agent shall integrate this specification into the existing boot
 - A criterion or the Description reworded or removed, or text added to the Description (a fenced block
   included), without a logged reason (`AC-n changed: <reason>`, `Description changed: <reason>`) → fails; with
   a logged reason → reported (AC-3).
+- Text inside § Acceptance criteria that is no criterion line (a continuation line under a criterion, a fenced
+  block, a sub-heading) → fails: the section holds criterion lines only, so nothing can qualify or waive a
+  criterion in place (AC-3).
+- A symbolic link added inside the package (a file or a directory) → fails with "baseline changed" (AC-1).
 - A future requirement made ready, or a version-one requirement deferred → fails (AC-3).
+- A version-one requirement superseded by a requirement that does not exist, is future scope or deferred, has a
+  lower priority, or drops a baseline criterion without an `AC-n changed: <reason>` line in the old file's
+  Status log, or superseded without a `superseded` log line → fails; a replacement that carries every baseline
+  criterion is reported as a supersession (AC-3).
+- A future-scope requirement (an exclusion) superseded by a requirement that is version-one scope or not
+  `deferred` → fails: an exclusion enters version one only through a new baseline from the human (AC-3).
+- A baseline feature or epic set to `superseded` while a baseline child under it is not superseded → fails (AC-3).
+- A criterion added to a baseline requirement without an `AC-n added: <reason>` log line → fails; with the
+  line → reported (AC-3).
+- Text in Intent, Edge cases, Verification strategy or the evidence sections that narrows or waives a criterion
+  → outside the mechanical guard (free text): README § Changing requirements rule 6 makes criteria binding as
+  written, and `verify-requirement` judges against them exactly as written (AC-3, inspection).
+- A change to the gate itself (`scripts/check_baseline.py` and its pinned hash, `scripts/requirements/import_baseline.py`
+  and its value mappings, the verify step that runs them) → outside the mechanical guard: the diff shows it, and
+  `verify-requirement` and the commit review judge it; a new baseline version comes only from the human
+  (AC-1, AC-3, inspection).
+- A criterion ticked on a requirement that never reached `done` → fails (AC-4); a reopened requirement keeps the
+  ticks its `done` log line covers.
 - Package validation passing while no requirement is verified → statuses stay unverified (AC-4).
 - Existing bootstrap content kept when documents are populated (AC-2, inspection).
 
@@ -53,16 +75,16 @@ The implementing agent shall integrate this specification into the existing boot
 None.
 
 ## Verification strategy
-- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, and a file edited, added or removed behind an edited validator fail with "baseline changed"), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
+- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, a file edited, added or removed behind an edited validator, and a symbolic link added inside the package fail with "baseline changed"; an edited validator is never run), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
 - AC-2 — inspection — the six documents are populated from the baseline and keep their bootstrap content (Git history of each file since `f605c6c`); automation cannot judge "meaningful content".
-- AC-3 — integration — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, rewording a criterion or the Description without a logged reason, or weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, all fail; a reworded Description with a logged `Description changed: <reason>` line is reported.
-- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
+- AC-3 — integration and inspection — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, rewording a criterion or the Description without a logged reason, or weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, or adding a continuation line, a fenced block or a sub-heading inside § Acceptance criteria (baseline and derived requirements), or adding a criterion without an `AC-n added: <reason>` line, or superseding a version-one requirement by a missing, weaker, future-scope or deferred requirement or by one that drops a baseline criterion without a logged change, or superseding a future-scope requirement by one that is version-one or not deferred, or superseding a baseline feature or epic whose baseline children live on, all fail; a replacement that carries every baseline criterion is reported; inspection for what no checker can read: criteria bind as written (README § Changing requirements rule 6, reviewer rule 4), and a change to the checker, its pin or the import mappings shows in the diff that `verify-requirement` reviews; a reworded Description with a logged `Description changed: <reason>` line is reported.
+- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked; a ticked criterion on a requirement that never reached `done` fails); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
 - `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; its MANIFEST.json lists every file's size and SHA-256, and its `tools/validate_package.py` checks package consistency (AC-1)
-- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (identity, Description, criteria, statuses, mapping) (AC-1, AC-3, AC-4)
-- `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, 131 `docs/requirements/AVE-*.md` — idempotent import and the ID mapping (AC-1, AC-4)
+- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (identity, Description, criteria and their section, added criteria, ticks, supersession, statuses, mapping) (AC-1, AC-3, AC-4)
+- `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, the 131 imported `docs/requirements/AVE-*.md` files (derived requirements continue at AVE-REQ-102) — idempotent import and the ID mapping (AC-1, AC-4)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `docs/TRACEABILITY.md` — populated from the baseline, bootstrap content kept (AC-2)
 - `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — package checks never certify completion (AC-4)
 - Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — done requirements need run evidence
@@ -81,3 +103,8 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-02 — in-progress — verify-requirement FAIL at `4d9ef9a` (workflow `wf_b0c34bba-a20`); blocking findings and fixes in [the fix brief](../briefs/2026-10-02-m0-process-verification-fixes.md) (lead)
 - 2026-10-03 — in-progress — verify-requirement FAIL at `d4d3883` (workflow `wf_ed1f5104-63a`): the file hashes were verified only by `tools/validate_package.py`, a package file, so editing it disabled the check; `scripts/check_baseline.py` now verifies the inventory and every hash itself before running the validator, with suite cases for an edited validator (lead)
 - 2026-10-03 — verification — fix in place, `scripts/tests/test-check-baseline.sh` 79 of 79; independent verification requested again (lead)
+- 2026-10-03 — in-progress — verify-requirement PASS at `97a8d20` (workflow `wf_e3b34e48-f7e`) refuted by its skeptic: text inside § Acceptance criteria that is no criterion line (a continuation line, a fenced block, a sub-heading) could qualify a criterion unnoticed by both checkers; the checker now rejects any such line in every working requirement, reports symbolic links in the package (the reviewer's gap) and never runs an edited validator, with suite cases for each; stale wording in ADR-003, IMPORT_MAPPING.md and `scripts/verify.d/10-requirements.sh` corrected (lead)
+- 2026-10-03 — verification — `scripts/tests/test-check-baseline.sh` 86 of 86; independent verification requested a fourth time (lead)
+- 2026-10-03 — in-progress — verify-requirement PASS at `08237ac` (workflow `wf_eabbb2f5-6a0`) refuted by its skeptic: a version-one human requirement set to `superseded` with `superseded_by` naming a weaker derived requirement that carries none of its criteria passed every checker and the fast tier; the checker now requires a replacement that exists, keeps version-one scope and priority and carries every baseline criterion or logs each drop, plus a `superseded` log line; from the reviewer's findings an added criterion needs `AC-n added: <reason>` and a tick needs a `done` status or log line (lead)
+- 2026-10-03 — verification — `scripts/tests/test-check-baseline.sh` 96 of 96; independent verification requested a fifth time (lead)
+- 2026-10-03 — in-progress — verify-requirement PASS at `442f68c` (workflow `wf_b5fa6671-c21`, review 5); a session restart cut its skeptic off without a verdict; the lead inspected the skeptic's clone and reproduced its unfinished probe: the future-scope AVE-REQ-101 superseded by a derived version-one requirement passed the checker; the checker now requires a future-scope, deferred replacement for a future-scope requirement and rejects a superseded baseline feature or epic whose baseline children live on; Edge cases state the limits of the mechanical guard (free text, the gate's own code) and the inspection that covers them (lead)

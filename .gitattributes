@@ -1,4 +1,4 @@
-# Normalize text files to LF in the repository; shell scripts keep LF in every checkout so they
-# run on Linux, macOS and Windows (Git Bash, WSL).
-* text=auto
+# Normalize text files to LF in the repository and check every text file out with LF on every host:
+# the development container reads the checkout's bytes (ADR-009), and the baseline package is hashed.
+* text=auto eol=lf
 *.sh text eol=lf

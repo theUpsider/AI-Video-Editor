@@ -59,7 +59,7 @@ they disagree:
    tests as `@pytest.mark.req("AVE-REQ-NNN AC-n", …)` (validated against the requirement files at
    collection), tooling tests in `scripts/tests/` as a `# AVE-REQ-NNN AC-n` comment line directly
    above the case; a tooling tag counts only through a suite result of the run, with that file's exit
-   status (`scripts/tests/run.sh` for the shell suites it lists, `scripts/evidence.py unittest` for
+   status and check count, so a suite that ran no check credits nothing (`scripts/tests/run.sh` for the shell suites it lists, `scripts/evidence.py unittest` for
    `test_*.py`), and one naming no existing criterion stops the run with its file and line. A test covering several ACs carries one full tag per AC. A test that
    runs an acceptance scenario of
    [ACCEPTANCE_TESTS.md](../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) also carries
@@ -160,7 +160,9 @@ baseline (origins, scenarios, dependencies, criteria). `milestone-review` audits
 4. The orphan-tag loop reports nothing.
 5. The ADRs column matches each ADR's § Related requirements.
 6. Every acceptance scenario `AT-NN` named by a `done` requirement has a tagged test whose latest
-   run passed on real rendered output.
+   run passed on real rendered output, or is a whole-product scenario that the requirement's
+   § Verification strategy schedules for the final review (AT-29 to AT-31 run in M7,
+   [ROADMAP.md](ROADMAP.md)); the final review runs those and audits them under this rule.
 
 ## Scale
 
@@ -201,7 +203,7 @@ move in an ADR (see the revisit trigger in
 | [AVE-REQ-031](requirements/AVE-REQ-031-explicit-master-audio-and-routing.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-072](requirements/AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-075](requirements/AVE-REQ-075-cpu-only-reference-rendering.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
-| [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | verification | `scripts/check_baseline.py`, `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md` | `scripts/tests/test-check-baseline.sh` (AC-1, AC-3, AC-4), inspection (AC-2) | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | in-progress | `scripts/check_baseline.py`, `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md` | `scripts/tests/test-check-baseline.sh` (AC-1, AC-3, AC-4), inspection (AC-2) | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
 | [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md) | in-progress | `docs/ENVIRONMENT_CAPABILITIES.md`, `scripts/probe-environment.sh`, `docs/WORKFLOW_LOG.md`, `CLAUDE.md` § Delegation, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-probe-environment.sh` (AC-1), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
 | [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md) | in-progress | `docs/briefs/`, `docs/briefs/handbacks/`, `scripts/check-project-control.sh`, `scripts/verify.sh`, `.claude/skills/develop/SKILL.md`, `CLAUDE.md`, `.claude/settings.json` | `scripts/tests/test-checker.sh` (AC-1, AC-2), `scripts/tests/test-verify-tiers.sh` (AC-4), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
 | [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | in-progress | `scripts/verify.sh`, `scripts/evidence.py`, `scripts/tests/run.sh`, `backend/tests/evidence_plugin.py` | `scripts/tests/test-verify-tiers.sh`, `scripts/tests/test_evidence.py`, `backend/tests/unit/test_evidence_plugin.py`, `scripts/tests/test-stop-hook.sh` (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |

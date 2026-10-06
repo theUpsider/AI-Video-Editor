@@ -231,7 +231,8 @@ In effect:
    `@pytest.mark.scenario("AT-NN")`; tooling tests in `scripts/tests/` use `# AVE-REQ-NNN AC-n` comment lines.
    The evidence plugin ([backend/tests/evidence_plugin.py](../backend/tests/evidence_plugin.py)) rejects a tag
    that names no existing criterion or scenario before any test runs; see [TRACEABILITY.md](TRACEABILITY.md).
-   A tooling tag counts only through a suite result of the run (file, exit status, tags), which
+   A tooling tag counts only through a suite result of the run (file, exit status, number of checks, tags;
+   a suite that exited 0 without running a check counts against its tags), which
    [scripts/tests/run.sh](../scripts/tests/run.sh) writes for each shell suite it runs and
    `scripts/evidence.py unittest` for each unit-test file; a tooling tag that names no existing criterion
    fails the "Evidence manifest" step with its file and line.

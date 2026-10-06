@@ -216,9 +216,10 @@ class EvidenceTests(unittest.TestCase):
             ("Evidence tooling unit tests", "PASS"),
         )
         self.assertEqual(evidence.collect(self.run_dir.path, known).criteria, {})
-        evidence.write_suite_result(self.run_dir.path, ran, 0)
+        evidence.write_suite_result(self.run_dir.path, ran, 0, 3)
         result = json.loads((self.run_dir.path / "suite-test-ran.sh.json").read_text())
         self.assertEqual(result["exitstatus"], 0)
+        self.assertEqual(result["checks"], 3)
         self.assertEqual(
             result["tags"],
             [
@@ -230,22 +231,44 @@ class EvidenceTests(unittest.TestCase):
         collected = evidence.collect(self.run_dir.path, known)
         self.assertEqual(sorted(collected.criteria), [_tag(12, 1), _tag(12, 2)])
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["passed"])
-        self.assertEqual(collected.suites, [{"file": str(ran.resolve()), "exitstatus": 0}])
+        self.assertEqual(
+            collected.suites, [{"file": str(ran.resolve()), "exitstatus": 0, "checks": 3}]
+        )
         self.assertEqual(
             evidence.done_problems(self.run_dir.path, known),
             [f"{_tag(12, 3)}: missing in this run"],
         )
         # A suite that ran and failed counts against every criterion it carries.
-        evidence.write_suite_result(self.run_dir.path, ran, 1)
+        evidence.write_suite_result(self.run_dir.path, ran, 1, 3)
         collected = evidence.collect(self.run_dir.path, known)
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["failed"])
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 2)]), ["failed"])
+        # A suite that exited 0 without running a check is a placeholder: it counts against every
+        # criterion it carries, and so does a result that records no check count at all.
+        evidence.write_suite_result(self.run_dir.path, ran, 0, 0)
+        collected = evidence.collect(self.run_dir.path, known)
+        self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["failed"])
+        self.assertEqual(_outcomes(collected.criteria[_tag(12, 2)]), ["failed"])
+        self.assertEqual(
+            evidence.done_problems(self.run_dir.path, known),
+            [
+                f"{_tag(12, 1)}: failed in this run",
+                f"{_tag(12, 2)}: failed in this run",
+                f"{_tag(12, 3)}: missing in this run",
+            ],
+        )
+        stored = json.loads((self.run_dir.path / "suite-test-ran.sh.json").read_text())
+        del stored["checks"]
+        (self.run_dir.path / "suite-test-ran.sh.json").write_text(json.dumps(stored))
+        collected = evidence.collect(self.run_dir.path, known)
+        self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["failed"])
 
     # AVE-REQ-097 AC-4
     def test_a_suite_that_run_sh_never_runs_gives_no_evidence(self) -> None:
         """scripts/tests/run.sh records a result for each suite it runs, and only for those: a
         tagged suite it does not list gives no evidence, a failing listed one counts against its
-        criterion."""
+        criterion, and a listed one that exits 0 without printing a ``TOTAL: pass=N fail=M`` line
+        with N >= 1 fails the runner and counts against its criterion too."""
         project = self.tmp / "project"
         tests = project / "scripts" / "tests"
         tests.mkdir(parents=True)
@@ -254,13 +277,21 @@ class EvidenceTests(unittest.TestCase):
         listed = re.findall(
             r"^run_suite (\S+)", (tests / "run.sh").read_text(encoding="utf-8"), flags=re.M
         )
-        self.assertGreater(len(listed), 1)
-        failing = listed[-1]
-        stubs = [(name, _tag(12, number), name == failing) for number, name in enumerate(listed, 1)]
-        stubs.append(("test-placeholder.sh", _tag(13, 1), True))  # tagged, never run by run.sh
-        for name, tag, fails in stubs:
+        self.assertGreater(len(listed), 2)
+        failing, noop = listed[-1], listed[-2]
+        bodies = {
+            "pass": "printf 'STUB TOTAL: pass=1 fail=0\\n'\nexit 0\n",
+            "fail": "printf 'STUB TOTAL: pass=0 fail=1\\n'\nexit 1\n",
+            "noop": "exit 0\n",  # a placeholder: exits 0 and runs no check
+        }
+        stubs = [
+            (name, _tag(12, number), "fail" if name == failing else "noop" if name == noop else "pass")
+            for number, name in enumerate(listed, 1)
+        ]
+        stubs.append(("test-placeholder.sh", _tag(13, 1), "fail"))  # tagged, never run by run.sh
+        for name, tag, kind in stubs:
             stub = tests / name
-            stub.write_text(f"#!/usr/bin/env bash\n# {tag}\nexit {int(fails)}\n", encoding="utf-8")
+            stub.write_text(f"#!/usr/bin/env bash\n# {tag}\n{bodies[kind]}", encoding="utf-8")
             stub.chmod(0o755)
         environment = {**os.environ, "AVE_EVIDENCE_DIR": str(self.run_dir.path)}
         completed = subprocess.run(
@@ -271,18 +302,25 @@ class EvidenceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+        self.assertIn(f"<== FAIL: {noop} (no check ran", completed.stdout)
+        self.assertIn(f"<== FAIL: {failing} (exit 1)", completed.stdout)
+        self.assertIn(f"<== PASS: {listed[0]} (1 checks)", completed.stdout)
         known = {
             _id(12): _requirement(12, "done", len(listed)),
             _id(13): _requirement(13, "done", 1),
         }
         collected = evidence.collect(self.run_dir.path, known).criteria
-        for name, tag, fails in stubs[:-1]:
-            self.assertEqual(_outcomes(collected[tag]), ["failed" if fails else "passed"], name)
+        for name, tag, kind in stubs[:-1]:
+            self.assertEqual(_outcomes(collected[tag]), ["passed" if kind == "pass" else "failed"], name)
             self.assertEqual(collected[tag][0]["test"], f"scripts/tests/{name}")
         self.assertNotIn(_tag(13, 1), collected)
         self.assertEqual(
             evidence.done_problems(self.run_dir.path, known),
-            [f"{_tag(12, len(listed))}: failed in this run", f"{_tag(13, 1)}: missing in this run"],
+            [
+                f"{_tag(12, len(listed) - 1)}: failed in this run",
+                f"{_tag(12, len(listed))}: failed in this run",
+                f"{_tag(13, 1)}: missing in this run",
+            ],
         )
 
     def _run_unit(self, source: str | None) -> tuple[int, str]:
@@ -342,7 +380,7 @@ class EvidenceTests(unittest.TestCase):
         self.run_dir.steps(("Project control files", "PASS"), ("Backend unit tests", "PASS"))
         suite = self.tooling / "test-suite.sh"
         suite.write_text(f"# {_tag(12, 2)}\n", encoding="utf-8")
-        evidence.write_suite_result(self.run_dir.path, suite, 0)
+        evidence.write_suite_result(self.run_dir.path, suite, 0, 1)
         with (
             mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
             self._known(_requirement(12, "in-progress", 2)),
@@ -357,7 +395,9 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("ffmpeg", manifest["toolchain"])
         self.assertEqual(manifest["criteria"][_tag(12, 1)][0]["test"], "t::a")
         self.assertEqual(manifest["criteria"][_tag(12, 2)][0]["test"], str(suite.resolve()))
-        self.assertEqual(manifest["suites"], [{"file": str(suite.resolve()), "exitstatus": 0}])
+        self.assertEqual(
+            manifest["suites"], [{"file": str(suite.resolve()), "exitstatus": 0, "checks": 1}]
+        )
         self.run_dir.steps(("Project control files", "PASS"), ("Backend unit tests", "FAIL"))
         with (
             mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
@@ -398,7 +438,7 @@ class EvidenceTests(unittest.TestCase):
         elsewhere = self.tmp / "elsewhere" / "test-other.sh"
         elsewhere.parent.mkdir()
         elsewhere.write_text(f"true\n# {_tag(12, 3)}\n", encoding="utf-8")
-        evidence.write_suite_result(self.run_dir.path, elsewhere, 0)
+        evidence.write_suite_result(self.run_dir.path, elsewhere, 0, 1)
         with self.assertRaises(evidence.EvidenceError) as raised:
             evidence.done_problems(self.run_dir.path, {known.id: known})
         self.assertIn(f"{elsewhere.resolve()}:2: {_tag(12, 3)!r}", str(raised.exception))

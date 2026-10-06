@@ -438,8 +438,8 @@ AWK
 # Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4), run by python3 with the file
 # as its argument. Prints one ERROR line per violation; prints nothing for a file that is no valid
 # JSON object (check 3 reports that). Hook matchers follow Claude Code: "", "*" or none match every
-# source; letters, digits, "_", "-", spaces, "," and "|" only form a list of exact names; anything
-# else is an unanchored regular expression.
+# source; letters, digits, "_", "-" and "|" only form a list of exact names; anything else (a
+# comma-separated list included) is an unanchored regular expression.
 IFS= read -r -d '' PY_SETTINGS_POLICY <<'PY' || true
 import json
 import re
@@ -496,8 +496,8 @@ def matches(matcher, source):
         return True
     if not isinstance(matcher, str):
         return False
-    if re.fullmatch(r"[A-Za-z0-9_\- ,|]+", matcher):
-        return source in {part.strip() for part in re.split(r"[|,]", matcher)}
+    if re.fullmatch(r"[A-Za-z0-9_\-|]+", matcher):
+        return source in set(matcher.split("|"))
     try:
         return re.search(matcher, source) is not None
     except re.error:

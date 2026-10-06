@@ -544,7 +544,8 @@ def mapping_content(base: dict) -> str:
         "",
         "## Rules for changing a working requirement",
         "",
-        f"1. `{PKG_NAME}/` stays byte-for-byte unchanged; its MANIFEST.json hashes prove it.",
+        f"1. `{PKG_NAME}/` stays byte-for-byte unchanged; `scripts/check_baseline.py` pins the SHA-256 of its"
+        " MANIFEST.json and verifies the inventory and every file hash itself.",
         "2. The working files in this directory hold the lifecycle state. The Initial status column"
         " below records the import; frontmatter `status` is current.",
         "3. Log every change to a working requirement in its `## Status` section with the reason"

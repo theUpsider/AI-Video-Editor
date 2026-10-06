@@ -129,6 +129,10 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
    prerequisite (§ External gaps).
 5. Disk: 19 GiB free on the host; the development image takes 1.3 GiB, and render outputs stay in gitignored
    or container-local paths.
+6. Evidence on the Docker Desktop bind mount: one reviewer clone observed a completed release run's directory
+   and `latest-release.json` absent about 40 s after the run, while its harness had executed the background
+   verify launch twice and the second run's manifest persisted; the lead has not reproduced it
+   ([ASM-022](ASSUMPTIONS.md)). A missing manifest after a PASS means: rerun the tier.
 
 ## External gaps
 

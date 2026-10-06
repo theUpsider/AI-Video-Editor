@@ -9,8 +9,11 @@
 #                           verdict, Claude Code version, OS user, writability; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through
 # `scripts/evidence.py unittest`.)
-# Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, criterion tags)
-# goes into the run's evidence directory: a suite's tags count only through that result.
+# Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, number of checks,
+# criterion tags) goes into the run's evidence directory: a suite's tags count only through that
+# result, and only when the suite exited 0 and its `<NAME> TOTAL: pass=N fail=M` line reports N >= 1.
+# A listed suite that exited 0 without running a check fails here (AVE-REQ-097 AC-4: a no-op script
+# establishes nothing).
 # Every suite builds its fixtures in a temp dir and leaves the working tree unchanged.
 # Exit: 0 every suite passed · 1 a suite failed · 2 usage error.
 set -uo pipefail
@@ -25,24 +28,32 @@ esac
 [ "$#" -le 1 ] || { printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2; }
 
 FAILED=""
-# record_suite <suite> <exit status> — writes the suite's result when verify.sh runs this script.
+# record_suite <suite> <exit status> <checks> — writes the suite's result when verify.sh runs this script.
 record_suite() {
   [ -n "${AVE_EVIDENCE_DIR:-}" ] || return 0
-  python3 -B "$W/../evidence.py" record-suite --dir "$AVE_EVIDENCE_DIR" --file "$W/$1" --exit "$2"
+  python3 -B "$W/../evidence.py" record-suite --dir "$AVE_EVIDENCE_DIR" --file "$W/$1" --exit "$2" --checks "$3"
 }
 run_suite() {
-  local name="$1" status
+  local name="$1" status checks out
   shift
+  out="$(mktemp "${TMPDIR:-/tmp}/run-suite.XXXXXX")" ||
+    { printf '<== FAIL: %s (no temp file for its output)\n' "$name"; FAILED="$FAILED $name"; return; }
   printf '\n==> %s\n' "$name"
-  "$W/$name" "$@"
-  status=$?
-  if [ "$status" -eq 0 ]; then
-    printf '<== PASS: %s\n' "$name"
+  "$W/$name" "$@" 2>&1 | tee "$out"
+  status=${PIPESTATUS[0]}
+  checks="$(grep -Eo 'TOTAL: pass=[0-9]+ fail=[0-9]+' "$out" | tail -n 1 | sed -E 's/.*pass=([0-9]+) fail=.*/\1/')"
+  rm -f "$out"
+  checks="${checks:-0}"
+  if [ "$status" -eq 0 ] && [ "$checks" -ge 1 ]; then
+    printf '<== PASS: %s (%s checks)\n' "$name" "$checks"
+  elif [ "$status" -eq 0 ]; then
+    printf '<== FAIL: %s (no check ran: no "TOTAL: pass=N fail=M" line with N >= 1)\n' "$name"
+    FAILED="$FAILED $name(no-check)"
   else
     printf '<== FAIL: %s (exit %s)\n' "$name" "$status"
     FAILED="$FAILED $name"
   fi
-  if ! record_suite "$name" "$status"; then
+  if ! record_suite "$name" "$status" "$checks"; then
     printf '<== FAIL: %s (result not recorded in %s)\n' "$name" "$AVE_EVIDENCE_DIR"
     FAILED="$FAILED $name(evidence)"
   fi
