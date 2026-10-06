@@ -532,6 +532,35 @@ for event, groups in hooks.items():
             if event == "SessionStart" and SESSION_HOOK in command:
                 registered = True
                 covered.update(s for s in SESSION_SOURCES if matches(group.get("matcher"), s))
+# AVE-REQ-097 AC-3: the Stop gate is registered once and nothing in the settings file switches it
+# off, loosens it or runs a heavier tier at every stop.
+STOP_HOOK = ".claude/hooks/stop-verify.sh"
+stop_commands = [
+    str(handler.get("command", ""))
+    for group in as_list(hooks.get("Stop"))
+    if isinstance(group, dict)
+    for handler in as_list(group.get("hooks"))
+    if isinstance(handler, dict)
+]
+if len(stop_commands) != 1:
+    error(
+        f"hooks.Stop holds {len(stop_commands)} command(s); it holds exactly one, the Stop gate"
+        f" {STOP_HOOK} (AVE-REQ-097 AC-3)"
+    )
+for command in stop_commands:
+    if STOP_HOOK not in command or "verify.sh" in command.replace(STOP_HOOK, ""):
+        error(
+            f"hooks.Stop command {command!r} must run the Stop gate {STOP_HOOK} and no other"
+            " verification command (AVE-REQ-097 AC-3)"
+        )
+    if "CLAUDE_VERIFY_" in command:
+        error(f"hooks.Stop command {command!r} sets a gate variable (AVE-REQ-097 AC-3)")
+if data.get("disableAllHooks") not in (None, False):
+    error("disableAllHooks switches the Stop gate and the SessionStart hook off (AVE-REQ-097 AC-3)")
+environment = data.get("env") if isinstance(data.get("env"), dict) else {}
+for key in sorted(environment):
+    if key.startswith("CLAUDE_VERIFY_"):
+        error(f"env.{key} changes the Stop gate from the settings file (AVE-REQ-097 AC-3)")
 if not registered:
     error(f"no SessionStart hook runs {SESSION_HOOK} (AVE-REQ-098 AC-2)")
 else:
@@ -829,6 +858,24 @@ $REQUIRED_FILES
 EOF
 }
 
+# Check 1, second part: scripts/verify.d holds the registered component step files only.
+# verify.sh sources the registered names; any other entry would be a step file no diff, status or
+# required-file rule accounts for (AVE-REQ-097 AC-4).
+check_step_files() {
+  local file
+  for file in scripts/verify.d/* scripts/verify.d/.[!.]*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
+    case "
+$REQUIRED_FILES
+" in
+      *"
+$file
+"*) ;;
+      *) error "$file" "is no registered component step file (list it in REQUIRED_FILES of scripts/check-project-control.sh, or remove it)" ;;
+    esac
+  done
+}
+
 # Check 2: the entry points. scripts/lib/ holds sourced libraries, which need no executable bit.
 check_executables() {
   local file
@@ -1036,6 +1083,7 @@ print_summary() {
 main() {
   cd "$ROOT" || exit 2
   check_required_files
+  check_step_files
   check_executables
   check_settings_json
   check_settings_policy

@@ -12,6 +12,13 @@ quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/session-start-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
+# The fixtures are Git repositories of their own: with a temp dir inside a work tree their Git commands
+# would act on that tree (AVE-REQ-097: a suite leaves the working tree unchanged).
+if git -C "$T" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "test-session-start.sh: the temporary directory $T lies inside a Git work tree; set TMPDIR outside it" >&2
+  exit 2
+fi
+export GIT_CEILING_DIRECTORIES="$T"
 command -v git >/dev/null 2>&1 || { echo "test-session-start.sh: git is required" >&2; exit 2; }
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 PASS=0; FAIL=0

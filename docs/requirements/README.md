@@ -172,6 +172,10 @@ Filled evidence sections look like this:
 - Non-blocking findings: <summary with follow-up AVE-REQ/ASM IDs, or "None.">
 ```
 
+An inspection line counts for a criterion whose `## Verification strategy` holds its own line naming
+inspection as a level, `- AC-n — inspection — <why no test can judge it>` (or
+`- AC-n — integration and inspection — …`); `scripts/evidence.py` credits no other inspection line.
+
 ### Epic (EPIC)
 
 ```markdown
@@ -344,7 +348,10 @@ one: it never moves to `done`, and product completion counts the version-one req
 1. implementation exists;
 2. every AC is satisfied and ticked;
 3. tests or other verification exist for every AC and are tagged with `AVE-REQ-NNN AC-n`;
-4. `./scripts/verify.sh` passes;
+4. `./scripts/verify.sh --tier release` passes on the tree that moves to `done`: the release tier
+   runs every tagged test, and its step "Done requirements evidenced by this run" needs a
+   passing, non-contract test or a recorded inspection for each AC (the same step fails failed,
+   contract-only and missing evidence in the fast and media tiers);
 5. [`verify-requirement`](../../.claude/skills/verify-requirement/SKILL.md) (independent
    reviewer) returned PASS with no blocking findings;
 6. traceability updated: Implementation evidence + Test evidence filled (no `_TBD` left),

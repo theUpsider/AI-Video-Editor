@@ -11,9 +11,11 @@
 # Exit:   0 every step passed · 1 at least one step failed · 2 usage error
 #
 # ==================================================================================================
-# Structure: this file runs the "Project control files" step, then sources every component step file
-# in scripts/verify.d/ in name order, then the "Working tree unchanged by verification" step, and
-# finally records the run's evidence (scripts/evidence.py record).
+# Structure: this file runs the "Project control files" step, then sources the component step files
+# of scripts/verify.d/ that scripts/check-project-control.sh lists as required files, in that order,
+# then the "Working tree unchanged by verification" step, and finally records the run's evidence
+# (scripts/evidence.py record). A step file that cannot be loaded fails the run, and a file in
+# scripts/verify.d/ that is no required file is never sourced (the checker reports it).
 # Component files register steps with fast_step / media_step / release_step "<name>" <command…>;
 # each registers its checks in this order: formatting check (read-only), lint, static analysis /
 # security scan, type checking, unit tests, integration tests, build, end-to-end / smoke tests of key
@@ -24,7 +26,15 @@
 # files), identical locally and in CI. A missing tool fails its step. Never weaken, skip or suppress
 # a check to get green: fix the root cause. Package checks never certify product behavior.
 #
-# Evidence (AVE-REQ-097): every run gets a directory var/verify/runs/<run-id>/, exported to the
+# Environment (AVE-REQ-097 AC-2, AC-4): the run clears the variables of its caller that redirect
+# Git (GIT_DIR and its relatives), change what Python and pytest load or select (PYTHONPATH,
+# PYTEST_ADDOPTS and their relatives) or make a child shell run a startup file, reads no bytecode
+# and no type-checker cache from the tree (PYTHONPYCACHEPREFIX and AVE_RUN_SCRATCH point into a
+# scratch directory that the run creates outside the tree and removes at its end) and loads no
+# pytest plugin by itself (PYTEST_DISABLE_PLUGIN_AUTOLOAD). The interpreter, the shell and the tools
+# on PATH are trusted; CI on a fresh checkout is the run that admits a commit to main.
+#
+# Evidence (AVE-REQ-097): every run gets a new directory var/verify/runs/<run-id>/, exported to the
 # steps as AVE_EVIDENCE_DIR. run_step logs each step there (steps.tsv), test runners write their
 # per-test reports and per-suite results there, and the last step writes manifest.json: results
 # tied to the commit, the tree fingerprint, the toolchain, the configuration and every requirement
@@ -35,8 +45,9 @@
 # flock on the heavy-media lock file ${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock} from its
 # first step to its summary, prints one line while it waits for the lock, and exports
 # AVE_HEAVY_LOCK_HELD=1 to its steps. A caller that already holds the lock sets
-# AVE_HEAVY_LOCK_HELD=1, and the run takes no second lock. Every other heavy media command runs as
-# `flock <lock file> <command>`. The fast tier takes no lock.
+# AVE_HEAVY_LOCK_HELD=1, and the run takes no second lock after it confirmed that the lock is
+# held. Every other heavy media command runs as `flock <lock file> <command>`. The fast tier
+# takes no lock.
 # ==================================================================================================
 # shellcheck source-path=SCRIPTDIR
 
@@ -47,7 +58,9 @@ STEPS_RUN=0
 STEPS_FAILED=0
 FAILED_STEPS=""
 TIER="${VERIFY_TIER:-fast}"
+unset VERIFY_TIER # the steps see the tier of this run through the step helpers only
 AVE_EVIDENCE_DIR=""
+AVE_RUN_SCRATCH=""
 HEAVY_LOCK="${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}"
 
 usage() {
@@ -94,7 +107,15 @@ tier_includes() {
 # for the rest of the run (header: one heavy media job at a time). Returns 1 when it cannot.
 hold_heavy_lock() {
   tier_includes media || return 0
-  [ "${AVE_HEAVY_LOCK_HELD:-}" = 1 ] && return 0
+  if [ "${AVE_HEAVY_LOCK_HELD:-}" = 1 ]; then
+    # The caller says it holds the lock: a lock that this run could take is held by nobody.
+    if command -v flock >/dev/null 2>&1 && flock -n "$HEAVY_LOCK" true 2>/dev/null; then
+      printf 'verify.sh: FAIL — AVE_HEAVY_LOCK_HELD=1 is set and nobody holds the heavy-media lock %s\n' \
+        "$HEAVY_LOCK"
+      return 1
+    fi
+    return 0
+  fi
   if ! command -v flock >/dev/null 2>&1; then
     printf 'verify.sh: FAIL — tier %s needs flock (util-linux) to hold the heavy-media lock %s\n' \
       "$TIER" "$HEAVY_LOCK"
@@ -162,20 +183,43 @@ record_evidence() {
   python3 -B scripts/evidence.py record --dir "$AVE_EVIDENCE_DIR" --tier "$TIER" --fingerprint "$1"
 }
 
+# clean_environment — header § Environment.
+clean_environment() {
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    GIT_COMMON_DIR GIT_NAMESPACE PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONOPTIMIZE PYTHONWARNINGS \
+    PYTHONINSPECT PYTEST_ADDOPTS PYTEST_PLUGINS BASH_ENV ENV CDPATH
+  export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+}
+
+# step_files — the component step files, as scripts/check-project-control.sh registers them.
+step_files() {
+  sed -n 's|^\(scripts/verify\.d/[A-Za-z0-9_.-]*\.sh\)$|\1|p' scripts/check-project-control.sh
+}
+
 main() {
   local before step_file
   cd "$ROOT" || return 2
+  clean_environment
   hold_heavy_lock || return 1
   before="$(tree_state)"
+  # A run starts in a directory that did not exist: nothing a caller prepared counts as its result.
   AVE_EVIDENCE_DIR="$ROOT/var/verify/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  mkdir -p "$AVE_EVIDENCE_DIR" || return 2
+  if ! mkdir -p "$ROOT/var/verify/runs" || ! mkdir "$AVE_EVIDENCE_DIR"; then
+    printf 'verify.sh: cannot create the run directory %s (a run never reuses one)\n' "$AVE_EVIDENCE_DIR" >&2
+    return 2
+  fi
   export AVE_EVIDENCE_DIR
+  # Caches of this run only, outside the tree: no step reads bytecode or type-checker state that an
+  # older tree left behind.
+  AVE_RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/verify-run.XXXXXX")" || return 2
+  trap 'rm -rf "$AVE_RUN_SCRATCH"' EXIT
+  export AVE_RUN_SCRATCH
+  export PYTHONPYCACHEPREFIX="$AVE_RUN_SCRATCH/pycache"
 
   run_step "Project control files" ./scripts/check-project-control.sh
-  for step_file in scripts/verify.d/*.sh; do
-    [ -f "$step_file" ] || continue
+  for step_file in $(step_files); do
     # shellcheck source=/dev/null
-    . "./$step_file"
+    . "./$step_file" || run_step "Load $step_file" false
   done
 
   run_step "Working tree unchanged by verification" check_tree_unchanged "$before"

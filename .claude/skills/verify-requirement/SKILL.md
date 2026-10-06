@@ -46,10 +46,12 @@ Every AC in the file applies. An AC you judge inapplicable is a finding for the 
 
 ```sh
 git grep -n -w --untracked "AVE-REQ-NNN AC-1" -- ':!*.md'
-for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/AVE-REQ-NNN-*.md | grep -oE 'AC-[0-9]+'); do
-  git grep -q -w --untracked "AVE-REQ-NNN $ac" -- ':!*.md' || echo "no tagged test: AVE-REQ-NNN $ac"
-done
 ```
+
+The grep also matches expected-output strings and fixture text of the tooling suites: read each hit before
+you count it as a test. `python3 -B scripts/evidence.py show AVE-REQ-NNN` after the verification run of the
+next section lists each AC with the tests that carry its tag as a test marker or a comment line (`missing`:
+no tagged test; `not-run`: its tests did not run in that tier).
 
 2. Read each test completely, including its fixtures and helpers, and apply the checklist in section 8.
 3. An AC without a tagged test needs a justified inspection in § Verification strategy; perform that inspection yourself and record what you checked.
@@ -57,7 +59,8 @@ done
 ## 5. Run the tests
 
 1. Run the targeted tests for each AC (commands in `docs/ARCHITECTURE.md` § Testing strategy or the test runner configuration). Confirm in the runner output that each AC's tests executed and passed: none skipped, filtered out or marked expected-to-fail.
-2. Run `./scripts/verify.sh` (`--tier media` when an AC depends on rendered media or population tests), then
+2. Run `./scripts/verify.sh --tier release` (the tier that runs every tagged test; a lighter tier leaves
+   tagged tests out and certifies nothing complete), then
    `python3 scripts/evidence.py show AVE-REQ-NNN --require-fresh`: every AC's tagged tests and their outcomes
    in that run, tied to the current tree. One heavy media job runs at a time: the media and release tiers
    wait for the heavy-media lock by themselves, and every other heavy media command (a targeted

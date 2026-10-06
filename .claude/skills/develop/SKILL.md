@@ -140,7 +140,7 @@ At most two writing agents (implementer, tester, architect, writing workflow age
 
 ## 6. Verify — "run relevant verification", "independently review requirement"
 
-1. Run `./scripts/verify.sh`; it must pass. Repair failures through section 7.
+1. Run `./scripts/verify.sh --tier release`; it must pass (Definition of Done item 4: the release tier runs every tagged test). Repair failures through section 7.
 2. Record the transition `in-progress → verification` (TRACEABILITY.md Implementation and Tests from the requirement's Implementation evidence).
 3. Invoke the `verify-requirement` skill with argument `AVE-REQ-NNN` (Skill tool, or `/verify-requirement AVE-REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
    - Without subagents (the sequential fallback of `CLAUDE.md` § Delegation): the requirement stays `verification` and the lead continues other work. The review runs in a fresh session, or a context holding nothing of the implementation work, that follows `.claude/skills/verify-requirement/SKILL.md` from the repository alone (the requirement file, its brief, `git diff`). Its verdict is recorded with the note `sequential review in a fresh session` in the Status-log line; until then the requirement stays `verification`.
@@ -177,7 +177,7 @@ At most two writing agents (implementer, tester, architect, writing workflow age
 - [ ] Record the transition `verification → done` (`verify-requirement PASS`). The TRACEABILITY.md row gets status `done`, complete Implementation, Tests and ADRs cells, and the Evidence cell in the format of `docs/TRACEABILITY.md` § Update rules.
 - [ ] Turn non-blocking findings into follow-ups (section 10) or entries in `docs/ARCHITECTURE.md` § Risks and technical debt.
 - [ ] PROGRESS.md: move the requirement to § Recently completed and delete its findings list; keep only the five newest entries in § Recently completed and § Important recent decisions; refresh § Current objective, § Next recommended work and § Verification status.
-- [ ] Run `./scripts/verify.sh`; the checker validates the `done` invariants.
+- [ ] Run `./scripts/verify.sh --tier release`: the checkers validate the `done` invariants, and the step "Done requirements evidenced by this run" fails a `done` requirement with a criterion that this run does not evidence.
 
 ## 9. Commit — "create coherent commit when appropriate"
 

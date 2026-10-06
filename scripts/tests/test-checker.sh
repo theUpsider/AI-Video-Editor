@@ -20,8 +20,19 @@ case "${1:-}" in
 esac
 T="$(mktemp -d "${TMPDIR:-/tmp}/checker-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
+# The fixtures are Git repositories of their own: with a temp dir inside a work tree their Git commands
+# would act on that tree (AVE-REQ-097: a suite leaves the working tree unchanged).
+if git -C "$T" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "test-checker.sh: the temporary directory $T lies inside a Git work tree; set TMPDIR outside it" >&2
+  exit 2
+fi
+export GIT_CEILING_DIRECTORIES="$T"
 PASS=0; FAIL=0
+# Set by this suite only: a value of the caller's environment never replaces the checker's PATH or
+# the fixture mode.
 SHIM=""
+CHECK_PATH=""
+unset FIXTURE_MODE
 R=docs/requirements
 sub() { python3 - "$1" "$2" "$3" <<'PY'
 import sys
@@ -55,7 +66,8 @@ expect() {
   shift 3
   # FIXTURE_MODE="" builds the fixture without requirements; CHECK_PATH replaces PATH for the checker.
   # shellcheck disable=SC2086  # an empty FIXTURE_MODE must expand to no argument
-  "$W/make-fixture.sh" "$T/case" ${FIXTURE_MODE-with-reqs} >/dev/null
+  "$W/make-fixture.sh" "$T/case" ${FIXTURE_MODE-with-reqs} >/dev/null ||
+    { echo "SETUP FAIL (no fixture): $name"; FAIL=$((FAIL+1)); return; }
   ( cd "$T/case" && eval "$*" ) || { echo "SETUP FAIL: $name"; FAIL=$((FAIL+1)); return; }
   out="$(cd "$T/case" && PATH="${CHECK_PATH:-${SHIM:+$SHIM:}$PATH}" ./scripts/check-project-control.sh 2>&1)"; code=$?
   if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | quiet -F -- "$want"; }; then
@@ -267,6 +279,19 @@ done
 expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh 2>&1 && true'\""
 expect "hook entry with async true"        1 "ERROR: .claude/settings.json: hooks.Stop[0] runs a hook asynchronously (\"async\": true), which escapes its timeout" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['async'] = True\""
 expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['hooks'][0]['async'] = False\""
+# AVE-REQ-097 AC-3: the Stop gate is registered once; nothing in the settings file switches it off,
+# loosens it or runs a heavier tier at every stop.
+expect "Stop hook removed"                 1 "ERROR: .claude/settings.json: hooks.Stop holds 0 command(s); it holds exactly one, the Stop gate .claude/hooks/stop-verify.sh" "jedit \"del d['hooks']['Stop']\""
+expect "Stop command replaced"             1 "must run the Stop gate .claude/hooks/stop-verify.sh and no other verification command" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = 'true'\""
+expect "second Stop command"               1 "hooks.Stop holds 2 command(s)" "jedit \"d['hooks']['Stop'].append({'hooks': [{'type': 'command', 'command': 'scripts/verify.sh --tier release'}]})\""
+expect "Stop command with a heavier tier"  1 "must run the Stop gate .claude/hooks/stop-verify.sh and no other verification command" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = '.claude/hooks/stop-verify.sh; scripts/verify.sh --tier release'\""
+expect "Stop command sets a gate variable" 1 "sets a gate variable" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['command'] = 'CLAUDE_VERIFY_GATE=off .claude/hooks/stop-verify.sh'\""
+expect "disableAllHooks"                   1 "disableAllHooks switches the Stop gate and the SessionStart hook off" "jedit \"d['disableAllHooks'] = True\""
+expect "settings env switches the gate off" 1 "env.CLAUDE_VERIFY_GATE changes the Stop gate from the settings file" "jedit \"d['env'] = {'CLAUDE_VERIFY_GATE': 'off'}\""
+expect "settings env loosens the gate"     1 "env.CLAUDE_VERIFY_MAX_ATTEMPTS changes the Stop gate from the settings file" "jedit \"d['env'] = {'CLAUDE_VERIFY_MAX_ATTEMPTS': '1'}\""
+# AVE-REQ-097 AC-4: scripts/verify.d holds the registered step files only.
+expect "unregistered step file"            1 "ERROR: scripts/verify.d/99-local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/99-local.sh"
+expect "unregistered hidden step file"     1 "ERROR: scripts/verify.d/.local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/.local.sh"
 # AVE-REQ-098 AC-2: the SessionStart hook runs at startup, after resume and after compaction.
 expect "SessionStart matcher startup only" 1 "ERROR: .claude/settings.json: the SessionStart hook .claude/hooks/session-start.sh does not run on resume, compact" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup'\""
 expect "SessionStart matcher without compact" 1 "does not run on compact: its matcher excludes them" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup|resume|clear'\""
@@ -293,13 +318,27 @@ expect "other non-requirement name still rejected" 1 "ERROR: $R/NOTES.md: filena
 FIXTURE_MODE='' expect "baseline fixture without requirements" 0 "OK:" true
 }
 if [ "$ALL_AWKS" -eq 1 ]; then
+  AWKS_RUN=0
   for impl in mawk gawk original-awk busybox; do
     if ! command -v "$impl" >/dev/null 2>&1; then echo "### awk = $impl: not installed, skipped"; continue; fi
     SHIM="$T/shim-$impl"; rm -rf "$SHIM"; mkdir -p "$SHIM"
     if [ "$impl" = busybox ]; then printf '#!/bin/sh\nexec busybox awk "$@"\n' > "$SHIM/awk"; chmod +x "$SHIM/awk"; else ln -s "$(command -v "$impl")" "$SHIM/awk"; fi
     echo "### awk = $impl"
+    AWKS_RUN=$((AWKS_RUN + 1))
+    # The cases below run the checker with this shim first on PATH: the awk it finds is this one.
+    if [ "$(PATH="${CHECK_PATH:-$SHIM:$PATH}" command -v awk)" = "$SHIM/awk" ]; then
+      PASS=$((PASS+1)); echo "  ok   the checker's PATH resolves awk to the $impl shim"
+    else
+      FAIL=$((FAIL+1)); echo "  FAIL the checker's PATH resolves awk to the $impl shim"
+    fi
     run_suite
   done
+  # AVE-REQ-097 AC-4: a suite whose cases were all skipped establishes nothing.
+  if [ "$AWKS_RUN" -ge 1 ]; then
+    PASS=$((PASS+1)); echo "  ok   --all-awks ran $AWKS_RUN awk implementation(s)"
+  else
+    FAIL=$((FAIL+1)); echo "  FAIL --all-awks ran no awk implementation (install mawk, gawk, original-awk or busybox)"
+  fi
 else
   echo "### awk = system ($(command -v awk))"
   run_suite
@@ -320,7 +359,7 @@ if command -v jq >/dev/null 2>&1; then
   CHECK_PATH="$T/path-jq" expect "jq: empty file"                    1 "expected one JSON value, found 0" ": > .claude/settings.json"
   CHECK_PATH="$T/path-jq" expect "jq: syntax error"                  1 "ERROR: .claude/settings.json: invalid JSON" "sub .claude/settings.json '\"Bash(git show *)\"' '\"Bash(git show *)\",'"
 else
-  echo "  jq not installed: jq validator cases skipped"
+  FAIL=$((FAIL+1)); echo "  FAIL jq is not installed: the jq validator cases did not run"
 fi
 if command -v node >/dev/null 2>&1; then
   make_path path-node node
@@ -328,7 +367,7 @@ if command -v node >/dev/null 2>&1; then
   CHECK_PATH="$T/path-node" expect "node: two concatenated objects"  1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" "cat .claude/settings.json .claude/settings.json > s.tmp && mv s.tmp .claude/settings.json"
   CHECK_PATH="$T/path-node" expect "node: empty file"                1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" ": > .claude/settings.json"
 else
-  echo "  node not installed: node validator cases skipped"
+  FAIL=$((FAIL+1)); echo "  FAIL node is not installed: the node validator cases did not run"
 fi
 make_path path-none
 CHECK_PATH="$T/path-none" expect "no validator: warning only"      0 "WARN: .claude/settings.json: JSON not validated (install python3, node or jq)" true

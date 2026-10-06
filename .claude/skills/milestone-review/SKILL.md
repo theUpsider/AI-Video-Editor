@@ -32,7 +32,7 @@ Preconditions: `grep -m1 '^\*\*Status:\*\*' docs/PRODUCT.md docs/ARCHITECTURE.md
 - [ ] Every non-superseded requirement in the milestone is `done`, and steps 3 and 4 confirm it.
 - [ ] The exit criteria in the milestone entry hold, and so does every `## Feature acceptance` item of its features.
 - [ ] Every core user journey the milestone delivers or touches, and every journey delivered earlier, passes end to end through its delivered steps: the `UJ-NNN` steps named in the `## User journey` sections of the features in this and earlier milestones. Steps that later milestones deliver are out of scope; final mode checks every step.
-- [ ] `./scripts/verify.sh` passes on the final tree.
+- [ ] `./scripts/verify.sh --tier release` passes on the final tree.
 - [ ] No blocking finding remains open, architecture-review findings included.
 - [ ] Final mode only: every item of `docs/PRODUCT.md` § Definition of product completion holds.
 
@@ -62,7 +62,7 @@ Any unmet item makes the verdict FAIL.
 
 ### 2. Run full verification
 
-1. Run `./scripts/verify.sh` and keep its summary.
+1. Run `./scripts/verify.sh --tier release` and keep its summary.
 2. When `gh` is available and the remote is GitHub, check CI for HEAD: `gh run list --commit "$(git rev-parse HEAD)" --limit 1`.
 3. A failure is blocking. Record it (reopen the responsible requirement, or create a `proposed` requirement for the fix; PROGRESS.md § Known failures when it needs the human) and continue the review to surface every other finding.
 
@@ -79,14 +79,13 @@ For each `done` requirement in scope:
 2. Every AC has a tagged test or a recorded inspection:
 
    ```sh
-   for id in AVE-REQ-NNN AVE-REQ-NNN; do
-     for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/"$id"-*.md | grep -oE 'AC-[0-9]+'); do
-       git grep -q -w --untracked "$id $ac" -- ':!*.md' || echo "no tagged test: $id $ac"
-     done
-   done
+   python3 -B scripts/evidence.py show AVE-REQ-NNN AVE-REQ-NNN --tier release --require-fresh --require-complete
    ```
 
-   Each reported AC needs an `inspection` line in `## Test evidence`; otherwise it is unevidenced (blocking).
+   The command reads the release run of step 2 (test markers and comment tags; a grep of the tag would also
+   match fixture text). An AC shown `missing` has no test: it needs an `inspection` line in `## Test evidence`
+   whose `## Verification strategy` line names inspection, and then reads `inspected`; otherwise it is
+   unevidenced (blocking). An exit status other than 0 is blocking.
 3. The tagged tests ran and passed in step 2: the runner output shows them executed, none skipped.
 4. Re-run `verify-requirement AVE-REQ-NNN` (a fresh reviewer fork) for each requirement that is high-risk (security, data integrity, parsing, state machines, concurrency, media or file-format handling), that has an AC verified by inspection (no test re-runs it, so only the fork re-performs that inspection on the current tree), or that is doubtful: its implementation files changed after its completion commit (`git log --oneline "$(git log -1 --format=%H --grep='AVE-REQ-NNN[:,]')"..HEAD -- <paths from § Implementation evidence>`), its tests changed later, or a journey failure in step 5 points at it. In a re-verification, the reviewer's notes on `done` status and ticked ACs are expected; ignore them. Add each re-verified ID to the checkpoint's `re-verified:` field.
 5. A FAIL verdict reopens the requirement (`done → in-progress`, logged reason, affected ACs unticked, TRACEABILITY.md and PROGRESS.md updated) and is blocking.
@@ -227,7 +226,7 @@ PASS when every exit criterion holds; FAIL otherwise. Blocking findings: an unfi
 
 ### 18. Commit, refine the next milestone, continue
 
-1. Run `./scripts/verify.sh`. It passes, or fails only with failures recorded as blocking findings in step 2 (name them in the commit body); the project-control step always passes. Inspect `git status` and `git diff`.
+1. Run `./scripts/verify.sh --tier release`. It passes, or fails only with failures recorded as blocking findings in step 2 (name them in the commit body); the project-control step always passes. Inspect `git status` and `git diff`.
 2. Copy the checkpoint line's results into the commit message, delete the line from PROGRESS.md § In progress (an emptied section reads `None.`), and commit the review with that deletion: `docs: complete milestone M<n> review` (final mode: `docs: complete final product review`). Body: verdict, follow-up IDs, rejected recommendations with reasons.
 3. PASS outside final mode: refine the next milestone's requirements to Ready (Definition of Ready; `ready` transition with Status-log line; feature and epic statuses). A requirement that needs the human's answer stays `proposed` and joins the batched escalation. Commit: `AVE-REQ-NNN, AVE-REQ-NNN: refine to ready`.
 4. Report in this format, then return to `develop` § 11, which continues with the next milestone or the follow-ups:

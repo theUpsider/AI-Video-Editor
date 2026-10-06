@@ -43,9 +43,38 @@ read_hook_input() {
 
 # Prints the value of top-level boolean key $2 in JSON text $1 ("true", "false" or empty).
 # Empty means unknown; callers treat every value except "false" as a continued stop.
+# Only a key of the outermost object counts: the same key inside a nested object or a string
+# decides nothing.
 json_bool() {
-  printf '%s' "$1" | tr -d '\r\n' |
-    sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p'
+  printf '%s' "$1" | tr -d '\r\n' | awk -v key="$2" '{
+    text = $0; n = length(text); depth = 0; i = 1
+    while (i <= n) {
+      c = substr(text, i, 1)
+      if (c == "\"") {
+        j = i + 1
+        while (j <= n) {
+          d = substr(text, j, 1)
+          if (d == "\\") { j += 2; continue }
+          if (d == "\"") break
+          j++
+        }
+        if (depth == 1 && substr(text, i + 1, j - i - 1) == key) {
+          rest = substr(text, j + 1)
+          if (match(rest, /^[ \t]*:[ \t]*[a-z]+/)) {
+            value = substr(rest, RSTART, RLENGTH)
+            sub(/^[ \t]*:[ \t]*/, "", value)
+            print value
+            exit
+          }
+        }
+        i = j + 1
+        continue
+      }
+      if (c == "{" || c == "[") depth++
+      else if (c == "}" || c == "]") depth--
+      i++
+    }
+  }'
 }
 
 # Escapes text for use inside a JSON string.
@@ -53,13 +82,14 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '
 }
 
-# Prints CLAUDE_VERIFY_MAX_ATTEMPTS when it is a positive integer, else the default.
+# Prints CLAUDE_VERIFY_MAX_ATTEMPTS when it is an integer from 1 to 10, else the default: a limit
+# of 0 would release at the first failure, and a huge one would block without a practical bound.
 max_attempts() {
   local value="${CLAUDE_VERIFY_MAX_ATTEMPTS:-$DEFAULT_MAX_ATTEMPTS}"
   case "$value" in
-    "" | *[!0-9]*) value="$DEFAULT_MAX_ATTEMPTS" ;;
+    [1-9] | 10) ;;
+    *) value="$DEFAULT_MAX_ATTEMPTS" ;;
   esac
-  [ "$value" -ge 1 ] 2>/dev/null || value=1
   printf '%s\n' "$value"
 }
 
@@ -69,8 +99,9 @@ run_verify() {
     printf 'ERROR: ./scripts/verify.sh is missing or not executable.\n' >"$1"
     return 1
   fi
-  # The fast tier only: the gate runs on every stop, so it never renders media (AVE-REQ-097 AC-3);
-  # the media and release tiers run at requirement verification, milestone reviews and in CI.
+  # The fast tier only: the gate runs on every stop, so it never renders media (AVE-REQ-097 AC-3).
+  # The release tier runs before a requirement moves to done (develop § 8), at milestone reviews
+  # and in CI.
   ./scripts/verify.sh --tier fast >"$1" 2>&1 </dev/null
 }
 

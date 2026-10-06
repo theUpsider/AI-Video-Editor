@@ -12,10 +12,18 @@ quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/stop-hook-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
+# The fixtures are Git repositories of their own: with a temp dir inside a work tree their Git commands
+# would act on that tree (AVE-REQ-097: a suite leaves the working tree unchanged).
+if git -C "$T" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "test-stop-hook.sh: the temporary directory $T lies inside a Git work tree; set TMPDIR outside it" >&2
+  exit 2
+fi
+export GIT_CEILING_DIRECTORIES="$T"
 for tool in git jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "test-stop-hook.sh: $tool is required" >&2; exit 2; }
 done
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+unset CLAUDE_VERIFY_GATE CLAUDE_VERIFY_MAX_ATTEMPTS VERIFY_TIER
 R="$T/stop repo"
 PASS=0; FAIL=0
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1   [$2]"; fi; }
@@ -97,6 +105,42 @@ check "ignored files (.env, worktrees) keep the cache" '[ "$CODE" = 0 ] && ! log
 check "real index untouched by fingerprinting" '[ -z "$(cd "$R" && git diff --cached --name-only)" ]'
 check "no temp index left behind" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
 
+# AVE-REQ-097 AC-2, AVE-REQ-097 AC-3: a tree the fingerprint cannot see has none, so the gate runs
+# verify.sh there and a pass recorded before the hidden change certifies nothing.
+echo "## changes Git hides from the fingerprint"
+BROKEN='[x](no-such-file.md)'
+# blind <name> <hidden failing change> <cleanup> — both run in the repository.
+blind() {
+  hook "$J_FALSE"; logrm
+  ( cd "$R" && eval "$2" ) || { FAIL=$((FAIL+1)); echo "  SETUP FAIL $1"; return; }
+  check "$1: no fingerprint" '[ -z "$(fp 2>/dev/null)" ]'
+  hook "$J_FALSE"
+  check "$1: the gate runs verify.sh and blocks" '[ "$CODE" = 2 ] && logexists'
+  ( cd "$R" && eval "$3" )
+  hook "$J_FALSE"
+  check "$1: the cleaned tree passes and has a fingerprint again" '[ "$CODE" = 0 ] && [ -n "$(fp)" ]'
+}
+blind "skip-worktree entry" 'git update-index --skip-worktree docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'git update-index --no-skip-worktree docs/ARCHITECTURE.md && git checkout -q docs/ARCHITECTURE.md'
+blind "assume-unchanged entry" 'git update-index --assume-unchanged docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'git update-index --no-assume-unchanged docs/ARCHITECTURE.md && git checkout -q docs/ARCHITECTURE.md'
+blind "file hidden by .git/info/exclude" 'mkdir -p .git/info && printf "docs/hidden-note.md\n" >> .git/info/exclude && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
+  ': > .git/info/exclude && rm docs/hidden-note.md'
+blind "file hidden by core.excludesFile" 'printf "docs/hidden-note.md\n" > "$T/user-ignore" && git config core.excludesFile "$T/user-ignore" && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
+  'git config --unset core.excludesFile && rm docs/hidden-note.md'
+blind "clean filter from .git/info/attributes" 'mkdir -p .git/info && printf "docs/ARCHITECTURE.md filter=pin\n" >> .git/info/attributes && git config filter.pin.clean "git cat-file blob HEAD:docs/ARCHITECTURE.md" && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'rm .git/info/attributes && git config --unset filter.pin.clean && git checkout -q docs/ARCHITECTURE.md'
+mkdir -p "$T/other" && (cd "$T/other" && git init -q && git config user.email t@t && git config user.name t && printf 'x\n' > f && git add -A && git commit -qm other)
+hook "$J_FALSE"; logrm
+GIT_DIR="$T/other/.git" GIT_WORK_TREE="$T/other" hook "$J_FALSE"
+check "GIT_DIR and GIT_WORK_TREE of another repository do not redirect the gate (cache hit for this tree)" '[ "$CODE" = 0 ] && ! logexists && [ ! -e "$T/other/.git/claude-verify" ]'
+hook "$J_FALSE"; before="$(fp)"
+sed -i 's/$/\r/' "$R/scripts/verify.d/20-backend.sh"
+check "a file rewritten with CRLF line ends changes the fingerprint" '[ -n "$before" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+(cd "$R" && git checkout -q scripts/verify.d/20-backend.sh)
+check "the restored file gives the earlier fingerprint" '[ "$(fp)" = "$before" ]'
+hook "$J_FALSE"
+
 # AVE-REQ-097 AC-4: a failing check blocks; it never passes as green.
 echo "## failing path"
 printf '\n[broken](no-such-file.md)\n' >> "$R/docs/ARCHITECTURE.md"
@@ -152,6 +196,19 @@ OUT="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS=1 CLAUDE_PROJECT_DIR=
 check "CLAUDE_VERIFY_MAX_ATTEMPTS=1 releases on the first failure" '[ "$CODE" = 0 ] && printf "%s" "$OUT" | jq -e .systemMessage >/dev/null'
 ERR="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS=abc CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>&1 >/dev/null)"; CODE=$?
 check "invalid CLAUDE_VERIFY_MAX_ATTEMPTS falls back to 3" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "of 3"'
+# AVE-REQ-097 AC-3: the limit stays in a small range, so no value releases at once or blocks forever.
+for limit in 0 11 1000000000 99999999999999999999; do
+  ERR="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS="$limit" CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>&1 >/dev/null)"; CODE=$?
+  check "CLAUDE_VERIFY_MAX_ATTEMPTS=$limit falls back to 3" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
+done
+ERR="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_MAX_ATTEMPTS=10 CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>&1 >/dev/null)"; CODE=$?
+check "CLAUDE_VERIFY_MAX_ATTEMPTS=10 is the largest limit" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 10"'
+# Only the key of the outermost object decides whether a stop is fresh.
+printf '2\n' > "$R/.git/claude-verify/attempts"
+hook '{"stop_hook_active":true,"nested":{"stop_hook_active":false}}'
+check "a nested stop_hook_active key does not restart the count (attempt 3 releases)" '[ "$CODE" = 0 ] && [ -n "$OUT" ]'
+hook '{"nested":{"stop_hook_active":true},"list":[{"stop_hook_active":true}],"stop_hook_active":false}'
+check "the outermost key decides: false after nested true is a fresh stop" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
 
 echo "## gate off"
 logrm
