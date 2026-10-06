@@ -59,6 +59,7 @@ import re
 import shutil
 import subprocess
 import sys
+import types
 import unittest
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -80,7 +81,6 @@ KEEP_RUNS = 20
 CRITERION_TAG = re.compile(r"^AVE-REQ-(\d{3}) AC-(\d+)$")
 SCENARIO_TAG = re.compile(r"^AT-\d{2}$")
 _TAG_IN_TEXT = re.compile(r"\bAVE-REQ-\d{3} AC-\d+\b")
-_AC_LINE = re.compile(r"^- \[[ x]\] (AC-\d+)\b")
 _INSPECTION_LINE = re.compile(r"^- (AC-\d+) → inspection:")
 _CONFIGURATION = ("scripts/verify.sh", "backend/pyproject.toml", "backend/uv.lock")
 
@@ -93,6 +93,21 @@ class EvidenceError(Exception):
 # Requirement files
 
 
+def _load_reader() -> types.ModuleType:
+    """scripts/reqfile.py, the one reader of requirement files, shared with check_baseline.py.
+
+    It runs from its source text, so no bytecode cache decides what a requirement file says.
+    """
+    path = Path(__file__).resolve().parent / "reqfile.py"
+    module = types.ModuleType("ave_reqfile")
+    module.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    return module
+
+
+reqfile = _load_reader()
+
+
 @dataclass(frozen=True)
 class Requirement:
     """The parts of a working requirement file that evidence depends on."""
@@ -102,42 +117,44 @@ class Requirement:
     status: str
     criteria: tuple[str, ...]
     inspected: frozenset[str]
-
-
-def _section(lines: list[str], heading: str) -> list[str]:
-    inside, body = False, []
-    for line in lines:
-        if line.startswith("## "):
-            inside = line.strip() == heading
-            continue
-        if inside:
-            body.append(line)
-    return body
+    problems: tuple[str, ...] = ()
+    """Why the file is outside the canonical form (empty for a file check_baseline.py accepts)."""
 
 
 def read_requirement(path: Path) -> Requirement:
-    """Parses a working requirement file (docs/requirements/AVE-REQ-NNN-<slug>.md)."""
-    lines = path.read_text(encoding="utf-8").splitlines()
-    status = next(
-        (line.split(":", 1)[1].strip() for line in lines if line.startswith("status:")), ""
-    )
-    criteria = tuple(
-        match.group(1)
-        for line in _section(lines, "## Acceptance criteria")
-        if (match := _AC_LINE.match(line))
-    )
+    """Parses a working requirement file (docs/requirements/AVE-REQ-NNN-<slug>.md) with the reader
+    check_baseline.py uses: the status and the criteria of the done gate are the ones the baseline
+    gate checked (AVE-REQ-097 AC-4)."""
+    item = reqfile.read(path)
     inspected = frozenset(
         match.group(1)
-        for line in _section(lines, "## Test evidence")
+        for line in item.sections.get("Test evidence", [])
         if (match := _INSPECTION_LINE.match(line))
     )
-    return Requirement(path.name[:11], path, status, criteria, inspected)
+    return Requirement(
+        item.id, path, item.get("status"), tuple(item.criteria()), inspected, tuple(item.problems)
+    )
 
 
 def requirements() -> dict[str, Requirement]:
-    """Every working requirement, by ID."""
-    found = (read_requirement(path) for path in sorted(REQUIREMENTS.glob("AVE-REQ-[0-9]*.md")))
+    """Every working requirement, by ID (check-project-control.sh reports malformed file names)."""
+    found = (
+        read_requirement(path)
+        for path in sorted(REQUIREMENTS.glob("AVE-REQ-[0-9]*.md"))
+        if reqfile.NAME.match(path.name)
+    )
     return {requirement.id: requirement for requirement in found}
+
+
+def form_problems(known: dict[str, Requirement]) -> list[str]:
+    """One line per requirement file outside the canonical form: such a file has no single
+    reading, so no gate takes its status or criteria on trust."""
+    return [
+        f"{requirement.id}: {requirement.path.name} is outside the canonical form"
+        f" ({requirement.problems[0]}); python3 scripts/check_baseline.py lists every problem"
+        for requirement in known.values()
+        if requirement.problems
+    ]
 
 
 def scenario_ids() -> frozenset[str]:
@@ -497,6 +514,9 @@ def cmd_show(args: argparse.Namespace) -> int:
     for requirement_id in shown_ids:
         requirement = known[requirement_id]
         print(f"{requirement_id} ({requirement.status})")
+        if requirement.problems:
+            incomplete = True
+            print(f"  form   NOT CANONICAL  {requirement.problems[0]}")
         for criterion in requirement.criteria:
             items = manifest["criteria"].get(f"{requirement_id} {criterion}", [])
             state = criterion_state(items, criterion in requirement.inspected)
@@ -520,10 +540,11 @@ def _test_summary(items: list[dict[str, Any]], shown: int = 4) -> str:
 
 
 def done_problems(run_dir: Path, known: dict[str, Requirement] | None = None) -> list[str]:
-    """Criteria of `done` requirements that this run does not evidence."""
+    """Criteria of `done` requirements that this run does not evidence, and requirement files
+    outside the canonical form (their status and criteria have no single reading)."""
     known = requirements() if known is None else known
     evidence = collect(run_dir, known)
-    problems = []
+    problems = form_problems(known)
     for requirement in known.values():
         if requirement.status != "done":
             continue
@@ -541,7 +562,10 @@ def cmd_check_done(args: argparse.Namespace) -> int:
         print(f"ERROR: {problem}")
     done = sum(1 for r in requirements().values() if r.status == "done")
     if problems:
-        print(f"FAIL: {len(problems)} criteria of done requirements lack evidence in this run")
+        print(
+            f"FAIL: {len(problems)} problem(s): criteria of done requirements without evidence in"
+            " this run, or requirement files outside the canonical form"
+        )
         return 1
     print(f"OK: every criterion of the {done} done requirements is evidenced by this run")
     return 0

@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: AVE-REQ-094 repaired and under review; AVE-REQ-093/097 under a red-team pass; AVE-REQ-096/098 reviewed PASS._
+_Last updated: 2026-10-06 — M0 open: AVE-REQ-093 red-team findings fixed; AVE-REQ-097 lenses and the AVE-REQ-094 review pending; AVE-REQ-096/098 reviewed PASS._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,18 +23,20 @@ from the drafts.
 
 ## In progress
 
-- AVE-REQ-093 and AVE-REQ-097 `in-progress`: every PASS so far fell to one skeptic probe (fixes `0e4f8d9`,
-  `a681e4d`, `442f68c`, `a10e2df`, `56e5864`; Status logs hold each). A six-lens red-team pass
-  ([brief](briefs/2026-10-03-m0-gates-red-team.md)) enumerates the remaining probes, run `wf_98f469f7-ec5`:
-  launched 2026-10-06; verdict not recorded; on resume without a recorded verdict, re-run its script in
-  [docs/workflows/](workflows/README.md) with `{commit: '35f99c5'}`. Then one review each with a skeptic.
-- AVE-REQ-094 `in-progress` here and `verification` on branch `ave-req-094-probe-evidence` (pushed, `1768892`,
-  the working branch merged in): the skeptic's refutation of the review at `fcd97f0`
-  ([handback part 4](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-4.md)) is repaired there
-  (`1d9fd0d`: `nvidia-smi` counts only with a GPU row; fixture inputs prove the host lines; 115 checks). Review
-  with a skeptic, run `wf_7d239bd1-b31`: launched 2026-10-06; verdict not recorded; on resume without a recorded
-  verdict, re-run its script with `{commit: '1768892'}`. On an upheld PASS: merge the branch `--no-commit`,
-  release tier, `done` after AVE-REQ-093.
+- AVE-REQ-093 and AVE-REQ-097 `in-progress`: the red-team pass ([brief](briefs/2026-10-03-m0-gates-red-team.md),
+  run `wf_98f469f7-ec5`) returned twenty findings from the three AVE-REQ-093 lenses
+  ([handback part 1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md)); all are fixed on this branch: one
+  reader (`scripts/reqfile.py`) for the baseline gate and the done gate, the canonical form, marker lines bound
+  to their text, the roadmap lists, the successor's identity, dependencies through supersession, an isolated
+  checker. The AVE-REQ-097 lenses and both critics ended with a model-access error and were launched again
+  (lens 097-F as `wf_44376763-43f`): launched 2026-10-06; verdict not recorded; on resume without a recorded
+  verdict, re-run each script in [docs/workflows/](workflows/README.md) with `{commit: '35f99c5'}`. Then the
+  AVE-REQ-097 fixes and one review each with a skeptic.
+- AVE-REQ-094 `in-progress` here and `verification` on branch `ave-req-094-probe-evidence` (pushed, `1768892`):
+  the repair of the skeptic's refutation is there (`1d9fd0d`). Its review `wf_7d239bd1-b31` ended with the same
+  access error and no verdict. Next: merge this branch into the task branch, release tier there, re-run the
+  review script with that commit; on an upheld PASS merge the branch `--no-commit`, release tier, `done` after
+  AVE-REQ-093.
 - AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenges upheld;
   `done` follows AVE-REQ-093 and AVE-REQ-094.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).

@@ -68,10 +68,33 @@ uses a YAML subset that the checker parses line by line:
 | `scope` | REQ | `v1`, `future` | v1: part of version one. future: explicit future scope with status `deferred`. An imported file keeps the baseline scope |
 | `primary_gate` | REQ | `M0`…`M7` (milestones of [ROADMAP.md](../ROADMAP.md)), `FUTURE` | The milestone whose review completes the requirement; `FUTURE` exactly for scope future |
 | `origins` | REQ | flow list of brief clause IDs; `[]` allowed for later derived files | The user-brief clauses the requirement implements |
-| `dependencies` | REQ | flow list of `AVE-REQ-NNN`; `[]` when none | Requirements that are `done` before this one starts; § Dependencies links them |
+| `dependencies` | REQ | flow list of `AVE-REQ-NNN`; `[]` when none | Requirements that are `done` before this one starts; § Dependencies links exactly these. An imported file keeps the baseline's entries and may add derived requirements (`AVE-REQ-102` onward) with a logged reason; a superseded dependency counts through its replacement |
 | `scenarios` | REQ | flow list of `AT-NN`; `[]` allowed for later derived files | Acceptance scenarios of [ACCEPTANCE_TESTS.md](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) that exercise the requirement |
 | `baseline` | REQ, imported files only | relative path to the baseline requirement file | The immutable source of the imported statement and criteria |
 | `superseded_by` | all, optional, last key | ID of the same kind; for an EPIC or FEAT retired by a removal, the removal REQ | Required when status is `superseded`; names the replacement |
+
+## Canonical form
+
+Every EPIC, FEAT and REQ file is written in one form. [reqfile.py](../../scripts/reqfile.py) reads it for both
+gates (check_baseline.py and evidence.py), and check_baseline.py fails every other form with
+"canonical form: …". A file in this form has one reading: the status, the Description, the criteria and the
+Status log the gates check are the ones a Markdown reader sees.
+
+1. Characters: UTF-8 without a byte-order mark; line feeds end lines; U+0020 is the only space; no control,
+   format or line-separator character (tab, carriage return, no-break space and zero-width characters
+   included).
+2. Frontmatter: line 1 is `---`; each following line reads `key: value` with a key of the kind's template,
+   once, in the template's order, unquoted; `---` closes the block; one blank line and the H1 follow.
+3. Headings: the H1 once, then every heading of the kind's template once, in the template's order, written
+   `## <name>` at column 0. The file holds no other heading in any form: no other level, no indented,
+   underlined or HTML heading, none inside a list item or a quote. New content goes into an existing
+   section.
+4. HTML: no comment, and no line that starts with `<`.
+5. Fenced blocks open with three backticks, alone or followed by a language word, at column 0, and close
+   with three backticks at column 0.
+6. `## Acceptance criteria` holds criterion lines only: `- [ ] AC-n <text>`, `- [x] AC-n <text>` once ticked.
+7. `## Status` holds log lines only: `- YYYY-MM-DD — <status> — <text>` with a real date and a lifecycle
+   status, oldest first.
 
 ## Templates
 
@@ -276,15 +299,18 @@ deferred                                  (future scope; leaves it only through 
 Rules:
 1. The lead sets every status. Frontmatter `status` is canonical. Every transition appends
    one line to `## Status`: `- YYYY-MM-DD — <status> — <reason> (<actor>)`. The newest line
-   is last, and its status equals the frontmatter.
+   is last, its status equals the frontmatter, and the dates never decrease
+   ([Canonical form](#canonical-form) rule 7).
 2. A logged change without a transition repeats the current status:
-   `- 2026-10-03 — ready — AC-2 limit clarified to 100 items (lead)`.
+   `- 2026-10-03 — ready — Edge cases settled for the import limit (lead)`; a change to an imported
+   Description or AC opens with its marker ([Changing requirements](#changing-requirements) rule 1).
 3. With every transition, update the TRACEABILITY.md row (once it exists) and docs/PROGRESS.md
    in the same change.
 4. `blocked`: log the reason and the prior state; add the blocker to PROGRESS.md § Blockers;
    on resolution return to the prior state and remove the blocker.
-5. Reopening `done`: log the reason (regression, changed AC), untick the affected ACs, and run
-   the full Definition of Done again.
+5. Reopening `done`: log the reason (regression, changed AC), untick every AC, and run the full
+   Definition of Done again. Ticks stand only while the status is `done` (a requirement superseded
+   after it was done keeps them); check_baseline.py fails a tick in any other status.
 6. EPIC and FEAT status derives from their children, leaving out superseded and deferred
    children: `ready` when every remaining child is ready or later; `in-progress` once any child
    is in progress or later; `verification` while milestone-review checks Feature acceptance or
@@ -329,9 +355,12 @@ one: it never moves to `done`, and product completion counts the version-one req
 `proposed` requirements change freely within rule 2; log substantial changes. "Approved"
 means status `ready` or later, and `deferred`. For an approved requirement:
 1. Log every change to Intent, Description or ACs in `## Status` with the reason before or with
-   the edit. Never change a requirement silently. For a changed or removed baseline AC, the log
-   line contains `AC-n changed: <reason>`; for a changed Description of an imported requirement,
-   it contains `Description changed: <reason>`
+   the edit. Never change a requirement silently. For an imported requirement the log line's text
+   opens with a marker that names the change and the text it covers: `AC-n changed [<mark>]: <reason>`
+   for a reworded baseline AC, `AC-n removed: <reason>` for a removed one,
+   `AC-n added [<mark>]: <reason>` for an added one, `Description changed [<mark>]: <reason>` for the
+   Description. `<mark>` is an eight-digit digest of the new text: check_baseline.py prints the exact
+   marker in its error, one line covers one edit, and a later edit of the same text needs a new line
    ([Baseline import and integrity](#baseline-import-and-integrity)).
 2. `source: human` and the change alters product intent, in any status: a change the human
    requested is authorized; apply it through `product-definition` amendment mode, which records
@@ -354,12 +383,17 @@ means status `ready` or later, and `deferred`. For an approved requirement:
 1. Create the replacement with the next free ID; its Intent names the requirement it replaces.
 2. In the old file set `status: superseded`, add `superseded_by: <new ID>` as the last
    frontmatter key, and log the reason in a `superseded` Status-log line. For a baseline
-   requirement of version one, check_baseline.py also requires that the replacement (the end of
-   any `superseded_by` chain) exists, keeps scope `v1` and is not `deferred`, has a priority not
-   below the baseline's, and carries every baseline criterion verbatim (any AC number); a
-   criterion the replacement drops needs `AC-n changed: <reason>` in the old file's Status log.
-   A future-scope baseline requirement is superseded only by a future-scope, `deferred`
-   requirement: an exclusion enters version one only through a new baseline from the human. A
+   requirement, check_baseline.py also requires that the replacement (the end of any
+   `superseded_by` chain) exists and keeps what the human asked for. For version one it keeps scope
+   `v1`, is not `deferred` and has a priority not below the baseline's; a future-scope requirement
+   is superseded only by a future-scope, `deferred` requirement (an exclusion enters version one
+   only through a new baseline from the human). Either way the replacement keeps the type,
+   `source: human` for a human requirement, the origins and the scenarios, stands in its parent's
+   list and on the roadmap, and carries the baseline Description and every baseline criterion
+   verbatim (any AC number). The old file's Status log records each difference with a marker line:
+   `AC-n dropped by <new ID>: <reason>` for a criterion the replacement leaves out,
+   `<new ID> AC-m added [<mark>]: <reason>` for a criterion that belongs to no requirement it
+   replaces, `Description replaced by <new ID> [<mark>]: <reason>` for another Description. A
    baseline EPIC or FEAT is `superseded` only when every baseline child under it is superseded.
    Supersession never demotes an explicit user requirement and never lifts an exclusion
    ([AVE-REQ-093](AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) AC-3).
@@ -420,34 +454,33 @@ is edited. The working files in this directory carry the lifecycle.
    `nonfunctional` → non-functional, `delivery` → constraint; priority `must` → must, `future` →
    could; status `ready` → ready, `deferred` → deferred; source human when the origins include a
    user clause (`U01`–`U27`) and derived when they hold only derived clauses (`D01`–`D05`).
-4. **Changing an imported requirement.** Log every change in `## Status` (see
-   [Changing requirements](#changing-requirements)). A baseline AC whose text changes, or which
-   is removed, needs a Status-log line containing `AC-n changed: <reason>`; check_baseline.py
-   reports it as a recorded change. An added AC takes the next unused AC number and needs a
-   Status-log line containing `AC-n added: <reason>`; check_baseline.py reports it as a recorded
-   addition. `## Acceptance criteria` holds criterion lines only: a continuation line under a
-   criterion, a fenced block or a sub-heading there fails the check, so no note can qualify or
-   waive a criterion in place; a note belongs in Edge cases or the Description with a logged
-   reason (check_baseline.py owns these rules; check 8 of `scripts/check-project-control.sh`
-   covers the list-item form). A criterion is ticked only once the requirement reached `done`
-   (status `done` or `superseded`, or a `done` line in its Status log for a reopened one).
-   The Description (the baseline statement verbatim), `scope`, `parent`, `dependencies`,
-   `origins`, `scenarios`, `baseline`, the title, the type, the priority and the source stay
-   equal to the baseline (mapped); a different value fails the check. Of these, only the
-   Description may change, with a Status-log line containing `Description changed: <reason>`;
-   check_baseline.py reports it as a recorded change. A primary gate moved by the roadmap is
-   reported.
+4. **Changing an imported requirement.** Log every change in `## Status` with its marker (see
+   [Changing requirements](#changing-requirements) rule 1): `AC-n changed [<mark>]: <reason>`,
+   `AC-n removed: <reason>`, `AC-n added [<mark>]: <reason>` (an added AC takes the next unused AC
+   number) or `Description changed [<mark>]: <reason>`. check_baseline.py reports each as a recorded
+   change or addition and fails on a change without its marker line; the mark ties the line to the
+   text, so an old line never covers a later edit. `## Acceptance criteria` holds criterion lines
+   only ([Canonical form](#canonical-form) rule 6), so no note can qualify or waive a criterion in
+   place; a note belongs in Edge cases or the Description with a logged reason. A criterion is ticked
+   only while the requirement is `done` (or `superseded` after it was done). The Description (the
+   baseline statement verbatim), `scope`, `parent`, `origins`, `scenarios`, `baseline`, the title,
+   the type, the priority and the source stay equal to the baseline (mapped), as do the priority,
+   the goal and the parent of an imported epic or feature; a different value fails the check. Of
+   these, only the Description may change, with its marker line. `dependencies` keeps the
+   baseline's entries and admits derived requirements beyond them. A primary gate moved by the
+   roadmap is reported, and ROADMAP.md lists the requirement under that gate.
 5. **New work.** A requirement found later takes the next free ID after the baseline range
-   (`AVE-REQ-102` onward) with `source: derived`, a `scope` and a `primary_gate`; it is absent
-   from IMPORT_MAPPING.md.
+   (`AVE-REQ-102` onward) with `source: derived`, a `scope` and a `primary_gate`; it stands in its
+   parent's list section and on a ROADMAP.md list under its primary gate, and it is absent from
+   IMPORT_MAPPING.md.
 
 ## Enforced checks
 
 `./scripts/check-project-control.sh` (run by `./scripts/verify.sh`) fails on:
 1. a filename outside the `AVE-EPIC-NN-<slug>.md`, `AVE-FEAT-NNN-<slug>.md` and
    `AVE-REQ-NNN-<slug>.md` patterns (this README and IMPORT_MAPPING.md excepted);
-2. an empty file, a missing or unterminated frontmatter block, an empty `title`, a frontmatter
-   `id` different from the filename ID, or a duplicate ID;
+2. an empty file, a missing or unterminated frontmatter block, a repeated frontmatter key, an
+   empty `title`, a frontmatter `id` different from the filename ID, or a duplicate ID;
 3. an invalid `status` (including `deferred`) or `priority`, or an invalid REQ `type` or `source`;
 4. a missing parent or a parent of the wrong kind (REQ → AVE-FEAT or AVE-EPIC; FEAT → AVE-EPIC);
 5. an EPIC with empty `goals` or a GOAL ID absent from PRODUCT.md;
@@ -463,29 +496,49 @@ is edited. The working files in this directory carry the lifecycle.
     text line, without an `AVE-REQ-NNN` ID, duplicated, or whose requirement file is missing or
     whose status differs from the frontmatter; or a `done` REQ without a row.
 
-The checker ignores frontmatter keys it does not know, so the requirement keys `scope`,
-`primary_gate`, `origins`, `dependencies`, `scenarios` and `baseline` pass through to
-`python3 scripts/check_baseline.py`, which fails on:
+The checker reads Markdown leniently (CRLF line ends, quoted values, keys it does not know), so
+the requirement keys `scope`, `primary_gate`, `origins`, `dependencies`, `scenarios` and `baseline`
+pass through to `python3 -I -B scripts/check_baseline.py`, which owns the
+[canonical form](#canonical-form) and fails on:
 1. a changed baseline: a `MANIFEST.json` whose SHA-256 differs from the pinned
-   `BASELINE_MANIFEST_SHA256`, a missing manifest or a second `MANIFEST.json` inside the package
+   `BASELINE_MANIFEST_SHA256`, a missing manifest or a second `MANIFEST.json` inside the package,
+   a file whose size or SHA-256 differs from its manifest entry, a file added, removed or linked
    (each reported as "baseline changed"), or a failing package validation
-   (`tools/validate_package.py`: consistency and the manifest's hash of every file), so any edit
-   of the baseline fails, including one that re-hashes the manifest;
-2. a baseline epic, feature or requirement without exactly one working file of the same ID, or
+   (`tools/validate_package.py`, run only when its own bytes verified), so any edit of the baseline
+   fails, including one that re-hashes the manifest;
+2. a working file outside the canonical form, or a requirement file below `docs/requirements/`;
+3. a baseline epic, feature or requirement without exactly one working file of the same ID, or
    with a different title or H1;
-3. an imported requirement whose type, priority or source differs from the mapped baseline
-   value, or whose `scope`, `parent`, `dependencies`, `origins`, `scenarios` or `baseline`
-   differs from the baseline, or whose Description differs from the baseline statement without a
-   `Description changed: <reason>` Status-log line; a parent that does not link its baseline
-   child;
-4. scope and status out of step: `deferred` without `scope: future`, a future requirement in a
-   status other than `deferred` or `superseded`, or `primary_gate: FUTURE` outside future scope;
-5. a baseline AC that is missing or altered without a `AC-n changed: <reason>` Status-log line;
-6. a version-one requirement that depends on a `deferred` requirement, or a dependency without
-   a working file;
-7. a working file numbered inside the baseline range without a baseline entry, or a later
-   requirement without `source: derived`, `scope`, `primary_gate` or `dependencies`;
-8. a missing or stale IMPORT_MAPPING.md.
+4. an imported requirement whose type, priority or source differs from the mapped baseline
+   value, whose `scope`, `parent`, `origins`, `scenarios` or `baseline` differs from the
+   baseline, or whose `dependencies` drop a baseline entry or add another baseline requirement;
+   an imported epic or feature with another priority, goal or parent; a
+   parent whose own list section (`## Requirements`, `## Features`) does not link its child, derived
+   children included;
+5. scope and status out of step: `deferred` without `scope: future`, a future requirement in a
+   status other than `deferred` or `superseded`, `primary_gate: FUTURE` outside future scope, or a
+   version-one requirement under a deferred feature;
+6. a baseline AC or Description that is missing or altered, or an added AC, without its marker
+   line (`AC-n changed [<mark>]`, `AC-n removed`, `AC-n added [<mark>]`,
+   `Description changed [<mark>]`); a ticked AC on a requirement that is not `done` (or `superseded`
+   after it was done);
+7. a supersession of a baseline requirement that breaks [Superseding](#superseding) step 2;
+8. a version-one requirement that depends on a `deferred` or future-scope requirement, directly or
+   through a superseded one; a dependency without a working file, on itself or in a cycle;
+   `## Dependencies` links that differ from frontmatter `dependencies`;
+9. a working file numbered inside the baseline range without a baseline entry, or a later
+   requirement without `source: derived` (`human` when it replaces a human baseline requirement),
+   `scope`, `primary_gate` or `dependencies`;
+10. a roadmap that leaves a requirement unscheduled: a requirement that is not superseded on no
+    ROADMAP.md list or on two, a version-one requirement under another milestone than its
+    `primary_gate` or in the Deferred group, a `primary_gate` that names no milestone, an exclusion
+    outside the Deferred group, a requirement past `proposed` on a "Proposed during" line, a
+    milestone with Status done that lists an unfinished requirement, or a listed ID without a file;
+11. a missing or stale IMPORT_MAPPING.md.
+
+check_baseline.py runs in Python's isolated mode and loads the import tool and the reader from their
+source text: a bytecode cache, a module beside it or a Python variable of the environment changes no
+result.
 It also prints requirements by status and by gate and the ticked ACs. The regression suites
 for both checkers and the hooks run with `scripts/tests/run.sh`.
 

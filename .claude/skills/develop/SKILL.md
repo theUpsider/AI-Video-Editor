@@ -74,7 +74,7 @@ grep -H -E '^(status|priority):' docs/requirements/AVE-REQ-*.md
 ```
 
 1. Finish started work first: a requirement in `in-progress` resumes at section 3 step 2, or at section 7 step 2 when PROGRESS.md § In progress lists open findings under it; one in `verification` resumes at section 6 step 3.
-2. Candidates: requirements in the current milestone's "Requirements (dependency order)" list with status `ready` whose every `## Dependencies` requirement is `done`.
+2. Candidates: requirements in the current milestone's "Requirements (dependency order)" list with status `ready` whose every `## Dependencies` requirement is `done` (a superseded dependency counts through the requirement its `superseded_by` chain ends at).
 3. Order: priority `must` > `should` > `could`; ties follow roadmap order.
 4. No candidate while `proposed` requirements remain in the milestone: refine the next ones in roadmap order to Ready. Apply the Definition of Ready, complete missing sections, resolve missing information as `docs/ASSUMPTIONS.md` entries, record the `ready` transition, and commit the batch (`AVE-REQ-NNN, AVE-REQ-NNN: refine to ready`).
 5. Only `blocked` requirements remain in the milestone and the scope argument is empty: take requirements from the following `planned` milestones, in roadmap order, whose every `## Dependencies` requirement is `done`; a milestone's `Depends on` line does not bar them. First refine the `proposed` ones to Ready as in step 4, then select among them by steps 2–3. The current milestone stays `in-progress`, and those milestones stay `planned`. With scope `M<n>`, or when nothing is selectable or refinable anywhere, go to section 14.
@@ -201,7 +201,7 @@ Never expand the current requirement silently. For each discovery:
 - **Product-intent question meeting an escalation criterion:** add it to `docs/PRODUCT.md` § Open product questions and escalate (section 14).
 - **Technical debt:** add it to `docs/ARCHITECTURE.md` § Risks and technical debt.
 
-When the current requirement cannot pass without the new work, add the new requirement to its Dependencies with a logged reason, refine the new one to Ready and complete it first; the current requirement stays `in-progress`.
+When the current requirement cannot pass without the new work, add the new requirement to its dependencies (frontmatter `dependencies` and the § Dependencies link, which name the same requirements) with a logged reason, refine the new one to Ready and complete it first; the current requirement stays `in-progress`.
 
 ## 11. Continue — milestones and product completion
 

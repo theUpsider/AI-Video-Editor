@@ -168,7 +168,7 @@ Check `docs/PRODUCT.md` § Open product questions: each is resolved or escalated
 3. Roadmap consistency: every feature and requirement named in the milestone entry exists as a file, and every non-superseded requirement appears in some milestone:
 
    ```sh
-   for f in docs/requirements/AVE-REQ-*.md; do grep -q '^status: superseded' "$f" && continue; id=$(basename "$f" | cut -d- -f1-2); grep -q -w "$id" docs/ROADMAP.md || echo "not on roadmap: $id"; done
+   for f in docs/requirements/AVE-REQ-*.md; do grep -q '^status: superseded' "$f" && continue; id=$(basename "$f" | cut -d- -f1-3); grep -q -w "$id" docs/ROADMAP.md || echo "not on roadmap: $id"; done
    ```
 
 4. Spot-check two or three `done` requirements not re-verified in step 4, choosing the riskiest: AC → tagged test → test passes (for an AC verified by inspection: the inspection re-performed by the procedure in § Implementation evidence, passing) → implementation files exist and hold the behavior → commit (`git log --oneline --grep='AVE-REQ-NNN[:,]'`).

@@ -39,35 +39,64 @@ The implementing agent shall integrate this specification into the existing boot
 - MANIFEST.json edited, removed or duplicated inside the package, or a baseline edit with a re-hashed
   MANIFEST.json → the baseline check fails with "baseline changed": the checker pins the manifest's SHA-256
   outside the package (AC-1, AC-3).
-- A working file missing, duplicated or with a changed identity (title, type, priority, scope, source, parent,
-  dependencies, origins, scenarios, Description) → the baseline check fails; a Description change passes only
-  with a logged reason (AC-1, AC-3).
+- A working requirement file missing, duplicated or with a changed identity (title, type, priority, scope,
+  source, parent, origins, scenarios, Description), with a baseline dependency dropped or another baseline
+  requirement added as a dependency, or an imported epic or feature with another title, priority, goal or
+  parent → the baseline check fails; a Description change passes only with a logged reason, and a derived
+  requirement may join the dependencies (AC-1, AC-3).
 - A criterion or the Description reworded or removed, or text added to the Description (a fenced block
-  included), without a logged reason (`AC-n changed: <reason>`, `Description changed: <reason>`) → fails; with
-  a logged reason → reported (AC-3).
+  included), without its marker line in the Status log (`AC-n changed [<mark>]: <reason>`,
+  `AC-n removed: <reason>`, `Description changed [<mark>]: <reason>`) → fails; with the line → reported. The
+  marker opens the log line's text and the mark is a digest of the new text, so a line that quotes the rule,
+  names another requirement or covers an earlier edit records nothing (AC-3).
+- A working file outside the canonical form (README § Canonical form: a repeated, quoted or unknown frontmatter
+  key, a second block or a stray character around the frontmatter, a carriage return or an invisible character,
+  a heading outside the template in any Markdown form, an HTML comment, an irregular fence, a Status log with
+  an undated, unordered or free-text line) → fails: `scripts/reqfile.py` reads every working file for the
+  baseline gate and the done gate, so a file they accept has one reading, and a Markdown reader sees the
+  status, the Description and the criteria that were checked (AC-3, AC-4).
 - Text inside § Acceptance criteria that is no criterion line (a continuation line under a criterion, a fenced
-  block, a sub-heading) → fails: the section holds criterion lines only, so nothing can qualify or waive a
+  block, a capital-X tick) → fails: the section holds criterion lines only, so nothing can qualify or waive a
   criterion in place (AC-3).
 - A symbolic link added inside the package (a file or a directory) → fails with "baseline changed" (AC-1).
 - A future requirement made ready, or a version-one requirement deferred → fails (AC-3).
 - A version-one requirement superseded by a requirement that does not exist, is future scope or deferred, has a
-  lower priority, or drops a baseline criterion without an `AC-n changed: <reason>` line in the old file's
-  Status log, or superseded without a `superseded` log line → fails; a replacement that carries every baseline
-  criterion is reported as a supersession (AC-3).
+  lower priority, another type, source `derived` for a human requirement, fewer origins or scenarios, another
+  Description, a criterion of its own or a missing baseline criterion without the marker line in the old
+  file's Status log (`AC-n dropped by <ID>`, `<ID> AC-m added [<mark>]`, `Description replaced by <ID> [<mark>]`),
+  or superseded without a `superseded` log line → fails; a replacement that carries the baseline Description
+  and every baseline criterion is reported as a supersession (AC-3).
 - A future-scope requirement (an exclusion) superseded by a requirement that is version-one scope or not
   `deferred` → fails: an exclusion enters version one only through a new baseline from the human (AC-3).
 - A baseline feature or epic set to `superseded` while a baseline child under it is not superseded → fails (AC-3).
-- A criterion added to a baseline requirement without an `AC-n added: <reason>` log line → fails; with the
-  line → reported (AC-3).
-- Text in Intent, Edge cases, Verification strategy or the evidence sections that narrows or waives a criterion
-  → outside the mechanical guard (free text): README § Changing requirements rule 6 makes criteria binding as
-  written, and `verify-requirement` judges against them exactly as written (AC-3, inspection).
-- A change to the gate itself (`scripts/check_baseline.py` and its pinned hash, `scripts/requirements/import_baseline.py`
-  and its value mappings, the verify step that runs them) → outside the mechanical guard: the diff shows it, and
-  `verify-requirement` and the commit review judge it; a new baseline version comes only from the human
-  (AC-1, AC-3, inspection).
-- A criterion ticked on a requirement that never reached `done` → fails (AC-4); a reopened requirement keeps the
-  ticks its `done` log line covers.
+- A criterion added to a baseline requirement without an `AC-n added [<mark>]: <reason>` log line → fails;
+  with the line → reported (AC-3).
+- A requirement that is not superseded and stands on no ROADMAP.md list or on two, a version-one requirement
+  under another milestone than its primary gate or in the Deferred group, an exclusion on a milestone list, a
+  primary gate that names no milestone, or a milestone with Status done that lists an unfinished requirement
+  → fails (AC-3).
+- A version-one requirement that depends on an exclusion, directly or through a superseded requirement, a
+  dependency on itself or in a cycle, § Dependencies that differs from the frontmatter, a derived requirement
+  missing from its parent's list, or a version-one requirement under a deferred feature → fails (AC-3).
+- A feature that links a requirement only outside § Requirements (under Out of scope, for example) → fails
+  (AC-1, AC-3).
+- Text in Intent, Edge cases, Verification strategy or the evidence sections that narrows or waives a criterion,
+  whatever its typography (bold text that imitates a heading included) → outside the mechanical guard (free
+  text): README § Changing requirements rule 6 makes criteria binding as written, and `verify-requirement`
+  judges against them exactly as written (AC-3, inspection). The reason of a marker line and the text of a
+  log line are free text too: the checker reports each recorded change, and commit review judges the reason.
+- A change to the gate itself (`scripts/check_baseline.py` and its pinned hash, `scripts/reqfile.py`,
+  `scripts/requirements/import_baseline.py` and its value mappings, the verify step that runs them) → outside
+  the mechanical guard: the diff shows it, and `verify-requirement` and the commit review judge it; a new
+  baseline version comes only from the human (AC-1, AC-3, inspection).
+- A bytecode cache of a gate tool, a module beside the checker, or a Python variable of the environment
+  (`PYTHONPATH`, `PYTHONPYCACHEPREFIX`) → changes no result: the checker runs in Python's isolated mode and
+  loads its tools from their source text (AC-1, AC-3). The interpreter, the shell and the tools on `PATH` of
+  the development container and of CI are trusted; CI on a fresh checkout is the run that admits a commit to
+  `main`.
+- A criterion ticked on a requirement that is not `done` → fails (AC-4): reopening unticks every criterion, and
+  a requirement superseded after it was done keeps its ticks. The `done` line of the Status log is log text:
+  the diff shows it and commit review judges it.
 - Package validation passing while no requirement is verified → statuses stay unverified (AC-4).
 - Existing bootstrap content kept when documents are populated (AC-2, inspection).
 
@@ -75,19 +104,20 @@ The implementing agent shall integrate this specification into the existing boot
 None.
 
 ## Verification strategy
-- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, a file edited, added or removed behind an edited validator, and a symbolic link added inside the package fail with "baseline changed"; an edited validator is never run), exactly one working file per baseline ID, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `scripts/check_baseline.py` on the real repository in every tier.
+- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, a file edited, added or removed behind an edited validator, and a symbolic link added inside the package fail with "baseline changed"; an edited validator is never run; a planted bytecode cache of the import tool, a `hashlib` beside the checker or on `PYTHONPATH` and a cache under `PYTHONPYCACHEPREFIX` change no result), exactly one working file per baseline ID, each child linked from its parent's own list section, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `python3 -I -B scripts/check_baseline.py` on the real repository in every tier.
 - AC-2 — inspection — the six documents are populated from the baseline and keep their bootstrap content (Git history of each file since `f605c6c`); automation cannot judge "meaningful content".
-- AC-3 — integration and inspection — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, deferring a version-one requirement, readying a future one, rewording a criterion or the Description without a logged reason, or weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, or adding a continuation line, a fenced block or a sub-heading inside § Acceptance criteria (baseline and derived requirements), or adding a criterion without an `AC-n added: <reason>` line, or superseding a version-one requirement by a missing, weaker, future-scope or deferred requirement or by one that drops a baseline criterion without a logged change, or superseding a future-scope requirement by one that is version-one or not deferred, or superseding a baseline feature or epic whose baseline children live on, all fail; a replacement that carries every baseline criterion is reported; inspection for what no checker can read: criteria bind as written (README § Changing requirements rule 6, reviewer rule 4), and a change to the checker, its pin or the import mappings shows in the diff that `verify-requirement` reviews; a reworded Description with a logged `Description changed: <reason>` line is reported.
-- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked; a ticked criterion on a requirement that never reached `done` fails); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
+- AC-3 — integration and inspection — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, a demoted epic or feature or a changed epic goal, deferring a version-one requirement, readying a future one, rewording or removing a criterion or the Description without its marker line (a line that quotes the rule, names another requirement, carries a placeholder reason or covers an earlier edit does not count), weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, every form outside the canonical form (repeated, quoted, unknown or misordered frontmatter keys, a second block or a stray character at the frontmatter, carriage returns, HTML comments, headings outside the template in indented, underlined, HTML, list-item and quote form, irregular fences, undated or unordered Status lines, a copy in a subdirectory), a line inside § Acceptance criteria that is no criterion (baseline and derived requirements), an added criterion without its marker line, superseding a version-one requirement by a missing, weaker, future-scope or deferred requirement or by one of another type, source, Description, origins or scenarios, or by one that drops or adds a criterion without a marker line, superseding a future-scope requirement by one that is version-one or not deferred, superseding a baseline feature or epic whose baseline children live on, a requirement missing from the roadmap, listed twice, under another milestone than its gate or in the wrong group, a done milestone with an unfinished requirement, a version-one requirement that depends on an exclusion directly or through a superseded one, a dependency cycle and a § Dependencies section that differs from the frontmatter all fail; a replacement that carries the baseline Description and criteria and every recorded change are reported; inspection for what no checker can read: criteria bind as written (README § Changing requirements rule 6, reviewer rule 4), the reason of a recorded change is free text, and a change to the checker, the reader, the pin or the import mappings shows in the diff that `verify-requirement` reviews.
+- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked; a ticked criterion on a requirement that is not `done` fails, after a reopening and on a superseded requirement that never was done included; a capital-X tick, a quoted or repeated status key and a second criteria heading fail as outside the canonical form); `scripts/tests/test_evidence.py` (the done gate reads requirement files through the same reader: every spelling that hides `done` or a criterion fails `check-done`); `scripts/evidence.py check-done` (release tier) refuses a `done` requirement without this run's evidence.
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
 - `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; its MANIFEST.json lists every file's size and SHA-256, and its `tools/validate_package.py` checks package consistency (AC-1)
-- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (identity, Description, criteria and their section, added criteria, ticks, supersession, statuses, mapping) (AC-1, AC-3, AC-4)
+- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (canonical form, identity, Description, criteria, marker lines bound to the text they cover, ticks, supersession, dependencies, statuses, the roadmap lists, mapping); isolated mode and tools loaded from source (AC-1, AC-3, AC-4)
+- `scripts/reqfile.py` — the one reader of working requirement files, shared by `scripts/check_baseline.py` and `scripts/evidence.py`; it reports every form outside the canonical form (AC-3, AC-4)
 - `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, the 131 imported `docs/requirements/AVE-*.md` files (derived requirements continue at AVE-REQ-102) — idempotent import and the ID mapping (AC-1, AC-4)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `docs/TRACEABILITY.md` — populated from the baseline, bootstrap content kept (AC-2)
 - `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — package checks never certify completion (AC-4)
-- Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — done requirements need run evidence
+- Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — AVE-REQ-093 AC-4 (done requirements need run evidence, whatever the spelling of the file)
 - Decisions: [ADR-003](../decisions/ADR-003-requirements-baseline-import.md), [ASM-004](../ASSUMPTIONS.md)
 
 ## Test evidence
@@ -108,3 +138,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-03 — in-progress — verify-requirement PASS at `08237ac` (workflow `wf_eabbb2f5-6a0`) refuted by its skeptic: a version-one human requirement set to `superseded` with `superseded_by` naming a weaker derived requirement that carries none of its criteria passed every checker and the fast tier; the checker now requires a replacement that exists, keeps version-one scope and priority and carries every baseline criterion or logs each drop, plus a `superseded` log line; from the reviewer's findings an added criterion needs `AC-n added: <reason>` and a tick needs a `done` status or log line (lead)
 - 2026-10-03 — verification — `scripts/tests/test-check-baseline.sh` 96 of 96; independent verification requested a fifth time (lead)
 - 2026-10-03 — in-progress — verify-requirement PASS at `442f68c` (workflow `wf_b5fa6671-c21`, review 5); a session restart cut its skeptic off without a verdict; the lead inspected the skeptic's clone and reproduced its unfinished probe: the future-scope AVE-REQ-101 superseded by a derived version-one requirement passed the checker; the checker now requires a future-scope, deferred replacement for a future-scope requirement and rejects a superseded baseline feature or epic whose baseline children live on; Edge cases state the limits of the mechanical guard (free text, the gate's own code) and the inspection that covers them (lead)
+- 2026-10-06 — in-progress — red-team pass (workflow `wf_98f469f7-ec5` at `35f99c5`, lenses 093-A, 093-B and 093-C; [handback part 1](../briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md)): twenty findings, among them three readings of one file (a quoted or repeated status key, a capital-X tick, a no-break space at the frontmatter's end, a carriage return, an HTML comment around the criteria), marker lines that covered later edits, a roadmap no gate read, a supersession that kept the criteria only, a dependency on a superseded exclusion, and a bytecode cache that replaced the import tool; `scripts/reqfile.py` now reads every working file for both gates and `scripts/check_baseline.py` enforces the canonical form, binds each marker line to its text, checks the roadmap lists, the successor's identity, dependencies through supersession and parent lists, runs isolated and loads its tools from source; ticks stand only while the status is `done` (README § Status lifecycle rule 5 changed: reopening unticks every criterion); Edge cases, Verification strategy and Implementation evidence follow (lead)

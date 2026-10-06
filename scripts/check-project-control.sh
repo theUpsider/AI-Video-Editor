@@ -80,6 +80,7 @@ backend/uv.lock
 backend/tests/evidence_plugin.py
 scripts/check-project-control.sh
 scripts/check_baseline.py
+scripts/reqfile.py
 scripts/requirements/import_baseline.py
 scripts/lib/verify-state.sh
 '
@@ -590,8 +591,16 @@ function start_requirement(   base) {
   in_status = 0
 }
 
-function scan_requirement(line,   t) {
-  if (!valid[n] || fm_track(n, line) || in_fence(line)) return
+function scan_requirement(line,   t, key) {
+  if (!valid[n]) return
+  # One value per key: a repeated key would give the file two readings (check_baseline.py owns
+  # the full canonical form; this rule also holds when this checker runs alone).
+  if (FNR > 1 && fm_state[n] == 1 && match(line, /^[A-Za-z_][A-Za-z0-9_-]*:/)) {
+    key = substr(line, 1, RLENGTH - 1)
+    if (((n, key) in fm_seen) && fm_dup[n] == "") fm_dup[n] = key
+    fm_seen[n, key] = 1
+  }
+  if (fm_track(n, line) || in_fence(line)) return
   t = rtrim(line)
   if (t ~ /^# / && h1[n] == "") h1[n] = t
   if (t ~ /^## /) { heading[n, t] = 1; in_ac = (t == "## Acceptance criteria"); in_status = (t == "## Status") }
@@ -628,6 +637,7 @@ function validate_requirement(i,   p, k, status) {
   p = path[i]
   k = kind[i]
   if (fm_usable(i, p)) {
+    if (fm_dup[i] != "") err(p, "frontmatter key " fm_dup[i] " is repeated (one 'key: value' line per key)")
     if (fmv(i, "id") != fid[i]) err(p, "frontmatter id '" fmv(i, "id") "' must equal the filename ID " fid[i])
     if (fmv(i, "title") == "") err(p, "frontmatter title is missing or empty")
     check_enum(i, "status", STATUSES)

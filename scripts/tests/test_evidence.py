@@ -273,6 +273,7 @@ class EvidenceTests(unittest.TestCase):
         tests = project / "scripts" / "tests"
         tests.mkdir(parents=True)
         shutil.copy(EVIDENCE, project / "scripts" / "evidence.py")
+        shutil.copy(ROOT / "scripts" / "reqfile.py", project / "scripts" / "reqfile.py")
         shutil.copy(ROOT / "scripts" / "tests" / "run.sh", tests / "run.sh")
         listed = re.findall(
             r"^run_suite (\S+)", (tests / "run.sh").read_text(encoding="utf-8"), flags=re.M
@@ -513,19 +514,81 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("names no requirement file", problems[1])
         self.assertIn("is not of the form", problems[2])
 
-    def test_requirement_files_are_parsed_for_status_criteria_and_inspections(self) -> None:
-        path = self.tmp / f"{_id(50)}-sample.md"
+    def _requirement_file(self, number: int, status: str = "done", ticks: str = "x") -> Path:
+        """A working requirement file in canonical form with two ticked criteria."""
+        path = self.tmp / f"{_id(number)}-sample.md"
         path.write_text(
-            f"---\nid: {_id(50)}\nstatus: done\n---\n\n## Acceptance criteria\n"
-            "- [x] AC-1 One.\n- [x] AC-2 Two.\n\n## Test evidence\n"
-            "- AC-1 → `tests/x.py::t` — pass\n- AC-2 → inspection: checked the log — pass\n",
+            f"---\nid: {_id(number)}\ntitle: Sample\ntype: functional\nstatus: {status}\n"
+            "priority: must\nparent: AVE-FEAT-001\nsource: derived\nscope: v1\n"
+            "primary_gate: M1\norigins: []\ndependencies: []\nscenarios: []\n---\n\n"
+            f"# {_id(number)} — Sample\n\n## Intent\nStub.\n\n## Description\nStub.\n\n"
+            f"## Acceptance criteria\n- [{ticks}] AC-1 One.\n- [{ticks}] AC-2 Two.\n\n"
+            "## Edge cases\nNone.\n\n## Dependencies\nNone.\n\n"
+            "## Verification strategy\n- AC-1 — unit.\n\n"
+            "## Implementation evidence\n- `src/x` — stub\n\n## Test evidence\n"
+            "- AC-1 → `tests/x.py::t` — pass\n- AC-2 → inspection: checked the log — pass\n\n"
+            "## Status\n- 2026-10-02 — done — verify-requirement PASS (lead)\n",
             encoding="utf-8",
+            newline="",
         )
+        return path
+
+    def _edit(self, path: Path, old: str, new: str) -> None:
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="")
+
+    def _check_done(self, path: Path) -> list[str]:
+        """The done gate's problems for one requirement file and a run without any evidence."""
         requirement = evidence.read_requirement(path)
+        run_dir = self.tmp / "empty-run"
+        run_dir.mkdir(exist_ok=True)
+        return list(evidence.done_problems(run_dir, {requirement.id: requirement}))
+
+    # AVE-REQ-097 AC-4, AVE-REQ-093 AC-4
+    def test_requirement_files_are_parsed_for_status_criteria_and_inspections(self) -> None:
+        requirement = evidence.read_requirement(self._requirement_file(50))
         self.assertEqual(requirement.id, _id(50))
         self.assertEqual(requirement.status, "done")
         self.assertEqual(requirement.criteria, ("AC-1", "AC-2"))
         self.assertEqual(requirement.inspected, frozenset({"AC-2"}))
+        self.assertEqual(requirement.problems, ())
+
+    # AVE-REQ-097 AC-4, AVE-REQ-093 AC-4
+    def test_a_done_requirement_without_evidence_fails_the_done_gate(self) -> None:
+        problems = self._check_done(self._requirement_file(50))
+        self.assertEqual(problems, [f"{_id(50)} AC-1: missing in this run"])
+
+    # AVE-REQ-097 AC-4, AVE-REQ-093 AC-4
+    def test_a_spelling_that_hides_done_or_a_criterion_fails_the_done_gate(self) -> None:
+        cases = {
+            "capital-X ticks": ("- [x] AC-1 One.\n- [x] AC-2 Two.", "- [X] AC-1 One.\n- [X] AC-2 Two."),
+            "quoted status": ("status: done\n", 'status: "done"\n'),
+            "single-quoted status": ("status: done\n", "status: 'done'\n"),
+            "second status line": ("status: done\n", "status: in-progress\nstatus: done\n"),
+            "status behind a line separator": ("priority: must\n", "priority: must\u2028status: ready\n"),
+            "second criteria heading": ("- [x] AC-2 Two.", "## Acceptance criteria\n- [x] AC-2 Two."),
+            "criteria heading with two spaces": ("- [x] AC-2 Two.", "##  Acceptance criteria\n- [x] AC-2 Two."),
+            "carriage return between criteria": ("\n- [x] AC-2 Two.", "\r- [x] AC-2 Two."),
+            "criteria inside an HTML comment": ("- [x] AC-1 One.", "<!--\n- [x] AC-1 One.\n-->"),
+        }
+        for name, (old, new) in cases.items():
+            with self.subTest(name):
+                path = self._requirement_file(50)
+                self._edit(path, old, new)
+                problems = self._check_done(path)
+                self.assertTrue(
+                    any("is outside the canonical form" in problem for problem in problems),
+                    f"{name}: the done gate accepted the file ({problems})",
+                )
+
+    # AVE-REQ-097 AC-4
+    def test_show_lists_every_criterion_of_a_file_with_a_repeated_criteria_heading(self) -> None:
+        path = self._requirement_file(50)
+        self._edit(path, "- [x] AC-2 Two.", "## Acceptance criteria\n- [x] AC-2 Two.")
+        requirement = evidence.read_requirement(path)
+        self.assertEqual(requirement.criteria, ("AC-1", "AC-2"))
+        self.assertTrue(requirement.problems)
 
 
 if __name__ == "__main__":

@@ -1,72 +1,97 @@
 #!/usr/bin/env python3
 """Verify the working requirement files against the immutable requirements baseline.
 
-Usage:  python3 scripts/check_baseline.py      (no arguments; run by ./scripts/verify.sh)
+Usage:  python3 -I -B scripts/check_baseline.py   (no arguments; run by ./scripts/verify.sh)
 
-Checks (rules: docs/requirements/README.md § Baseline import and integrity):
+Checks (rules: docs/requirements/README.md § Baseline import and integrity, § Canonical form):
   a  the SHA-256 of ai-video-editor-requirements/MANIFEST.json equals BASELINE_MANIFEST_SHA256,
      the trust anchor this script keeps outside the package; this script then verifies the
      manifest's inventory and the size and SHA-256 of every listed file itself, and only then runs
      ai-video-editor-requirements/tools/validate_package.py (package consistency) when that file's
      own bytes verified; together they prove the baseline is unchanged ("baseline changed"
      otherwise), and no package file takes part in proving it;
-  b  every baseline epic, feature and requirement has exactly one working file in docs/requirements/
+  b  every working file is in canonical form (scripts/reqfile.py, the one reader this script and
+     scripts/evidence.py share): one frontmatter with the template's keys once each, the template's
+     headings once each, no HTML comment, no other heading form, a dated Status log; so both gates
+     and a Markdown reader see the same status, Description and criteria;
+  c  every baseline epic, feature and requirement has exactly one working file in docs/requirements/
      with the same ID and title; requirements keep the mapped type, priority and source, and their
-     scope, parent, dependencies, origins, scenarios and baseline path equal the baseline; scope
-     future <=> status deferred; each parent lists its baseline children; IMPORT_MAPPING.md is
-     current;
-  c  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
-     unless the file's Status log records "AC-n changed: <reason>" (reported as a recorded change);
-     an added working criterion needs "AC-n added: <reason>" (reported as a recorded addition); the
-     Acceptance criteria section of every working requirement holds criterion lines only (a
-     continuation line, a fenced block or a sub-heading there fails); a criterion is ticked only
-     once the file reached done (status done or superseded, or a done line in its Status log); the
-     Description equals the baseline statement unless the Status log records "Description changed:
-     <reason>" (reported likewise); a superseded baseline requirement logs a "superseded" line and
-     names a replacement that exists: for version one the replacement is version-one, undeferred,
-     of a priority not below the baseline's; for future scope the replacement is future-scope and
-     deferred (an exclusion never enters version one this way); either way it carries every
-     baseline criterion verbatim unless the old file logs "AC-n changed: <reason>" for the
-     criterion it drops (reported as a supersession); a baseline feature or epic is superseded
-     only when every baseline child under it is superseded;
-  d  no deferred requirement is a dependency of a version-one working requirement; requirements
-     added after the import (AVE-REQ-102 onward) are source derived and carry scope and gate keys;
-  e  a summary: requirements by status and by gate, acceptance criteria ticked.
+     scope, parent, origins, scenarios and baseline path equal the baseline; their dependencies
+     hold the baseline's and, beyond them, derived requirements only; epics and features keep
+     their priority, goal and parent; scope future <=> status deferred; each
+     parent lists its children in its own list section; IMPORT_MAPPING.md is current;
+  d  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
+     unless a Status-log line records the change and names the text it covers: "AC-n changed
+     [<mark>]: <reason>" for a reworded criterion, "AC-n removed: <reason>" for a removed one,
+     "AC-n added [<mark>]: <reason>" for an added one and "Description changed [<mark>]: <reason>"
+     for the Description (<mark>: reqfile.digest of the current text, printed by the error, so a
+     later edit needs a new line); each is reported; the Acceptance criteria section holds
+     criterion lines only; a criterion is ticked only while the requirement is done (or superseded
+     after it was done);
+  e  a superseded baseline requirement logs a "superseded" line and names a replacement that
+     exists: for version one the replacement is version-one, undeferred, of a priority not below
+     the baseline's; for future scope it is future-scope and deferred; either way it keeps the
+     type, the source human, the origins and the scenarios, carries the Description and every
+     baseline criterion verbatim, and the old file logs each difference ("AC-n dropped by <ID>:",
+     "<ID> AC-m added [<mark>]:", "Description replaced by <ID> [<mark>]:"); a baseline feature or
+     epic is superseded only when every baseline child under it is superseded;
+  f  no version-one requirement depends on a deferred or future-scope requirement, directly or
+     through a superseded one; § Dependencies names the frontmatter dependencies; no dependency
+     cycle; requirements added after the import (AVE-REQ-102 onward) are source derived, carry
+     scope and gate keys and stand in their parent's list;
+  g  docs/ROADMAP.md lists every live version-one requirement exactly once, under the milestone
+     its primary_gate names, and the exclusions in the Deferred group only; a milestone with
+     Status done lists finished requirements only;
+  h  a summary: requirements by status and by gate, acceptance criteria ticked.
 Output: "ERROR: <path>: <message>" per violation, then the summary and "OK: ..." or "FAILED: ...".
 Exit:   0 no violations · 1 violations found · 2 usage, or a baseline unreadable before any violation.
-Read-only; Python 3.8+ standard library only.
+Read-only; Python 3.8+ standard library only. The script runs in Python's isolated mode (it
+restarts itself with -I when started without) and loads the import tool and the reader from their
+source text, so no module path, bytecode cache or Python variable of the environment decides what
+it checks.
 """
 
 from __future__ import annotations
 
-import hashlib
-import importlib.util
-import json
 import os
+import sys
+
+if not sys.flags.isolated:
+    # AVE-REQ-093: restart in isolated mode before any other module loads, so PYTHONPATH,
+    # PYTHONPYCACHEPREFIX, the user site and a module beside this script take no part.
+    os.execv(sys.executable, [sys.executable, "-I", "-B", os.path.abspath(__file__), *sys.argv[1:]])
+
+import hashlib
+import json
 import re
 import subprocess
-import sys
-from collections import Counter, OrderedDict
+import types
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKDIR = ROOT / "docs" / "requirements"
+ROADMAP = ROOT / "docs" / "ROADMAP.md"
 IMPORTER = ROOT / "scripts" / "requirements" / "import_baseline.py"
+READER = ROOT / "scripts" / "reqfile.py"
 
-STATUSES = (
-    "proposed",
-    "ready",
-    "in-progress",
-    "verification",
-    "done",
-    "blocked",
-    "superseded",
-    "deferred",
-)
+
+def load_source(name: str, path: Path):
+    """Runs a repository tool from its source text: no bytecode cache decides what it does."""
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    sys.modules[name] = module
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    return module
+
+
+reqfile = load_source("ave_reqfile", READER)
+
+STATUSES = reqfile.STATUSES
 ID_PATTERN = re.compile(r"^(AVE-EPIC-\d{2,}|AVE-FEAT-\d{3,}|AVE-REQ-\d{3,})-[a-z0-9-]+\.md$")
-AC_LINE = re.compile(r"^- \[([ xX])\] (AC-\d+) (.*)$")
-LOG_LINE = re.compile(r"^- \d{4}-\d{2}-\d{2} — ")
-STATUS_LINE = re.compile(r"^- \d{4}-\d{2}-\d{2} — ([a-z-]+) — ")
+MILESTONE = re.compile(r"^### (M\d+) — ")
+ROADMAP_LINK = re.compile(r"\[(AVE-REQ-\d{3,})\]\(requirements/(AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
+DEPENDENCY_LINK = re.compile(r"\]\((AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
 PRIORITY_RANK = {"must": 3, "should": 2, "could": 1}
 GATE = re.compile(r"^(M\d+|FUTURE)$")
 # Highest baseline number per kind; later IDs are derived work.
@@ -88,11 +113,7 @@ def error(path, message: str) -> None:
 
 def load_importer():
     """The import tool's baseline loader and value mappings (one definition for both scripts)."""
-    sys.dont_write_bytecode = True
-    spec = importlib.util.spec_from_file_location("import_baseline", IMPORTER)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_source("import_baseline", IMPORTER)
 
 
 # --------------------------------------------------------------------------------------------
@@ -100,124 +121,40 @@ def load_importer():
 # --------------------------------------------------------------------------------------------
 
 
-class Working:
-    """One working EPIC/FEAT/REQ file: frontmatter, H1, sections (outside code fences)."""
-
-    def __init__(self, path: Path):
-        self.path = path
-        match = re.match(r"^(AVE-(EPIC|FEAT|REQ)-(\d+))-", path.name)
-        self.id, self.kind, self.number = match.group(1), match.group(2), int(match.group(3))
-        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
-        lines = text.split("\n")
-        self.fm = OrderedDict()
-        body_start = 0
-        if lines and lines[0].strip() == "---":
-            for index in range(1, len(lines)):
-                if lines[index].strip() == "---":
-                    body_start = index + 1
-                    break
-                match = re.match(r"^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$", lines[index])
-                if match:
-                    value = match.group(2).strip()
-                    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                        value = value[1:-1]  # the project-control checker unquotes values too
-                    self.fm[match.group(1)] = value
-        self.h1 = ""
-        self.sections = OrderedDict()
-        self.raw_sections = OrderedDict()  # the same sections with their fenced lines
-        current = None
-        fence = ""
-        for line in lines[body_start:]:
-            stripped = line.lstrip(" ")
-            marker = re.match(r"^(`{3,}|~{3,})", stripped)
-            if (fence or marker) and current is not None:
-                self.raw_sections[current].append(line.rstrip())
-            if fence:
-                if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
-                    fence = ""
-                continue
-            if marker:
-                fence = marker.group(1)
-                continue
-            if line.startswith("# ") and not self.h1:
-                self.h1 = line.rstrip()
-            elif line.startswith("## "):
-                current = line[3:].strip()
-                self.sections.setdefault(current, [])
-                self.raw_sections.setdefault(current, [])
-            elif current is not None:
-                self.sections[current].append(line.rstrip())
-                self.raw_sections[current].append(line.rstrip())
-        self.text = text
-        self._criteria = None
-
-    def get(self, key: str) -> str:
-        return self.fm.get(key, "")
-
-    def flow(self, key: str):
-        value = self.get(key)
-        if not (value.startswith("[") and value.endswith("]")):
-            return None
-        inner = value[1:-1].strip()
-        return [item.strip() for item in inner.split(",")] if inner else []
-
-    def criteria(self):
-        """AC ID -> (ticked, text) in file order; duplicate IDs are reported once."""
-        if self._criteria is not None:
-            return self._criteria
-        found = OrderedDict()
-        for line in self.sections.get("Acceptance criteria", []):
-            match = AC_LINE.match(line)
-            if not match:
-                continue
-            ac_id = match.group(2)
-            if ac_id in found:
-                error(self.path, f"duplicate acceptance criterion {ac_id}")
-                continue
-            found[ac_id] = (match.group(1) in "xX", match.group(3))
-        self._criteria = found
-        return found
-
-    def criteria_extras(self):
-        """Non-blank lines of ## Acceptance criteria that are no criterion line, fenced lines included."""
-        return [
-            line
-            for line in self.raw_sections.get("Acceptance criteria", [])
-            if line.strip() and not AC_LINE.match(line)
-        ]
-
-    def log(self):
-        return [line for line in self.sections.get("Status", []) if LOG_LINE.match(line)]
-
-    def log_statuses(self):
-        """The status word of every Status-log line, in file order."""
-        return [m.group(1) for m in (STATUS_LINE.match(line) for line in self.log()) if m]
-
-    def description(self) -> str:
-        """The whole ## Description section, fenced blocks included."""
-        return "\n".join(self.raw_sections.get("Description", [])).strip()
-
-    def recorded_change(self, subject: str, verb: str = "changed") -> str:
-        """The reason of the Status-log line '<subject> <verb>: <reason>' (AC-n changed, AC-n added
-        or Description changed)."""
-        pattern = re.compile(
-            r"(?<![A-Za-z0-9-])" + re.escape(subject) + " " + verb + r":\s*(\S.*)$"
-        )
-        for line in self.log():
-            match = pattern.search(line)
-            if match:
-                return match.group(1)
-        return ""
-
-
 def load_working():
     files = {}
-    for path in sorted(WORKDIR.glob("AVE-*.md")):
+    for path in sorted(WORKDIR.rglob("AVE-*.md")):
+        if path.parent != WORKDIR:
+            error(
+                path,
+                "requirement files sit flat in docs/requirements/; a copy below it is read by no"
+                " check",
+            )
+            continue
         if not ID_PATTERN.match(path.name):
             continue  # check-project-control.sh reports malformed names
-        item = Working(path)
+        item = reqfile.read(path)
         files.setdefault(item.id, []).append(item)
     return files
+
+
+def check_form(files) -> None:
+    """Check b: every working file is in canonical form and its H1 names its ID and title."""
+    for found in files.values():
+        for item in found:
+            for problem in item.problems:
+                error(item.path, f"canonical form: {problem}")
+            if item.get("id") != item.id:
+                error(item.path, f"frontmatter id '{item.get('id')}' must equal {item.id}")
+            if item.h1 != f"# {item.id} — {item.get('title')}":
+                error(item.path, f"H1 must read '# {item.id} — {item.get('title')}'")
+
+
+def marker_error(item, what: str, marker: str) -> None:
+    error(
+        item.path,
+        f"{what} and the Status log has no line '- <date> — <status> — {marker}: <reason>'",
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -309,7 +246,7 @@ def run_package_validator(pkg: Path) -> None:
         error(validator, "package validator is missing")
         return
     result = subprocess.run(
-        [sys.executable, "-B", str(validator), "--root", str(pkg)],
+        [sys.executable, "-I", "-B", str(validator), "--root", str(pkg)],
         capture_output=True,
         text=True,
         check=False,
@@ -336,15 +273,11 @@ def single_file(files, item_id: str, title: str):
         )
         return None
     item = found[0]
-    if item.get("id") != item_id:
-        error(item.path, f"frontmatter id '{item.get('id')}' must equal {item_id}")
     if item.get("title") != title:
         error(
             item.path,
             f"frontmatter title '{item.get('title')}' must equal the baseline title '{title}'",
         )
-    if item.h1 != f"# {item_id} — {title}":
-        error(item.path, f"H1 must read '# {item_id} — {title}'")
     if item.get("status") not in STATUSES:
         error(item.path, f"invalid status '{item.get('status')}'")
     return item
@@ -358,7 +291,26 @@ def expect(item, key: str, expected, label: str = "the baseline") -> None:
 
 
 def lists_child(parent, child) -> bool:
-    return f"]({child.path.name})" in parent.text
+    """The parent links the child from a list item of its own list section."""
+    section = "Requirements" if parent.kind == "FEAT" else "Features"
+    target = f"]({child.path.name})"
+    return any(
+        line.startswith("- [") and target in line for line in parent.sections.get(section, [])
+    )
+
+
+def chain_end(files, start: str):
+    """Follows superseded_by from requirement <start>; returns (end file or None, IDs visited)."""
+    seen, current = [], start
+    while current and current not in seen:
+        seen.append(current)
+        found = files.get(current, [])
+        if len(found) != 1 or found[0].kind != "REQ":
+            return None, seen
+        if found[0].get("status") != "superseded":
+            return found[0], seen
+        current = found[0].get("superseded_by")
+    return None, seen
 
 
 def check_parent_supersession(item, kind: str, child_kind: str, child_ids, files) -> None:
@@ -383,6 +335,8 @@ def check_epics_features(base, files) -> None:
             continue
         epic_files[epic["id"]] = item
         future = all(r["scope"] == "future" for f in epic["features"] for r in f["reqs"])
+        expect(item, "priority", "could" if future else "must")
+        expect(item, "goals", [epic["goal"]])
         if future != (item.get("status") == "deferred"):
             error(item.path, "status must be deferred exactly when every child is future scope")
         if item.get("status") == "superseded":
@@ -393,6 +347,7 @@ def check_epics_features(base, files) -> None:
             continue
         expect(item, "parent", feature["epic"])
         future = all(r["scope"] == "future" for r in feature["reqs"])
+        expect(item, "priority", "could" if future else "must")
         if future != (item.get("status") == "deferred"):
             error(item.path, "status must be deferred exactly when every child is future scope")
         if item.get("status") == "superseded":
@@ -407,6 +362,16 @@ def check_epics_features(base, files) -> None:
 def check_requirements(importer, base, files):
     """Checks b and c for the baseline requirements; returns the AC totals."""
     totals = Counter()
+    imported = {r["id"] for r in base["reqs"]}
+    # Successor ID -> every baseline criterion text of the baseline requirements it replaces.
+    absorbed = {}
+    for req in base["reqs"]:
+        found = files.get(req["id"], [])
+        if len(found) == 1 and found[0].get("status") == "superseded":
+            successor, _seen = chain_end(files, found[0].get("superseded_by"))
+            if successor is not None:
+                texts = absorbed.setdefault(successor.id, set())
+                texts.update(text for _id, text in req["criteria"])
     for req in base["reqs"]:
         item = single_file(files, req["id"], req["title"])
         if item is None:
@@ -417,7 +382,15 @@ def check_requirements(importer, base, files):
         expect(item, "parent", req["feature"])
         expect(item, "scope", req["scope"])
         expect(item, "origins", req["origins"])
-        expect(item, "dependencies", req["dependencies"])
+        dependencies = item.flow("dependencies")
+        if dependencies is None or [
+            dep for dep in dependencies if dep in imported or dep.startswith(("AVE-FEAT", "AVE-EPIC"))
+        ] != req["dependencies"]:
+            error(
+                item.path,
+                f"frontmatter dependencies '{item.get('dependencies')}' must hold the baseline value"
+                f" '[{', '.join(req['dependencies'])}]' and, beyond it, derived requirements only",
+            )
         expect(item, "scenarios", req["scenarios"])
         expect(item, "baseline", importer.baseline_req_path(req["id"]))
         status = item.get("status")
@@ -439,42 +412,37 @@ def check_requirements(importer, base, files):
             working = criteria.get(ac_id)
             if working is not None and working[1] == text:
                 continue
-            reason = item.recorded_change(ac_id)
-            what = "is missing" if working is None else "differs from the baseline text"
+            if working is None:
+                what, marker = "is missing", f"{ac_id} removed"
+            else:
+                what = "differs from the baseline text"
+                marker = f"{ac_id} changed [{reqfile.digest(working[1])}]"
+            reason = item.recorded(marker)
             if reason:
                 notes.append(f"Recorded change: {req['id']} {ac_id} {what} — {reason}")
             else:
-                error(
-                    item.path,
-                    f"{ac_id} {what} and the Status log has no '{ac_id} changed: <reason>' line",
-                )
+                marker_error(item, f"{ac_id} {what}", marker)
         description = item.description()
         if description != req["statement"].strip():
-            reason = item.recorded_change("Description")
+            marker = f"Description changed [{reqfile.digest(description)}]"
+            reason = item.recorded(marker)
             what = "is missing" if not description else "differs from the baseline statement"
             if reason:
                 notes.append(f"Recorded change: {req['id']} Description {what} — {reason}")
             else:
-                error(
-                    item.path,
-                    f"Description {what} and the Status log has no"
-                    " 'Description changed: <reason>' line",
-                )
+                marker_error(item, f"Description {what}", marker)
         baseline_ids = {ac_id for ac_id, _ in req["criteria"]}
-        for ac_id in criteria:
+        for ac_id, (_ticked, text) in criteria.items():
             if ac_id in baseline_ids:
                 continue
-            reason = item.recorded_change(ac_id, "added")
+            marker = f"{ac_id} added [{reqfile.digest(text)}]"
+            reason = item.recorded(marker)
             if reason:
                 notes.append(f"Recorded addition: {req['id']} {ac_id} — {reason}")
             else:
-                error(
-                    item.path,
-                    f"{ac_id} is not a baseline criterion and the Status log has no"
-                    f" '{ac_id} added: <reason>' line",
-                )
+                marker_error(item, f"{ac_id} is not a baseline criterion", marker)
         if status == "superseded":
-            check_supersession(item, req, files)
+            check_supersession(item, req, files, absorbed)
         scope = item.get("scope")
         for ticked, _text in criteria.values():
             totals["all"] += 1
@@ -485,30 +453,28 @@ def check_requirements(importer, base, files):
     return totals
 
 
-def check_supersession(item, req, files) -> None:
-    """A superseded baseline requirement names a replacement that keeps its rank and criteria."""
+def check_supersession(item, req, files, absorbed) -> None:
+    """A superseded baseline requirement names a replacement that keeps its identity and criteria."""
     if "superseded" not in item.log_statuses():
         error(item.path, "Status log has no 'superseded' line with the reason")
-    seen, current, successor = [], item.get("superseded_by"), None
-    while current and current not in seen:
-        seen.append(current)
-        found = files.get(current, [])
-        if len(found) != 1 or found[0].kind != "REQ":
-            error(item.path, f"superseded_by {current} has no working requirement file")
-            return
-        successor = found[0]
-        if successor.get("status") != "superseded":
-            break
-        current = successor.get("superseded_by")
-    else:
-        error(item.path, f"superseded_by chain {' → '.join(seen) or '(empty)'} names no replacement")
+    successor, seen = chain_end(files, item.get("superseded_by"))
+    if successor is None:
+        last = files.get(seen[-1], []) if seen else []
+        if seen and (len(last) != 1 or last[0].kind != "REQ"):
+            error(item.path, f"superseded_by {seen[-1]} has no working requirement file")
+        else:
+            error(
+                item.path,
+                f"superseded_by chain {' → '.join(seen) or '(empty)'} names no replacement",
+            )
         return
+    name = successor.id
     if req["scope"] == "future" and (
         successor.get("scope") != "future" or successor.get("status") != "deferred"
     ):
         error(
             item.path,
-            f"a future-scope requirement cannot be superseded by {successor.id} (scope"
+            f"a future-scope requirement cannot be superseded by {name} (scope"
             f" '{successor.get('scope')}', status '{successor.get('status')}'): entering version"
             " one is a product change the human makes with a new baseline",
         )
@@ -516,7 +482,7 @@ def check_supersession(item, req, files) -> None:
         if successor.get("scope") != "v1" or successor.get("status") == "deferred":
             error(
                 item.path,
-                f"a version-one requirement cannot be superseded by {successor.id} (scope"
+                f"a version-one requirement cannot be superseded by {name} (scope"
                 f" '{successor.get('scope')}', status '{successor.get('status')}'): leaving version"
                 " one is a product change",
             )
@@ -524,30 +490,78 @@ def check_supersession(item, req, files) -> None:
             error(
                 item.path,
                 f"a baseline {req['priority']} requirement cannot be superseded by a"
-                f" '{successor.get('priority')}' requirement ({successor.id})",
+                f" '{successor.get('priority')}' requirement ({name})",
+            )
+    if successor.get("type") != req["type"]:
+        error(
+            item.path,
+            f"the successor {name} has type '{successor.get('type')}'; the baseline type is"
+            f" '{req['type']}'",
+        )
+    if req["source"] == "human" and successor.get("source") != "human":
+        error(
+            item.path,
+            f"the successor {name} of a human requirement keeps source human (it has"
+            f" '{successor.get('source')}'), so its changes stay the human's to decide",
+        )
+    for key in ("origins", "scenarios"):
+        lost = [value for value in req[key] if value not in (successor.flow(key) or [])]
+        if lost:
+            error(item.path, f"the successor {name} drops {key} {', '.join(lost)} of the baseline")
+    flaws = 0
+    description = successor.description()
+    if description != req["statement"].strip():
+        marker = f"Description replaced by {name} [{reqfile.digest(description)}]"
+        reason = item.recorded(marker)
+        if reason:
+            notes.append(
+                f"Recorded change: {req['id']} Description differs in the successor {name} —"
+                f" {reason}"
+            )
+        else:
+            flaws += 1
+            marker_error(
+                item,
+                f"the Description of the successor {name} differs from the baseline statement",
+                marker,
             )
     carried = {text for _ticked, text in successor.criteria().values()}
-    dropped = 0
     for ac_id, text in req["criteria"]:
         if text in carried:
             continue
-        reason = item.recorded_change(ac_id)
+        marker = f"{ac_id} dropped by {name}"
+        reason = item.recorded(marker)
         if reason:
             notes.append(
-                f"Recorded change: {req['id']} {ac_id} is absent from the successor"
-                f" {successor.id} — {reason}"
+                f"Recorded change: {req['id']} {ac_id} is absent from the successor {name} —"
+                f" {reason}"
             )
         else:
-            dropped += 1
-            error(
-                item.path,
-                f"{ac_id} of the baseline is absent from the successor {successor.id} and the"
-                f" Status log has no '{ac_id} changed: <reason>' line",
+            flaws += 1
+            marker_error(
+                item, f"{ac_id} of the baseline is absent from the successor {name}", marker
             )
-    if not dropped:
+    known = absorbed.get(name, set())
+    for ac_id, (_ticked, text) in successor.criteria().items():
+        if text in known:
+            continue
+        marker = f"{name} {ac_id} added [{reqfile.digest(text)}]"
+        reason = item.recorded(marker)
+        if reason:
+            notes.append(
+                f"Recorded addition: {name} {ac_id} beside the criteria of {req['id']} — {reason}"
+            )
+        else:
+            flaws += 1
+            marker_error(
+                item,
+                f"{ac_id} of the successor {name} is no criterion of a requirement it replaces",
+                marker,
+            )
+    if not flaws:
         notes.append(
-            f"Supersession: {req['id']} → {successor.id} carries every baseline criterion or logs"
-            " each change"
+            f"Supersession: {req['id']} → {name} carries the baseline Description and criteria or"
+            " logs each change"
         )
 
 
@@ -558,6 +572,13 @@ def check_derived(base, files) -> None:
         | {f["id"] for f in base["features"]}
         | {r["id"] for r in base["reqs"]}
     )
+    human_successors = set()
+    for req in base["reqs"]:
+        found = files.get(req["id"], [])
+        if req["source"] == "human" and len(found) == 1 and found[0].get("status") == "superseded":
+            successor, _seen = chain_end(files, found[0].get("superseded_by"))
+            if successor is not None:
+                human_successors.add(successor.id)
     for item_id, found in sorted(files.items()):
         if item_id in baseline_ids:
             continue
@@ -570,36 +591,41 @@ def check_derived(base, files) -> None:
                 )
             if item.kind != "REQ":
                 continue
-            if item.get("source") != "derived":
-                error(item.path, "a requirement added after the import has source derived")
+            expected = "human" if item_id in human_successors else "derived"
+            if item.get("source") != expected:
+                error(
+                    item.path,
+                    "a requirement added after the import has source derived, or human when it"
+                    f" replaces a human baseline requirement (expected '{expected}')",
+                )
             for key in ("scope", "primary_gate", "dependencies"):
                 if key not in item.fm:
                     error(item.path, f"frontmatter {key} is missing")
 
 
 def check_all_requirements(base, files):
-    """Scope, gate and deferred dependencies of every working requirement (baseline and derived).
+    """Ticks, scope, gate, parent and dependencies of every working requirement (baseline and
+    derived).
 
     check_requirements reports scope/status conflicts of the baseline requirements themselves.
     """
     imported = {r["id"] for r in base["reqs"]}
     reqs = {item_id: found[0] for item_id, found in files.items() if found[0].kind == "REQ"}
     for item_id, item in sorted(reqs.items()):
-        for line in item.criteria_extras():
-            error(
-                item.path,
-                "§ Acceptance criteria holds a line that is no criterion"
-                f" ('{line.strip()[:60]}'); the section holds '- [ ] AC-n <text>' lines only, and"
-                " a note belongs in Edge cases or the Description with a logged reason",
-            )
         scope, gate, status = item.get("scope"), item.get("primary_gate"), item.get("status")
+        live = status not in ("deferred", "superseded")
         ticked = [ac_id for ac_id, (is_ticked, _text) in item.criteria().items() if is_ticked]
-        if ticked and status not in ("done", "superseded") and "done" not in item.log_statuses():
+        was_done = "done" in item.log_statuses()
+        if ticked and not (was_done and status in ("done", "superseded")):
             error(
                 item.path,
-                f"{ticked[0]} is ticked while status is '{status}' and the Status log has no done"
-                " line; criteria are ticked only after a verify-requirement PASS, with status done",
+                f"{ticked[0]} is ticked while status is '{status}'"
+                + ("" if was_done else " and the Status log has no done line")
+                + "; criteria are ticked only after a verify-requirement PASS, with status done,"
+                " and a reopened requirement unticks them",
             )
+        if status == "done" and "_TBD" in item.text:
+            error(item.path, "status done but a _TBD placeholder remains (fenced text included)")
         if scope not in ("v1", "future"):
             error(item.path, f"frontmatter scope '{scope}' must be v1 or future")
         if not GATE.match(gate):
@@ -614,6 +640,13 @@ def check_all_requirements(base, files):
             and status not in ("deferred", "superseded")
         ):
             error(item.path, f"future-scope requirement must be deferred (status '{status}')")
+        parent = files.get(item.get("parent"), [None])[0]
+        if parent is not None:
+            if item_id not in imported and not lists_child(parent, item):
+                section = "Requirements" if parent.kind == "FEAT" else "Features"
+                error(parent.path, f"§ {section} must link {item.path.name}")
+            if scope == "v1" and live and parent.get("status") == "deferred":
+                error(item.path, f"a version-one requirement stands under the deferred {parent.id}")
         dependencies = item.flow("dependencies")
         if dependencies is None:
             if "dependencies" in item.fm:
@@ -621,17 +654,152 @@ def check_all_requirements(base, files):
                     item.path, "frontmatter dependencies must be a flow list such as [AVE-REQ-012]"
                 )
             continue
+        linked = set()
+        for line in item.sections.get("Dependencies", []):
+            linked.update(DEPENDENCY_LINK.findall(line))
+        if linked != set(dependencies):
+            error(
+                item.path,
+                "§ Dependencies links "
+                + (", ".join(sorted(linked)) or "no requirement")
+                + " while frontmatter dependencies names "
+                + (", ".join(sorted(dependencies)) or "none"),
+            )
         for dep in dependencies:
             target = reqs.get(dep)
             if target is None:
                 error(item.path, f"dependency {dep} has no working requirement file")
-            elif (
-                scope == "v1"
-                and status not in ("deferred", "superseded")
-                and target.get("status") == "deferred"
-            ):
+                continue
+            if dep == item_id:
+                error(item.path, f"{item_id} depends on itself")
+            if scope != "v1" or not live:
+                continue
+            end, _seen = chain_end(files, dep)
+            if target.get("status") == "deferred":
                 error(item.path, f"version-one requirement depends on deferred {dep}")
+            elif target.get("scope") == "future":
+                error(item.path, f"version-one requirement depends on the future-scope {dep}")
+            elif end is None or end.get("status") == "deferred" or end.get("scope") == "future":
+                error(
+                    item.path,
+                    f"version-one requirement depends on {dep}, whose replacement is"
+                    f" {'missing' if end is None else 'the deferred ' + end.id}",
+                )
+    check_dependency_cycles(reqs)
     return reqs
+
+
+def check_dependency_cycles(reqs) -> None:
+    """Reports every requirement that reaches itself through frontmatter dependencies."""
+    graph = {
+        item_id: [dep for dep in (item.flow("dependencies") or []) if dep in reqs]
+        for item_id, item in reqs.items()
+    }
+    for start in sorted(graph):
+        stack, seen = [(dep, [start, dep]) for dep in graph[start] if dep != start], set()
+        while stack:
+            node, path = stack.pop()
+            if node == start:
+                error(reqs[start].path, "dependency cycle: " + " → ".join(path))
+                break
+            if node in seen:
+                continue
+            seen.add(node)
+            stack.extend((dep, [*path, dep]) for dep in graph[node])
+
+
+def read_roadmap():
+    """The requirement lists of docs/ROADMAP.md: (milestone -> entry, problems).
+
+    entry: {"status": word, "listed": [IDs of '- **Requirements ...:**'], "proposed": [IDs of
+    '- **Proposed during ...:**']}; the Deferred group is the entry FUTURE.
+    """
+    entries, problems = {}, []
+    current, fenced = None, False
+    text = ROADMAP.read_text(encoding="utf-8")
+    if "<!--" in text:
+        problems.append("an HTML comment (<!--) hides text from readers; the roadmap holds none")
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        match = MILESTONE.match(line)
+        if match or line.startswith("### Deferred "):
+            name = match.group(1) if match else "FUTURE"
+            if name in entries:
+                problems.append(f"milestone {name} has two entries")
+            current = entries.setdefault(name, {"status": "", "listed": [], "proposed": []})
+            continue
+        if line.startswith("#"):
+            current = None
+            continue
+        if current is None:
+            continue
+        if line.startswith("- **Status:**"):
+            current["status"] = (line[len("- **Status:**") :].split() or [""])[0]
+            continue
+        if line.startswith("- **Requirements") or line.startswith("- **Proposed during"):
+            key = "listed" if line.startswith("- **Requirements") else "proposed"
+            for text_id, target_id in ROADMAP_LINK.findall(line):
+                if text_id != target_id:
+                    problems.append(f"the link text {text_id} names another file than {target_id}")
+                current[key].append(target_id)
+    return entries, problems
+
+
+def check_roadmap(reqs) -> None:
+    """Check g: the roadmap schedules every live version-one requirement under its gate."""
+    if not ROADMAP.is_file():
+        error(ROADMAP, "missing; every version-one requirement stands on a milestone list")
+        return
+    entries, problems = read_roadmap()
+    for problem in problems:
+        error(ROADMAP, problem)
+    places = {}
+    for name, entry in entries.items():
+        for key in ("listed", "proposed"):
+            for item_id in entry[key]:
+                places.setdefault(item_id, []).append((name, key))
+    for item_id in sorted(places):
+        if item_id not in reqs:
+            error(ROADMAP, f"{item_id} is listed and has no working requirement file")
+    for item_id, item in sorted(reqs.items()):
+        status, scope, gate = item.get("status"), item.get("scope"), item.get("primary_gate")
+        found = places.get(item_id, [])
+        if status == "superseded":
+            continue
+        if len(found) != 1:
+            where = ", ".join(name for name, _key in found) or "no list"
+            error(
+                ROADMAP,
+                f"{item_id} stands on {where}; a requirement that is not superseded stands on"
+                " exactly one requirement list",
+            )
+            continue
+        name, key = found[0]
+        if scope == "future":
+            if name != "FUTURE":
+                error(
+                    ROADMAP,
+                    f"the exclusion {item_id} stands under {name}; it belongs to the Deferred group",
+                )
+            continue
+        if name == "FUTURE":
+            error(ROADMAP, f"the version-one requirement {item_id} stands in the Deferred group")
+        elif gate not in entries:
+            error(item.path, f"primary_gate {gate} names no milestone of docs/ROADMAP.md")
+        elif name != gate:
+            error(ROADMAP, f"{item_id} stands under {name} while its primary_gate is {gate}")
+        elif key == "proposed" and status != "proposed":
+            error(
+                ROADMAP,
+                f"{item_id} is '{status}' and still stands on a 'Proposed during' line of {name};"
+                " it moves to the milestone's requirement list",
+            )
+        elif entries[name]["status"] == "done" and status != "done":
+            error(ROADMAP, f"milestone {name} has Status done while {item_id} is '{status}'")
 
 
 def check_mapping(importer, base) -> None:
@@ -689,10 +857,12 @@ def main() -> int:
         print(f"ERROR: {importer.PKG_NAME}: unreadable baseline: {exc}", file=sys.stderr)
         return 1 if any(line.startswith("ERROR:") for line in errors) else 2
     files = load_working()
+    check_form(files)
     check_epics_features(base, files)
     totals = check_requirements(importer, base, files)
     check_derived(base, files)
     reqs = check_all_requirements(base, files)
+    check_roadmap(reqs)
     check_mapping(importer, base)
     print_summary(reqs, totals)
     for line in errors:
