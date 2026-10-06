@@ -30,10 +30,12 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring the bran
   exact milestone Status line, steps that start from a named set of variables, a fingerprint made of the bytes
   the steps read, media stand-ins first on `PATH`, tags only in files a runner runs, the exact Stop command,
   GPU nodes counted as character devices that open; each non-blocking finding is fixed or stated as a limit.
-- AVE-REQ-093/094/096/097/098 `verification`. The review run starts from
-  [its brief](briefs/2026-10-06-m0-final-review-2b.md); not launched when this file was written, and a launch is
-  recorded here with its run ID and re-run command. The working branch receives this branch after the reviews
-  pass (`CLAUDE.md` § Delegation).
+- AVE-REQ-093/094/096/097/098 `verification`. Review run from
+  [its brief](briefs/2026-10-06-m0-final-review-2b.md) at `f996c17`: launched 2026-10-06 as workflow
+  `wf_b18a5f3e-54e` ([script](workflows/m0-final-review-2.js)); verdicts not recorded; on resume without a
+  recorded verdict, re-run the Workflow tool with that script and
+  `{commit: 'f996c170a4e75ad25b06f36babf8699843012c92'}` plus the model arguments. The working branch receives
+  this branch after the reviews pass (`CLAUDE.md` § Delegation).
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
