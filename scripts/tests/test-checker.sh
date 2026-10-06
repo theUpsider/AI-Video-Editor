@@ -143,6 +143,14 @@ expect "PROGRESS heading with CRLF"        0 "OK:" "sed 's/\$/\r/' docs/PROGRESS
 expect "missing required file"             1 "ERROR: docs/ROADMAP.md: required file is missing" "rm docs/ROADMAP.md"
 expect "non-executable hook"               1 "ERROR: .claude/hooks/stop-verify.sh: not executable" "chmod -x .claude/hooks/stop-verify.sh"
 expect "non-executable script"             1 "ERROR: scripts/verify.sh: not executable" "chmod -x scripts/verify.sh"
+# AVE-REQ-097 AC-1: the release tier starts the suite runner and the suites by path, the fast tier the
+# media stand-in; CI checks out the mode the Git index holds, whatever the file system of the host shows.
+expect "non-executable suite runner"       1 "ERROR: scripts/tests/run.sh: not executable (run: chmod" "mkdir -p scripts/tests && printf '#!/bin/sh\n' > scripts/tests/run.sh"
+expect "non-executable media stand-in"     1 "ERROR: scripts/lib/media-tier-only.sh: not executable (run: chmod" "chmod -x scripts/lib/media-tier-only.sh"
+expect "entry point without the executable bit in the index" 1 "ERROR: scripts/verify.sh: not executable in the Git index (mode 100644; run: git update-index --chmod=+x 'scripts/verify.sh')" "git init -q && git add -A && git update-index --chmod=-x scripts/verify.sh"
+expect "suite without the executable bit in the index" 1 "ERROR: scripts/tests/test-one.sh: not executable in the Git index (mode 100644" "mkdir -p scripts/tests && printf '#!/bin/sh\n' > scripts/tests/test-one.sh && chmod +x scripts/tests/test-one.sh && git init -q && git add -A && git update-index --chmod=-x scripts/tests/test-one.sh"
+expect "entry points executable in the index pass" 0 "OK:" "git init -q && git add -A"
+expect "sourced library without the executable bit passes" 0 "OK:" "chmod -x scripts/lib/verify-state.sh && git init -q && git add -A"
 expect "agent name mismatch"               1 "ERROR: .claude/agents/architect.md: frontmatter name 'architekt' must equal 'architect'" "sub .claude/agents/architect.md 'name: architect' 'name: architekt'"
 expect "agent without description"         1 "frontmatter description is missing or empty" "sub .claude/agents/tester.md 'description: Stub tester agent.' 'description:'"
 expect "agent without frontmatter"         1 "ERROR: .claude/agents/reviewer.md: missing frontmatter" "printf 'You are the reviewer.\n' > .claude/agents/reviewer.md"

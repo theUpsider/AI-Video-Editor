@@ -247,3 +247,20 @@ Not an improvement entry: the measured starting point that later entries compare
   the briefed commit as its parent). After: measured on the two runs of the evaluation set once recorded.
 - Keep or revert, with reason: keep; a brief gives every review report a named home, and the equality check is
   the one that fails for a worktree made from another commit.
+
+### WF-009 — 2026-10-06 — A merge on the Windows host dropped an executable bit that only CI could see
+- Observed failure and evidence: CI failed the release tier at `fc66eb3` (`scripts/tests/run.sh: Permission
+  denied`). The merge of four branches on the Windows host had written the file's index mode as 100644; the
+  local release tier passed, because the development container sees every file of the mount as executable.
+- Root-cause hypothesis: check 2 read the executable bit from the file system only, and only for `scripts/*.sh`
+  and the hooks, so neither the index mode nor the suite runner was checked anywhere before CI.
+- One proposed workflow/skill/context change: check 2 of `scripts/check-project-control.sh` covers every entry
+  point (scripts, hooks, tooling suites with their runner, the media stand-in) and, for a tracked file, requires
+  mode 100755 in the Git index.
+- Expected metric and fixed evaluation set (plus held-out cases): CI failures caused by a lost executable bit;
+  evaluation set: the tree of `fc66eb3` (the checker now fails it by name) and six suite cases. Held-out: the
+  merges of M1 and M2.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, the local release tier passed and CI failed. After: the checker fails the
+  tree of `fc66eb3` in its first step; three mutants of the rule each fail a named case.
+- Keep or revert, with reason: keep; the check costs one Git call per entry point.

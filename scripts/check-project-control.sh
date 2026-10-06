@@ -941,13 +941,23 @@ $file
   done
 }
 
-# Check 2: the entry points. scripts/lib/ holds sourced libraries, which need no executable bit.
+# Check 2: the entry points, the files a command starts by path: scripts/*.sh, the hooks, the tooling
+# suites with their runner and fixture builder (scripts/tests/*.sh) and the media stand-in of the
+# fast tier. scripts/lib/ otherwise holds sourced libraries and scripts/verify.d/ sourced step
+# files, which need no executable bit. For a tracked entry point the mode in the Git index counts
+# too: a host without executable bits shows every file as executable through the container's
+# mount, while CI checks out the mode the index holds.
 check_executables() {
-  local file
-  for file in scripts/*.sh .claude/hooks/*.sh; do
+  local file mode
+  for file in scripts/*.sh .claude/hooks/*.sh scripts/tests/*.sh scripts/lib/media-tier-only.sh; do
     [ -f "$file" ] || continue
     COUNT_EXECUTABLE=$((COUNT_EXECUTABLE + 1))
     [ -x "$file" ] || error "$file" "not executable (run: chmod +x '$file')"
+    mode="$(git ls-files -s -- "$file" 2>/dev/null | awk '{ print $1 }')"
+    case "$mode" in
+      "" | 100755) ;;
+      *) error "$file" "not executable in the Git index (mode $mode; run: git update-index --chmod=+x '$file')" ;;
+    esac
   done
 }
 
