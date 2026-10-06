@@ -103,42 +103,130 @@ printf 'SECRET=1\n' > "$R/.env"; mkdir -p "$R/.claude/worktrees/x"; printf 'x\n'
 hook "$J_FALSE"
 check "ignored files (.env, worktrees) keep the cache" '[ "$CODE" = 0 ] && ! logexists'
 check "real index untouched by fingerprinting" '[ -z "$(cd "$R" && git diff --cached --name-only)" ]'
-check "no temp index left behind" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
+check "the state directory holds the Stop gate's records only" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
 
-# AVE-REQ-097 AC-2, AVE-REQ-097 AC-3: a tree the fingerprint cannot see has none, so the gate runs
-# verify.sh there and a pass recorded before the hidden change certifies nothing.
-echo "## changes Git hides from the fingerprint"
+# AVE-REQ-097 AC-2, AVE-REQ-097 AC-3: the fingerprint is made of the bytes a step reads, so no
+# state of the local repository hides an edit from it: Git takes the edited tree for the committed
+# one, the fingerprint changes, the gate runs verify.sh, and a pass recorded before the edit
+# certifies nothing.
+echo "## local Git states leave an edit visible in the fingerprint"
 BROKEN='[x](no-such-file.md)'
-# blind <name> <hidden failing change> <cleanup> — both run in the repository.
-blind() {
-  hook "$J_FALSE"; logrm
-  ( cd "$R" && eval "$2" ) || { FAIL=$((FAIL+1)); echo "  SETUP FAIL $1"; return; }
-  check "$1: no fingerprint" '[ -z "$(fp 2>/dev/null)" ]'
+HEAD_ARCHITECTURE='git cat-file blob HEAD:docs/ARCHITECTURE.md > docs/ARCHITECTURE.md'
+# How Git shows that it takes the edited tree for the committed one: its status is empty; or, for
+# a file that a filter or an ident keyword rewrites (the status goes by the changed size there),
+# its diff is empty and the blob it would store for the edited file is the committed one.
+STATUS_EMPTY='[ -z "$(git status --porcelain)" ]'
+SAME_BLOB='[ -z "$(git diff)" ] && [ "$(git hash-object docs/ARCHITECTURE.md)" = "$(git rev-parse :docs/ARCHITECTURE.md)" ]'
+# visible <name> <how Git shows it> <local Git state plus a failing edit> <cleanup> — the three
+# commands run in the repository.
+visible() {
+  local shown="$2"
+  hook "$J_FALSE"; logrm; before="$(fp)"
+  if ! ( cd "$R" && eval "$3" ); then
+    FAIL=$((FAIL+1)); echo "  SETUP FAIL $1"
+    ( cd "$R" && eval "$4" )
+    return
+  fi
+  check "$1: Git takes the edited tree for the committed one" '( cd "$R" && eval "$shown" )'
+  check "$1: the edit changes the fingerprint" '[ -n "$before" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
   hook "$J_FALSE"
   check "$1: the gate runs verify.sh and blocks" '[ "$CODE" = 2 ] && logexists'
-  ( cd "$R" && eval "$3" )
+  ( cd "$R" && eval "$4" )
+  check "$1: the cleaned tree has the earlier fingerprint" '[ "$(fp)" = "$before" ]'
   hook "$J_FALSE"
-  check "$1: the cleaned tree passes and has a fingerprint again" '[ "$CODE" = 0 ] && [ -n "$(fp)" ]'
+  check "$1: the cleaned tree passes" '[ "$CODE" = 0 ]'
 }
-blind "skip-worktree entry" 'git update-index --skip-worktree docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
-  'git update-index --no-skip-worktree docs/ARCHITECTURE.md && git checkout -q docs/ARCHITECTURE.md'
-blind "assume-unchanged entry" 'git update-index --assume-unchanged docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
-  'git update-index --no-assume-unchanged docs/ARCHITECTURE.md && git checkout -q docs/ARCHITECTURE.md'
-blind "file hidden by .git/info/exclude" 'mkdir -p .git/info && printf "docs/hidden-note.md\n" >> .git/info/exclude && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
+visible "skip-worktree entry" "$STATUS_EMPTY" 'git update-index --skip-worktree docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'git update-index --no-skip-worktree docs/ARCHITECTURE.md && eval "$HEAD_ARCHITECTURE"'
+visible "assume-unchanged entry" "$STATUS_EMPTY" 'git update-index --assume-unchanged docs/ARCHITECTURE.md && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'git update-index --no-assume-unchanged docs/ARCHITECTURE.md && eval "$HEAD_ARCHITECTURE"'
+visible "file hidden by .git/info/exclude" "$STATUS_EMPTY" 'mkdir -p .git/info && printf "docs/hidden-note.md\n" >> .git/info/exclude && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
   ': > .git/info/exclude && rm docs/hidden-note.md'
-blind "file hidden by core.excludesFile" 'printf "docs/hidden-note.md\n" > "$T/user-ignore" && git config core.excludesFile "$T/user-ignore" && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
+visible "file hidden by core.excludesFile" "$STATUS_EMPTY" 'printf "docs/hidden-note.md\n" > "$T/user-ignore" && git config core.excludesFile "$T/user-ignore" && printf "%s\n" "$BROKEN" > docs/hidden-note.md' \
   'git config --unset core.excludesFile && rm docs/hidden-note.md'
-blind "clean filter from .git/info/attributes" 'mkdir -p .git/info && printf "docs/ARCHITECTURE.md filter=pin\n" >> .git/info/attributes && git config filter.pin.clean "git cat-file blob HEAD:docs/ARCHITECTURE.md" && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
-  'rm .git/info/attributes && git config --unset filter.pin.clean && git checkout -q docs/ARCHITECTURE.md'
+visible "clean filter from .git/info/attributes" "$SAME_BLOB" 'mkdir -p .git/info && printf "docs/ARCHITECTURE.md filter=pin\n" >> .git/info/attributes && git config filter.pin.clean "git cat-file blob HEAD:docs/ARCHITECTURE.md" && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'rm .git/info/attributes && git config --unset filter.pin.clean && eval "$HEAD_ARCHITECTURE"'
+# An ident attribute makes Git read "$Id: <anything> $" as "$Id$".
+(cd "$R" && printf '\n$Id$\n' >> docs/ARCHITECTURE.md && git commit -qam "a line with an ident keyword")
+visible "ident attribute from .git/info/attributes" "$SAME_BLOB" 'mkdir -p .git/info && printf "docs/ARCHITECTURE.md ident\n" >> .git/info/attributes && sed -i "s|^\\\$Id\\\$\$|\$Id: $BROKEN \$|" docs/ARCHITECTURE.md && grep -q "^\\\$Id: .x.(no-such-file.md) \\\$\$" docs/ARCHITECTURE.md' \
+  'rm .git/info/attributes && eval "$HEAD_ARCHITECTURE"'
+# A file-system monitor that reports no change: once Git holds the file for valid (`h` in
+# `git ls-files -f`) it trusts the monitor and looks at the file no more. The old time stamp keeps
+# the entry clear of Git's check for files as young as the index; one status takes the new time
+# stamp into the index, the next marks the entry valid (at most five are tried).
+printf '#!/bin/sh\nprintf "token\\0"\n' > "$T/fsmonitor-hook" && chmod +x "$T/fsmonitor-hook"
+HELD_VALID='git ls-files -f docs/ARCHITECTURE.md | quiet "^h "'
+visible "fsmonitor hook that reports no change" "$STATUS_EMPTY" 'git config core.fsmonitor "$T/fsmonitor-hook" && git config core.fsmonitorHookVersion 2 && git update-index --fsmonitor && touch -t 200001010000 docs/ARCHITECTURE.md && { for i in 1 2 3 4 5; do git status --porcelain >/dev/null; eval "$HELD_VALID" && break; done; eval "$HELD_VALID"; } && printf "\n%s\n" "$BROKEN" >> docs/ARCHITECTURE.md' \
+  'git config --unset core.fsmonitor && git config --unset core.fsmonitorHookVersion && git update-index --no-fsmonitor && eval "$HEAD_ARCHITECTURE"'
+# The same monitor beside the untracked cache: Git holds the listing of docs/ for valid while the
+# time stamp of the directory stands, so its status shows no new file there. The fingerprint's
+# listing reads the directory itself. This case records how Git behaves: Git 2.55 lists the file
+# with and without the two settings of vstate_ls_files, and the fingerprint of the commit before
+# this one passes the case too, so no one-line change of the library fails it.
+visible "untracked cache under an fsmonitor hook that reports no change" "$STATUS_EMPTY" 'git config core.fsmonitor "$T/fsmonitor-hook" && git config core.fsmonitorHookVersion 2 && git config core.untrackedCache true && git update-index --fsmonitor --untracked-cache && touch -t 200001010000 docs && { for i in 1 2 3 4 5; do git status --porcelain >/dev/null; done; } && printf "%s\n" "$BROKEN" > docs/hidden-note.md && touch -t 200001010000 docs' \
+  'git config --unset core.fsmonitor; git config --unset core.fsmonitorHookVersion; git config --unset core.untrackedCache; git update-index --no-fsmonitor --no-untracked-cache; rm -f docs/hidden-note.md'
 mkdir -p "$T/other" && (cd "$T/other" && git init -q && git config user.email t@t && git config user.name t && printf 'x\n' > f && git add -A && git commit -qm other)
 hook "$J_FALSE"; logrm
 GIT_DIR="$T/other/.git" GIT_WORK_TREE="$T/other" hook "$J_FALSE"
 check "GIT_DIR and GIT_WORK_TREE of another repository do not redirect the gate (cache hit for this tree)" '[ "$CODE" = 0 ] && ! logexists && [ ! -e "$T/other/.git/claude-verify" ]'
+# Configuration that the caller adds through the environment takes no part either: with
+# core.ignoreCase the rule /var/ of .gitignore would hide the untracked file VAR/note.txt.
+mkdir -p "$R/VAR" && printf 'note\n' > "$R/VAR/note.txt"
+plain="$(fp)"
+check "GIT_CONFIG_COUNT of the caller changes no fingerprint" '[ -n "$plain" ] && [ "$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.ignoreCase GIT_CONFIG_VALUE_0=true fp)" = "$plain" ]'
+check "GIT_CONFIG_PARAMETERS of the caller changes no fingerprint" '[ "$(GIT_CONFIG_PARAMETERS="'"'"'core.ignorecase=true'"'"'" fp)" = "$plain" ]'
+check "control: with that setting Git itself hides the file" '[ -z "$(cd "$R" && git -c core.ignoreCase=true ls-files --others --exclude-standard)" ] && [ -n "$(cd "$R" && git ls-files --others --exclude-standard)" ]'
+rm -rf "$R/VAR"
+
+# AVE-REQ-097 AC-2: what an entry of the fingerprint holds.
+echo "## the fingerprint reads bytes, executable bits and index modes"
 hook "$J_FALSE"; before="$(fp)"
 sed -i 's/$/\r/' "$R/scripts/verify.d/20-backend.sh"
 check "a file rewritten with CRLF line ends changes the fingerprint" '[ -n "$before" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
 (cd "$R" && git checkout -q scripts/verify.d/20-backend.sh)
 check "the restored file gives the earlier fingerprint" '[ "$(fp)" = "$before" ]'
+sed -i '1s/$/\r/' "$R/scripts/verify.d/20-backend.sh"
+check "one CRLF line end among LF line ends changes the fingerprint" '[ "$(cd "$R" && git ls-files --eol scripts/verify.d/20-backend.sh | awk "{ print \$2 }")" = w/mixed ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+(cd "$R" && git checkout -q scripts/verify.d/20-backend.sh)
+chmod -x "$R/scripts/check_baseline.py"
+check "a file that lost its executable bit changes the fingerprint" '[ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+chmod +x "$R/scripts/check_baseline.py"
+check "the executable bit restored gives the earlier fingerprint" '[ "$(fp)" = "$before" ]'
+(cd "$R" && git update-index --chmod=-x scripts/check_baseline.py)
+check "another mode in the index changes the fingerprint" '[ -x "$R/scripts/check_baseline.py" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+(cd "$R" && git update-index --chmod=+x scripts/check_baseline.py)
+check "the index mode restored gives the earlier fingerprint" '[ "$(fp)" = "$before" ]'
+rm "$R/docs/ROADMAP.md"
+check "a deleted tracked file changes the fingerprint" '[ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+(cd "$R" && git checkout -q docs/ROADMAP.md)
+ln -s ROADMAP.md "$R/docs/link.md"; linked="$(fp)"
+check "a symbolic link enters the fingerprint" '[ -n "$linked" ] && [ "$linked" != "$before" ]'
+ln -sfn PRODUCT.md "$R/docs/link.md"
+check "another link text changes the fingerprint" '[ -n "$(fp)" ] && [ "$(fp)" != "$linked" ] && [ "$(fp)" != "$before" ]'
+rm "$R/docs/link.md"
+# Paths that no line of `git hash-object --stdin-paths` names: each stands beside the file that the
+# line would name, so a fingerprint here would hold the bytes of the wrong file.
+printf 'twin\n' > "$R/quoted.txt"; printf 'twin\n' > "$R/first"; printf 'twin\n' > "$R/second"
+before_odd="$(fp)"
+while IFS= read -r -d '' odd; do
+  printf 'odd\n' > "$R/$odd"
+  check "a path that no line can name leaves the tree without a fingerprint ($(printf '%q' "$odd"))" '[ -n "$before_odd" ] && [ -z "$(fp)" ]'
+  rm -f "$R/$odd"
+done < <(printf '%s\0' '"quoted.txt"' $'first\nsecond' $'first\r')
+check "without those paths the tree has its fingerprint again" '[ "$(fp)" = "$before_odd" ]'
+rm -f "$R/quoted.txt" "$R/first" "$R/second"
+check "the fingerprint is the whole tree's from a directory below the root" '[ "$(cd "$R/docs" && . ../scripts/lib/verify-state.sh && vstate_fingerprint)" = "$before" ]'
+cp "$R/.git/index" "$T/index.saved"; printf 'no index\n' > "$R/.git/index"
+check "a repository whose index Git cannot read has no fingerprint" '(cd "$R" && git rev-parse --is-inside-work-tree >/dev/null 2>&1) && [ -z "$(fp)" ]'
+cp "$T/index.saved" "$R/.git/index"
+# A Windows host keeps no executable bit and reports every file of the checkout as the container
+# reads it through its mount: executable. A stand-in for uname names such a host here.
+mkdir -p "$T/windows" && printf '#!/bin/sh\necho MINGW64_NT-10.0\n' > "$T/windows/uname" && chmod +x "$T/windows/uname"
+on_windows="$(PATH="$T/windows:$PATH" fp)"
+chmod -x "$R/scripts/check_baseline.py"
+check "on a host without mode bits every regular file counts as executable" '[ -n "$on_windows" ] && [ "$on_windows" != "$before" ] && [ "$(PATH="$T/windows:$PATH" fp)" = "$on_windows" ] && [ "$(fp)" != "$before" ]'
+chmod +x "$R/scripts/check_baseline.py"
+check "the fixture is as committed again" '[ -z "$(cd "$R" && git status --porcelain)" ] && [ "$(fp)" = "$before" ]'
 hook "$J_FALSE"
 
 # AVE-REQ-097 AC-4: a failing check blocks; it never passes as green.
@@ -219,6 +307,15 @@ check "a nested stop_hook_active key does not restart the count (attempt 3 relea
 hook '{"nested":{"stop_hook_active":true},"list":[{"stop_hook_active":true}],"stop_hook_active":false}'
 check "the outermost key decides: false after nested true is a fresh stop" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
 
+# AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: the gate counts only what it can read back, so a counter that
+# is written and reads as another value still ends in a release.
+echo "## a counter that cannot be read back"
+rm -f "$R/.git/claude-verify/attempts"; mkdir "$R/.git/claude-verify/attempts"
+codes=""
+for j in "$J_FALSE" "$J_TRUE" "$J_TRUE"; do hook "$j"; codes="$codes$CODE"; done
+check "the counter path is a directory: a fresh stop blocks once, a continued stop releases ($codes)" '[ "$codes" = 200 ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"still fails\")" >/dev/null'
+rm -rf "$R/.git/claude-verify/attempts"
+
 echo "## gate off"
 logrm
 OUT="$(printf '%s' "$J_FALSE" | CLAUDE_VERIFY_GATE=off CLAUDE_PROJECT_DIR="$R" "$R/.claude/hooks/stop-verify.sh" 2>&1)"; CODE=$?
@@ -282,8 +379,12 @@ logrm; hook "$J_FALSE"
 check "Stop runs verify.sh there" '[ "$CODE" = 0 ] && logexists && grep -q "Skipped: no working-tree fingerprint" "$R/.git/claude-verify/last.log"'
 printf 'dirty\n' >> "$R/vendor/sub/f.txt"; logrm; hook "$J_FALSE"
 check "and again on the next Stop (dirty submodule content is never a cache hit)" '[ "$CODE" = 0 ] && logexists'
+(cd "$R" && git add vendor/sub 2>/dev/null)
+check "a tree with a gitlink in its index has no fingerprint" '[ "$(cd "$R" && git ls-files -s vendor/sub | cut -d " " -f 1)" = 160000 ] && [ -z "$(cd "$R" && git ls-files --others --exclude-standard)" ] && [ -z "$(fp)" ]'
+(cd "$R" && git rm -q -f --cached vendor/sub)
 rm -rf "$R/vendor"
-check "no temp index or object directory left behind" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
+check "without the repository the tree has a fingerprint again" '[ -n "$(fp)" ] && [ -z "$(cd "$R" && git status --porcelain)" ]'
+check "the state directory still holds the Stop gate's records only" '[ -z "$(ls "$R/.git/claude-verify" | grep -v -e "^last-pass$" -e "^last-result$" -e "^last.log$" -e "^attempts$")" ]'
 
 echo "## CLAUDE_PROJECT_DIR unset (defaults to the hook's project)"
 OUT="$(cd / && printf '%s' "$J_FALSE" | env -u CLAUDE_PROJECT_DIR "$R/.claude/hooks/stop-verify.sh" 2>&1)"; CODE=$?

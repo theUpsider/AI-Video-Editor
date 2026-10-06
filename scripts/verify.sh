@@ -26,15 +26,30 @@
 # files), identical locally and in CI. A missing tool fails its step. Never weaken, skip or suppress
 # a check to get green: fix the root cause. Package checks never certify product behavior.
 #
-# Environment (AVE-REQ-097 AC-2, AC-4): the run clears the variables of its caller that redirect
-# Git (GIT_DIR and its relatives), change what Python and pytest load or select (PYTHONPATH,
-# PYTEST_ADDOPTS and their relatives) or make a child shell run a startup file, keeps the directory
-# of a script out of every Python process's module path (PYTHONSAFEPATH), fails when Git ignores a
-# file inside the source, test, script or hook directories, reads no bytecode
-# and no type-checker cache from the tree (PYTHONPYCACHEPREFIX and AVE_RUN_SCRATCH point into a
-# scratch directory that the run creates outside the tree and removes at its end) and loads no
-# pytest plugin by itself (PYTEST_DISABLE_PLUGIN_AUTOLOAD). The interpreter, the shell and the tools
-# on PATH are trusted; CI on a fresh checkout is the run that admits a commit to main.
+# Environment (AVE-REQ-097 AC-2, AC-4): the steps start from a named set of variables. Before this
+# file defines anything of its own, the run removes every shell function that exists (an exported
+# function of the caller) and every exported variable outside the set
+#   PATH HOME USER LOGNAME TMPDIR LANG LC_ALL TZ
+#   UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_INSTALL_DIR  the locked backend environment, the
+#       uv cache and the Python that uv installed, where scripts/dev-container.sh and
+#       .devcontainer/Dockerfile keep them (.github/workflows/verify.yml sets none of the three)
+#   AVE_HEAVY_LOCK AVE_HEAVY_LOCK_HELD                         the heavy-media lock (below)
+#   PWD SHLVL _                                                which the shell maintains itself
+# so no other variable of the caller reaches a step: none that redirects or configures Git
+# (GIT_DIR, GIT_CONFIG_COUNT), changes what Python, pytest or uv load and select (PYTHONPATH,
+# PYTHONUSERBASE, PYTEST_ADDOPTS, UV_ENV_FILE), names the media tools (AVE_FFMPEG, AVE_FFPROBE) or
+# makes a child shell run a startup file (BASH_ENV, ENV). VERIFY_TIER selects the tier and reaches
+# no step. An environment entry that the shell cannot unset (its name is no shell identifier)
+# fails the run before any step. The run then sets its own variables: PYTHONSAFEPATH and
+# PYTHONNOUSERSITE (no Python process takes a module from the directory of the script it runs or
+# from a user site directory), PYTEST_DISABLE_PLUGIN_AUTOLOAD (pytest loads no plugin by itself),
+# PYTHONPYCACHEPREFIX and AVE_RUN_SCRATCH (bytecode and the type-checker cache of a run live in a
+# scratch directory that the run creates outside the tree and removes at its end) and
+# AVE_EVIDENCE_DIR (below). The run fails when Git ignores a file inside the source, test, script
+# or hook directories. Trusted, and outside this gate: the interpreter, the tools on PATH, the
+# files under HOME, and the shell with what acts before the first line of this file (SHELLOPTS,
+# BASHOPTS, BASH_ENV, a function exported under the name of a shell builtin). CI on a fresh
+# checkout is the run that admits a commit to main.
 #
 # Evidence (AVE-REQ-097): every run gets a new directory var/verify/runs/<run-id>/, exported to the
 # steps as AVE_EVIDENCE_DIR. run_step logs each step there (steps.tsv), test runners write their
@@ -48,12 +63,57 @@
 # first step to its summary, prints one line while it waits for the lock, and exports
 # AVE_HEAVY_LOCK_HELD=1 to its steps. A caller that already holds the lock sets
 # AVE_HEAVY_LOCK_HELD=1, and the run takes no second lock after it confirmed that the lock is
-# held. Every other heavy media command runs as `flock <lock file> <command>`. The fast tier
-# takes no lock.
+# held: with a lock that nobody holds, without flock, or with a lock file it cannot open or test,
+# the run fails before any step. Every other heavy media command runs as
+# `flock <lock file> <command>`. The fast tier takes no lock.
 # ==================================================================================================
 # shellcheck source-path=SCRIPTDIR
 
 set -uo pipefail
+
+# The named environment (header § Environment). A function that exists before this file defines
+# its own came from the caller: none stays.
+while IFS= read -r REPLY; do
+  [ -z "$REPLY" ] || unset -f -- "$REPLY"
+done <<<"$(compgen -A function)"
+
+# in_named_set <name> — true for a variable that a step inherits from the caller, and for the
+# three the shell maintains itself.
+in_named_set() {
+  case "$1" in
+    PATH | HOME | USER | LOGNAME | TMPDIR | LANG | LC_ALL | TZ) ;;
+    UV_PROJECT_ENVIRONMENT | UV_CACHE_DIR | UV_PYTHON_INSTALL_DIR) ;;
+    AVE_HEAVY_LOCK | AVE_HEAVY_LOCK_HELD) ;;
+    PWD | SHLVL | _) ;;
+    *) return 1 ;;
+  esac
+}
+
+# clean_environment — unsets every exported variable outside the named set, then sets the run's
+# own. It runs before this file assigns a variable, so every exported name is the caller's, and it
+# keeps the names in its positional parameters, so it needs no variable of its own. VERIFY_TIER
+# stays for the line below that reads and unsets it. A read-only variable (SHELLOPTS, BASHOPTS)
+# leaves the environment and keeps its value. OLDPWD goes too: the shell exports it again at the
+# next cd only while it still holds the export mark of the shell's start.
+clean_environment() {
+  # shellcheck disable=SC2046 # names of shell variables hold no blank and no pattern character
+  set -- $(compgen -e)
+  while [ "$#" -gt 0 ]; do
+    if ! in_named_set "$1" && [ "$1" != VERIFY_TIER ]; then
+      unset "$1" 2>/dev/null || export -n "$1"
+    fi
+    shift
+  done
+  unset OLDPWD
+  export PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+}
+
+# A Windows host passes the run to the development container (end of this file); this file
+# starts again there and cleans the environment its steps get.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ;;
+  *) clean_environment ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 2
 STEPS_RUN=0
@@ -105,26 +165,57 @@ tier_includes() {
   return 1
 }
 
+# environment_is_named — fails when a step would still see a name outside the named set and the
+# run's own variables: an environment entry that the shell passes on and cannot unset.
+environment_is_named() {
+  local foreign
+  if ! foreign="$(env -0 | while IFS= read -r -d '' REPLY; do
+    REPLY="${REPLY%%=*}"
+    case "$REPLY" in
+      PYTHONSAFEPATH | PYTHONNOUSERSITE | PYTEST_DISABLE_PLUGIN_AUTOLOAD) ;;
+      *) in_named_set "$REPLY" || printf ' %s' "$REPLY" ;;
+    esac
+  done)"; then
+    printf 'verify.sh: FAIL — cannot list the environment of the steps (env -0)\n'
+    return 1
+  fi
+  [ -n "$foreign" ] || return 0
+  printf 'verify.sh: FAIL — the environment holds names outside the named set of the steps:%s\n' "$foreign"
+  printf 'Start the run without them (env -u <name> ./scripts/verify.sh).\n'
+  return 1
+}
+
 # hold_heavy_lock — in the media and release tiers, takes the heavy-media lock on file descriptor 9
 # for the rest of the run (header: one heavy media job at a time). Returns 1 when it cannot.
 hold_heavy_lock() {
+  local status
   tier_includes media || return 0
-  if [ "${AVE_HEAVY_LOCK_HELD:-}" = 1 ]; then
-    # The caller says it holds the lock: a lock that this run could take is held by nobody.
-    if command -v flock >/dev/null 2>&1 && flock -n "$HEAVY_LOCK" true 2>/dev/null; then
-      printf 'verify.sh: FAIL — AVE_HEAVY_LOCK_HELD=1 is set and nobody holds the heavy-media lock %s\n' \
-        "$HEAVY_LOCK"
-      return 1
-    fi
-    return 0
-  fi
   if ! command -v flock >/dev/null 2>&1; then
-    printf 'verify.sh: FAIL — tier %s needs flock (util-linux) to hold the heavy-media lock %s\n' \
+    printf 'verify.sh: FAIL — tier %s needs flock (util-linux) for the heavy-media lock %s\n' \
       "$TIER" "$HEAVY_LOCK"
     return 1
   fi
   if ! exec 9>>"$HEAVY_LOCK"; then
     printf 'verify.sh: FAIL — cannot open the heavy-media lock %s\n' "$HEAVY_LOCK"
+    return 1
+  fi
+  if [ "${AVE_HEAVY_LOCK_HELD:-}" = 1 ]; then
+    # The caller says it holds the lock, and the run confirms it: a lock that this run can take is
+    # held by nobody, and a lock that it cannot test confirms nothing.
+    flock -n -E 75 9
+    status=$?
+    exec 9>&-
+    case "$status" in
+      75) return 0 ;;
+      0)
+        printf 'verify.sh: FAIL — AVE_HEAVY_LOCK_HELD=1 is set and nobody holds the heavy-media lock %s\n' \
+          "$HEAVY_LOCK"
+        ;;
+      *)
+        printf 'verify.sh: FAIL — AVE_HEAVY_LOCK_HELD=1 is set and the heavy-media lock %s cannot be tested (flock exit %s)\n' \
+          "$HEAVY_LOCK" "$status"
+        ;;
+    esac
     return 1
   fi
   if ! flock -n 9; then
@@ -156,8 +247,8 @@ print_summary() {
 }
 
 # Prints the Stop-gate fingerprint of the working tree (vstate_fingerprint in
-# scripts/lib/verify-state.sh), or nothing when none is available (outside Git, or a tree that
-# holds a submodule).
+# scripts/lib/verify-state.sh), or nothing for a tree that keeps none (outside Git, with a
+# submodule or an embedded repository, and the other cases its header lists).
 tree_state() {
   (
     # shellcheck source=lib/verify-state.sh
@@ -169,7 +260,7 @@ tree_state() {
 # check_tree_unchanged <tree_state before the steps> — fails when a step changed the working tree.
 check_tree_unchanged() {
   if [ -z "$1" ]; then
-    printf 'Skipped: no working-tree fingerprint (outside Git, or the tree holds a submodule).\n'
+    printf 'Skipped: no working-tree fingerprint (outside Git, or a tree that keeps none: scripts/lib/verify-state.sh).\n'
     return 0
   fi
   [ "$(tree_state)" = "$1" ] && return 0
@@ -185,29 +276,32 @@ record_evidence() {
   python3 -B scripts/evidence.py record --dir "$AVE_EVIDENCE_DIR" --tier "$TIER" --fingerprint "$1"
 }
 
-# clean_environment — header § Environment.
-clean_environment() {
-  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
-    GIT_COMMON_DIR GIT_NAMESPACE PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONOPTIMIZE PYTHONWARNINGS \
-    PYTHONINSPECT PYTEST_ADDOPTS PYTEST_PLUGINS BASH_ENV ENV CDPATH
-  export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-  # No Python process of a step takes a module from the directory of the script it runs.
-  export PYTHONSAFEPATH=1
-}
-
 # check_no_ignored_sources — a file Git ignores inside the directories whose files the steps load
 # (sources, tests, scripts, hooks) would take part in a run and appear in no status, diff or
 # fingerprint: a conftest.py in an ignored directory, a module or a bytecode file beside a script.
 # Bytecode directories are exempt (no step reads them, header § Environment), and so are the
-# folder files an operating system leaves behind.
+# folder files an operating system leaves behind. The one skip is a directory without a
+# repository (no .git here or above); a Git command that fails inside a work tree fails the step.
 check_no_ignored_sources() {
-  local listed
+  local listed dir="$PWD"
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    printf 'Skipped: outside a Git work tree.\n'
+    while :; do
+      if [ -e "$dir/.git" ]; then
+        printf 'Git fails inside the work tree of %s/.git:\n' "$dir"
+        git rev-parse --is-inside-work-tree 2>&1
+        return 1
+      fi
+      [ -n "$dir" ] || break
+      dir="${dir%/*}"
+    done
+    printf 'Skipped: outside a Git work tree (no .git here or above).\n'
     return 0
   fi
-  listed="$(git ls-files --others --ignored --exclude-standard -- backend/src backend/tests scripts .claude/hooks 2>/dev/null |
-    awk '!/(^|\/)(__pycache__\/|\.DS_Store$|Thumbs\.db$)/')"
+  if ! listed="$(git ls-files --others --ignored --exclude-standard -- backend/src backend/tests scripts .claude/hooks)"; then
+    printf 'Git fails to list the ignored files of this work tree.\n'
+    return 1
+  fi
+  listed="$(printf '%s\n' "$listed" | awk '!/(^|\/)(__pycache__\/|\.DS_Store$|Thumbs\.db$)/')"
   [ -z "$listed" ] && return 0
   printf 'Files that Git ignores inside the source, test, script and hook directories:\n%s\n' "$listed"
   printf 'Remove or track them: a run loads only files of the tree its fingerprint names.\n'
@@ -222,7 +316,7 @@ step_files() {
 main() {
   local before step_file
   cd "$ROOT" || return 2
-  clean_environment
+  environment_is_named || return 1
   hold_heavy_lock || return 1
   before="$(tree_state)"
   # A run starts in a directory that did not exist: nothing a caller prepared counts as its result.

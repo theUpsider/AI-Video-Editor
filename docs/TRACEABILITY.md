@@ -60,7 +60,8 @@ they disagree:
    collection), tooling tests in `scripts/tests/` as a `# AVE-REQ-NNN AC-n` comment line directly
    above the case; a tooling tag counts only through a suite result of the run, with that file's exit
    status and check count, so a suite that ran no check credits nothing (`scripts/tests/run.sh` for the shell suites it lists, `scripts/evidence.py unittest` for
-   `test_*.py`), and one naming no existing criterion stops the run with its file and line. A test covering several ACs carries one full tag per AC. A test that
+   `test_*.py`), and one naming no existing criterion stops the run with its file and line, as does a comment tag in any
+   other file of `scripts/tests/`. A test covering several ACs carries one full tag per AC. A test that
    runs an acceptance scenario of
    [ACCEPTANCE_TESTS.md](../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md) also carries
    its scenario tag `AT-NN`; the scenario tag alone never proves a criterion.
@@ -109,7 +110,7 @@ git grep -h -o -E --untracked 'AVE-REQ-[0-9]{3,}' -- ':!*.md' ':!ai-video-editor
   ls docs/requirements/"$id"-*.md >/dev/null 2>&1 || echo "orphan tag: $id"
 done
 # Baseline integrity, status and gate counts, ticked ACs
-python3 scripts/check_baseline.py
+python3 -I -B scripts/check_baseline.py
 # Unfilled placeholders
 grep -rn '^_TBD' docs --exclude=README.md
 ```
@@ -152,7 +153,7 @@ Cell formats:
 exists; rows follow it with no blank or text line between them; each row names one REQ ID, at
 most once; each row's requirement file exists; each row's status equals the file's frontmatter
 status; every `done` requirement has a row; every relative link resolves.
-`python3 scripts/check_baseline.py` enforces the link from each working requirement to its
+`python3 -I -B scripts/check_baseline.py` enforces the link from each working requirement to its
 baseline (origins, scenarios, dependencies, criteria). `milestone-review` audits the rest:
 1. Every GOAL in [PRODUCT.md](PRODUCT.md) § Product goals not marked `retired` has at least one
    epic that is not superseded.
@@ -204,8 +205,8 @@ move in an ADR (see the revisit trigger in
 | [AVE-REQ-031](requirements/AVE-REQ-031-explicit-master-audio-and-routing.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-072](requirements/AVE-REQ-072-real-export-pipeline-and-default-delivery-profile.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
 | [AVE-REQ-075](requirements/AVE-REQ-075-cpu-only-reference-rendering.md) | in-progress | — | — | — | [ADR-005](decisions/ADR-005-segmented-cpu-reference-renderer.md) |
-| [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | in-progress | `scripts/check_baseline.py`, `scripts/reqfile.py`, `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md` | `scripts/tests/test-check-baseline.sh` (AC-1, AC-3, AC-4), `scripts/tests/test_evidence.py` (AC-4), inspection (AC-2) | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
-| [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md) | in-progress | `docs/ENVIRONMENT_CAPABILITIES.md`, `scripts/probe-environment.sh`, `docs/WORKFLOW_LOG.md`, `CLAUDE.md` § Delegation, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-probe-environment.sh` (AC-1), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
-| [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md) | in-progress | `docs/briefs/`, `docs/briefs/handbacks/`, `scripts/check-project-control.sh`, `scripts/verify.sh`, `.claude/skills/develop/SKILL.md`, `CLAUDE.md`, `.claude/settings.json` | `scripts/tests/test-checker.sh` (AC-1, AC-2), `scripts/tests/test-verify-tiers.sh` (AC-4), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
-| [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | in-progress | `scripts/verify.sh`, `scripts/verify.d/`, `scripts/lib/verify-state.sh`, `scripts/evidence.py`, `scripts/reqfile.py`, `scripts/tests/run.sh`, `backend/tests/evidence_plugin.py`, `.claude/hooks/stop-verify.sh` | `scripts/tests/test-verify-tiers.sh`, `scripts/tests/test_evidence.py`, `backend/tests/unit/test_evidence_plugin.py`, `scripts/tests/test-stop-hook.sh` (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
-| [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md) | in-progress | `docs/PROGRESS.md`, `.claude/hooks/session-start.sh`, `.claude/hooks/stop-verify.sh`, `scripts/check-project-control.sh`, `.env.example`, `docs/ENVIRONMENT_CAPABILITIES.md`, `CLAUDE.md` § Git, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-session-start.sh` (AC-1, AC-2), `scripts/tests/test-checker.sh` (AC-2, AC-3, AC-4), `scripts/tests/test-probe-environment.sh` (AC-3), `scripts/tests/test-stop-hook.sh` (AC-4), inspection (AC-1, AC-3, AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
+| [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | verification | `scripts/check_baseline.py`, `scripts/reqfile.py`, `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md` | `scripts/tests/test-check-baseline.sh` (AC-1, AC-3, AC-4), `scripts/tests/test_evidence.py` (AC-4), inspection (AC-2) | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md) | verification | `docs/ENVIRONMENT_CAPABILITIES.md`, `scripts/probe-environment.sh`, `docs/WORKFLOW_LOG.md`, `CLAUDE.md` § Delegation, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-probe-environment.sh` (AC-1), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
+| [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md) | verification | `docs/briefs/`, `docs/briefs/handbacks/`, `scripts/check-project-control.sh`, `scripts/verify.sh`, `.claude/skills/develop/SKILL.md`, `CLAUDE.md`, `.claude/settings.json` | `scripts/tests/test-checker.sh` (AC-1, AC-2), `scripts/tests/test-verify-tiers.sh` (AC-4), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
+| [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | verification | `scripts/verify.sh`, `scripts/verify.d/`, `scripts/lib/verify-state.sh`, `scripts/evidence.py`, `scripts/reqfile.py`, `scripts/tests/run.sh`, `backend/tests/evidence_plugin.py`, `.claude/hooks/stop-verify.sh` | `scripts/tests/test-verify-tiers.sh`, `scripts/tests/test_evidence.py`, `backend/tests/unit/test_evidence_plugin.py`, `scripts/tests/test-stop-hook.sh` (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md) | verification | `docs/PROGRESS.md`, `.claude/hooks/session-start.sh`, `.claude/hooks/stop-verify.sh`, `scripts/check-project-control.sh`, `.env.example`, `docs/ENVIRONMENT_CAPABILITIES.md`, `CLAUDE.md` § Git, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-session-start.sh` (AC-1, AC-2), `scripts/tests/test-checker.sh` (AC-1, AC-2, AC-3, AC-4), `scripts/tests/test-probe-environment.sh` (AC-3), `scripts/tests/test-stop-hook.sh` (AC-4), inspection (AC-1, AC-3, AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |

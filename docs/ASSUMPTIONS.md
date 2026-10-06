@@ -223,11 +223,16 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   `TOTAL: pass=N fail=M` line with N ≥ 1, and `collect` counts such a result against its tags); `evidence.py
   unittest` fails a file in which no test ran; tooling tags are validated
   by scanning every tooling test file at `record` and `check-done`; `show --require-complete` exits 1 for a failed
-  run while `--require-fresh` alone checks freshness.
+  run while `--require-fresh` alone checks freshness. A comment tag in any other file of `scripts/tests/` stops
+  `record` and `check-done`; `scripts/evidence.py` reads the list of shell suites from the `run_suite` lines at
+  the start of a line of `scripts/tests/run.sh`. A unit-test tag binds to the test below it by class and name;
+  an inherited test counts for the class that defines it.
 - **Reason:** The shell suites have no per-case runner; a never-collected test gives no evidence; a bad tag must
   stop every tier although the fast tier runs no shell suite; certifying completeness needs a passing run.
 - **Impact:** One failing case fails every criterion its file tags; a shell-suite tag counts only in the release
-  tier; an empty `test_*.py` in `scripts/tests/` fails the fast tier; a reviewer certifies with both flags.
+  tier; an empty `test_*.py` in `scripts/tests/` fails the fast tier; a reviewer certifies with both flags. A tagged
+  suite is listed in `run.sh` in the commit that adds it; a suite called from an indented or commented
+  `run_suite` line counts as unlisted.
 - **Status:** open
 - **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), `scripts/evidence.py`, `scripts/tests/run.sh`
 
@@ -245,12 +250,16 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 
 ### ASM-015 — The probe counts accelerators by device nodes and nvidia-smi
 - **Date:** 2026-10-03
-- **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from device nodes under `/dev`
-  (`nvidia*`, `dri`) and from a GPU that `nvidia-smi` reports; FFmpeg's built-in hardware encoders never count.
+- **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from a character device
+  under `/dev` whose whole name is `nvidia<N>` or `dri/renderD<N>` and that this user can open, and from a GPU
+  row with a memory figure that `nvidia-smi` prints; FFmpeg's built-in hardware encoders and every other entry
+  of `/dev` never count.
 - **Reason:** AVE-REQ-094 edge case: a compiled-in encoder says nothing about a device.
-- **Impact:** A host with `/dev/dri` nodes reports `present` before any hardware encode is tested; AVE-REQ-076
-  still needs a test encode.
-- **Status:** open
+- **Impact:** A host with a render node, a software or virtual DRM driver included, reports `present` before any
+  hardware encode is tested; AVE-REQ-076 still needs a test encode.
+- **Status:** open — 2026-10-06 — narrowed to GPU nodes and rows with a memory figure after the review of
+  AVE-REQ-094 at `eb73896` (handback part 5), and to character devices with the whole name that open after the
+  review at `d4147d8` (handback part 6)
 - **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
 
 ### ASM-016 — .env.example lists the product's variables only
@@ -276,17 +285,25 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-018 — Check 11 reads a commit as lowercase hex
 - **Date:** 2026-10-03
 - **Assumption:** A brief's Input revision names a commit as a delimited token of 7 to 40 lowercase hex digits (Git's
-  own output) or as the self-reference `git log -1 --format=%h -- <this brief>`; an English word of seven or more
-  hex letters (for example "defaced") also counts.
+  own output) or as the self-reference `git log -1 --format=%h -- <this brief>`. The rule is syntactic and
+  checks no object of the repository: a hex token delimited by `/`, `.`, `:` or other punctuation inside a
+  longer name (`feature/abcdef1`, `fix.1234567`), a branch named in hex (`deadbeef`), a word of seven or more
+  hex letters (`effaced`), a compact date (`20261006`), any number of 7 to 40 digits and `0000000` count as a
+  commit; under Requirements an ID without a file (`AVE-REQ-999`) counts. HTML comments are removed first, and
+  `docs/briefs/` holds briefs, `README.md`, `drafts/` and `handbacks/` only (the folder files `.DS_Store` and
+  `Thumbs.db` are passed over).
 - **Reason:** The rule stays mechanical and awk-portable.
-- **Impact:** Negligible; the brief's reviewer reads the input revision.
-- **Status:** open
+- **Impact:** The reader of the brief and the task's base check (`git rev-parse HEAD` equals the base commit)
+  judge whether the token is the intended commit.
+- **Status:** open — 2026-10-06 — forms named after the review of AVE-REQ-096 at `2df637f`
 - **Links:** [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)
 
 ### ASM-019 — PROGRESS.md claims no ongoing execution
 - **Date:** 2026-10-03
-- **Assumption:** Check 7 rejects the words "running", "underway" and "in flight" in PROGRESS.md outside comments,
-  fences and code spans, and allows the negations ("nothing is running", "not running", "no longer running").
+- **Assumption:** Check 7 rejects the wordings "running", "underway", "under way", "in flight", "ongoing", "still
+  executing" and "runs now" in PROGRESS.md outside comments, fences and code spans, in any letter case and with
+  spaces or hyphens between the words, and allows the negations ("nothing is running", "not running", "no longer
+  running"). The rule knows this list; the commit review judges any other wording.
 - **Reason:** AVE-REQ-098 AC-3 forbids claiming that unfinished work keeps executing after the session stops.
 - **Impact:** Other uses of the words in PROGRESS.md need rephrasing.
 - **Status:** open
@@ -332,8 +349,11 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Date:** 2026-10-06
 - **Assumption:** The mechanical gates trust the interpreter, the shell and the tools on `PATH` of the development
   container and of CI, and they treat `var/verify/` and `.git/claude-verify/` as local, unauthenticated state.
-  `verify.sh` clears the caller's Git, Python and pytest variables and reads no cache from the tree; a replaced
-  tool, a hand-written manifest or a hand-written Stop-gate record lies outside every diff and outside the gates.
+  `verify.sh` starts its steps from a named set of variables and reads no cache from the tree; a replaced
+  tool, a hand-written manifest or a hand-written Stop-gate record lies outside every diff and outside the gates,
+  and so do the files under `HOME`, the personal and user-level Claude Code settings, the shell options that act
+  before the first line of a script (`SHELLOPTS`, `BASHOPTS`) and the files of a backend environment beyond the
+  names and versions of its packages. On the container host that environment is kept per clone path.
 - **Reason:** A gate cannot prove the machine it runs on. The red-team pass of 2026-10-06 closed every path through
   repository files and environment variables that it found; what remains needs write access to the toolchain or
   to ignored state.
@@ -342,3 +362,91 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   alone moves nothing to `main`.
 - **Status:** open
 - **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-024 — A fingerprint entry holds the index mode, the executable bit and the raw bytes
+- **Date:** 2026-10-06
+- **Assumption:** The tree fingerprint lists every index entry and every untracked file that no `.gitignore` file
+  ignores, each with the mode of its index entry (or `untracked`), the executable bit of the working file and the
+  hash of its raw bytes. A Windows host counts every regular file as executable, which is what the development
+  container reads through its mount of the same checkout. Staging a new file changes its entry from `untracked`
+  to its index mode.
+- **Reason:** The index mode alone leaves `chmod -x` of a script outside the fingerprint on Linux; bytes read from
+  the working tree keep every index flag, attribute and fsmonitor state out of the result.
+- **Impact:** Host and container print one value for one checkout. A run that should stay fresh after its commit
+  starts with its new files staged (`git add -A`); otherwise the next run renews the evidence.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), `scripts/lib/verify-state.sh`
+
+### ASM-025 — The steps of verify.sh start from a named set of variables
+- **Date:** 2026-10-06
+- **Assumption:** `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `LANG`, `LC_ALL`, `TZ`, `UV_PROJECT_ENVIRONMENT`,
+  `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR`, `AVE_HEAVY_LOCK` and `AVE_HEAVY_LOCK_HELD` are the variables of the
+  caller a step may see; `AVE_VAR_DIR`, proxy variables, `XDG_*`, `CI` and `GITHUB_*` reach no step.
+- **Reason:** A list of variables to clear is never complete; the set derives from `scripts/dev-container.sh`,
+  `.devcontainer/Dockerfile` and `.github/workflows/verify.yml`.
+- **Impact:** The locked backend environment exists before `verify.sh` runs wherever the network needs a proxy; a
+  host that needs another variable adds it to the set in `scripts/verify.sh` and to the tiers suite in one
+  reviewed change.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), `scripts/verify.sh`
+
+### ASM-026 — Requirement files hold the characters of an allow-list
+- **Date:** 2026-10-06
+- **Assumption:** U+0020 to U+007E, the line feed and the seven signs the working files held on 2026-10-06
+  (U+00A7, U+00B1, U+2013, U+2014, U+2192, U+2265, U+2282; `EXTRA_CHARACTERS` in `scripts/reqfile.py`) suffice
+  for EPIC, FEAT and REQ files.
+- **Reason:** An allow-list closes every class of invisible character at once.
+- **Impact:** Any other character (an accented letter, a typographic quote, an ellipsis, sample text in another
+  script) fails "Requirements baseline integrity" until the list grows in a reviewed change.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md), `scripts/reqfile.py`
+
+### ASM-027 — A deferred or superseded child never blocks its parent from done
+- **Date:** 2026-10-06
+- **Assumption:** A feature or epic is `done`, and its acceptance boxes ticked, when every child that is neither
+  superseded nor deferred is `done` (requirements README § Status lifecycle rule 6).
+- **Reason:** AVE-FEAT-014 holds the deferred AVE-REQ-067; counting it would bar the feature from `done` for good.
+- **Impact:** A deferred child stays visible in its parent's list and takes no part in the parent's status.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md), `scripts/check_baseline.py`
+
+### ASM-028 — Change marks hold sixteen hex digits and a marker reason holds a letter or digit
+- **Date:** 2026-10-06
+- **Assumption:** The mark of a change marker is the first sixteen hex digits of the SHA-256 of the marked text,
+  and the reason of a marker line holds a letter or a digit of U+0020 to U+007E.
+- **Reason:** A deliberate search for a second text with one mark costs about 2^64 hash evaluations; a reason of
+  punctuation or of a blank glyph explains nothing.
+- **Impact:** None for the files of today: no working file holds a mark yet.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md), `scripts/reqfile.py`
+
+### ASM-029 — A milestone entry of the roadmap holds its lists once, under the template labels
+- **Date:** 2026-10-06
+- **Assumption:** A `### M<n>` entry holds one Status line, one requirement list and at most one
+  `Proposed during ...` line; the Deferred group holds its own label and no Proposed line; fence lines follow
+  the rules of the requirement files.
+- **Reason:** A list under another label, or a second list, would hide requirements from the roadmap rules.
+- **Impact:** A later round of proposals under one milestone extends the existing line.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md), `scripts/check_baseline.py`
+
+### ASM-030 — Check 12 fails every loop word in a hook command
+- **Date:** 2026-10-06
+- **Assumption:** A hook command in `.claude/settings.json` with the shell word `while` or `until` or with a
+  `for ((` loop fails check 12, whatever its condition; so does `--permission-mode` with any value. The folder
+  files `.DS_Store` and `Thumbs.db` pass in `docs/briefs/`, as in the ignored-file step.
+- **Reason:** An always-true condition has unbounded spellings; a hook command of this project is a script path.
+- **Impact:** A hook that needs a loop keeps it inside its script, where the inspection of `.claude/hooks/*.sh`
+  reads it.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md), [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md)
+
+### ASM-031 — The evidence plugin takes a .git entry as the mark of a repository
+- **Date:** 2026-10-06
+- **Assumption:** `backend/tests/evidence_plugin.py` treats a tree as inside a repository when its directory or
+  one above it holds a `.git` entry; there a Git that fails stops the session.
+- **Reason:** Git's own answer is the thing that fails, so the test for a repository uses no Git command.
+- **Impact:** With `GIT_CEILING_DIRECTORIES` between the tree and that entry the session fails; a source archive
+  placed inside another checkout is judged by that checkout's ignore rules.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)

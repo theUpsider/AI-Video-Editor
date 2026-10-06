@@ -20,7 +20,9 @@ this directory that lacks a heading, repeats one or breaks the order, leaves a s
 `AVE-REQ-NNN` ID under Requirements, or names no commit under Input revision. A commit is a hash of 7 to 40
 lowercase hex digits with no letter, digit, `_` or `-` on either side (a branch name such as
 `ccr-af7078da-q8r8mf` names none), or the self-reference to the commit that adds the brief,
-`git log -1 --format=%h -- docs/briefs/<this file's name>`.
+`git log -1 --format=%h -- docs/briefs/<this file's name>`. HTML comments are removed before a section is
+judged. This directory holds briefs, `README.md`, `drafts/` and `handbacks/` only; check 11 fails on any other
+entry.
 
 ```markdown
 # Brief — <task title>
@@ -53,7 +55,8 @@ The final report of each delegated task persists as `handbacks/<brief-slug>.md`,
 `handbacks/<brief-slug>.part-<n>.md` for a task run in parts. The task writes the file when its brief's
 handback schema names it; otherwise the lead writes the returned report there before acting on it. The file is
 committed with the work it reports and stays unchanged afterwards. Check 11 fails on a file in
-`docs/briefs/handbacks/` whose name matches no brief in this directory.
+`docs/briefs/handbacks/` whose name matches no brief in this directory; a hidden file or a directory there
+fails too.
 
 ## Drafts
 

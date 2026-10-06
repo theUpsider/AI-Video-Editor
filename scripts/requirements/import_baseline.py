@@ -555,8 +555,9 @@ def mapping_content(base: dict) -> str:
         " `AC-n added [<mark>]: <reason>`; [README.md](README.md) § Changing requirements rule 1);"
         " check_baseline.py reports it as a recorded change and fails on an unrecorded one. Added"
         " criteria take the next free AC number.",
-        "5. `scope`, `parent`, `dependencies`, `origins` and `scenarios` equal the baseline"
-        " values.",
+        "5. `scope`, `parent`, `origins` and `scenarios` equal the baseline values;"
+        " `dependencies` keeps every baseline entry and admits derived requirements"
+        " (AVE-REQ-102 onward) beyond them.",
         "6. Requirements discovered later continue at AVE-REQ-102, AVE-FEAT-021 and AVE-EPIC-11"
         " with"
         " `source: derived`; this table lists the baseline only.",

@@ -11,15 +11,20 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity, § 
      own bytes verified; together they prove the baseline is unchanged ("baseline changed"
      otherwise), and no package file takes part in proving it;
   b  every working file is in canonical form (scripts/reqfile.py, the one reader this script and
-     scripts/evidence.py share): one frontmatter with the template's keys once each, the template's
-     headings once each, no HTML comment, no other heading form, a dated Status log; so both gates
-     and a Markdown reader see the same status, Description and criteria;
+     scripts/evidence.py share): characters of the reader's allow-list, one frontmatter with the
+     template's keys once each, the template's headings once each, no HTML comment, no other
+     heading form, a dated Status log; so both gates and a Markdown reader see the same status,
+     Description and criteria;
   c  every baseline epic, feature and requirement has exactly one working file in docs/requirements/
-     with the same ID and title; requirements keep the mapped type, priority and source, and their
+     with the same ID and title, and one number of a kind names one ID, whatever its zero padding;
+     requirements keep the mapped type, priority and source, and their
      scope, parent, origins, scenarios and baseline path equal the baseline; their dependencies
-     hold the baseline's and, beyond them, derived requirements only; epics and features keep
+     hold the baseline's and, beyond them, derived requirements only; an imported requirement
+     never returns to proposed; epics and features keep
      their priority, goal and parent; scope future <=> status deferred; each
-     parent lists its children in its own list section; IMPORT_MAPPING.md is current;
+     parent lists its children in its own list section; an epic or feature is done, and a box of
+     its acceptance section ticked, only when every child that is neither superseded nor deferred
+     is done; IMPORT_MAPPING.md is current;
   d  every baseline acceptance criterion appears verbatim ("- [ ] AC-n <text>", ticked or unticked)
      unless a Status-log line records the change and names the text it covers: "AC-n changed
      [<mark>]: <reason>" for a reworded criterion, "AC-n removed: <reason>" for a removed one,
@@ -33,32 +38,41 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity, § 
      the baseline's; for future scope it is future-scope and deferred; either way it keeps the
      type, the source human, the origins and the scenarios, carries the Description and every
      baseline criterion verbatim, and the old file logs each difference ("AC-n dropped by <ID>:",
-     "<ID> AC-m added [<mark>]:", "Description replaced by <ID> [<mark>]:"); a baseline feature or
+     "<ID> AC-m added [<mark>]:", "Description replaced by <ID> [<mark>]:"); a replacement under
+     another milestone than the baseline gate is reported as a gate change; a baseline feature or
      epic is superseded only when every baseline child under it is superseded;
   f  no version-one requirement depends on a deferred or future-scope requirement, directly or
      through a superseded one; § Dependencies names the frontmatter dependencies; no dependency
-     cycle; requirements added after the import (AVE-REQ-102 onward) are source derived, carry
+     cycle; requirements added after the import (AVE-REQ-102 onward) are source derived (human
+     for every requirement on the supersession chain of a human baseline requirement), carry
      scope and gate keys and stand in their parent's list;
   g  docs/ROADMAP.md lists every live version-one requirement exactly once, under the milestone
-     its primary_gate names, and the exclusions in the Deferred group only; a milestone with
-     Status done lists finished requirements only;
+     its primary_gate names, and the exclusions in the Deferred group only; the lists are the
+     lines with the template's labels, one of each per entry; every milestone entry holds one
+     Status line "- **Status:** planned", "in-progress" or "done", and a milestone with Status
+     done lists finished requirements only; fence lines follow the reader's rule;
   h  a summary: requirements by status and by gate, acceptance criteria ticked.
 Output: "ERROR: <path>: <message>" per violation, then the summary and "OK: ..." or "FAILED: ...".
 Exit:   0 no violations · 1 violations found · 2 usage, or a baseline unreadable before any violation.
-Read-only; Python 3.8+ standard library only. The script runs in Python's isolated mode (it
-restarts itself with -I when started without) and loads the import tool and the reader from their
-source text, so no module path, bytecode cache or Python variable of the environment decides what
-it checks.
+Read-only; Python 3.8+ standard library only. The script runs in Python's isolated mode and loads
+the import tool and the reader from their source text. For the isolated start `python3 -I -B`
+(verify.sh and CI) no module path, bytecode cache or Python variable of the environment decides
+what it checks. Started as `python3 scripts/check_baseline.py` or with -B alone, its first
+statements restart it with -I -B before it imports anything else, so a module beside it, a module
+on PYTHONPATH that it imports and a bytecode cache of its tools take no part. Code the interpreter
+loads at its own start (a sitecustomize module on PYTHONPATH) runs before the first line of this
+script: for every start other than the isolated one the Python variables of the environment are
+local state the caller answers for.
 """
 
-from __future__ import annotations
-
+# AVE-REQ-093: these two imports and the restart are the first statements this script executes.
+# For the starts the docstring names, the interpreter holds os and sys before it reads this file,
+# so the restart needs no module from the script's directory, from PYTHONPATH or from a bytecode
+# cache; every other import follows it.
 import os
 import sys
 
 if not sys.flags.isolated:
-    # AVE-REQ-093: restart in isolated mode before any other module loads, so PYTHONPATH,
-    # PYTHONPYCACHEPREFIX, the user site and a module beside this script take no part.
     os.execv(sys.executable, [sys.executable, "-I", "-B", os.path.abspath(__file__), *sys.argv[1:]])
 
 import hashlib
@@ -90,6 +104,18 @@ reqfile = load_source("ave_reqfile", READER)
 STATUSES = reqfile.STATUSES
 ID_PATTERN = re.compile(r"^(AVE-EPIC-\d{2,}|AVE-FEAT-\d{3,}|AVE-REQ-\d{3,})-[a-z0-9-]+\.md$")
 MILESTONE = re.compile(r"^### (M\d+) — ")
+# The one Status line of a milestone entry (docs/ROADMAP.md § Milestone entry template).
+MILESTONE_STATUS = re.compile(r"^- \*\*Status:\*\* (planned|in-progress|done)$")
+# The requirement lists of an entry, by the template's labels: (group, key, label pattern).
+ROADMAP_LISTS = (
+    ("milestone", "listed", re.compile(r"^- \*\*Requirements \(dependency order\):\*\*")),
+    ("milestone", "proposed", re.compile(r"^- \*\*Proposed during [A-Za-z0-9 ]+:\*\*")),
+    ("deferred", "listed", re.compile(r"^- \*\*Requirements:\*\*")),
+)
+# A line that presents itself as a requirement list: any bullet, indentation and letter case.
+LIST_LIKE = re.compile(r"^ *[-*+] +\*\*(?:requirements|proposed)", re.IGNORECASE)
+# A ticked box of § Feature acceptance or § Success criteria, in any list form.
+TICKED_BOX = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)]) +\[[xX]\]")
 ROADMAP_LINK = re.compile(r"\[(AVE-REQ-\d{3,})\]\(requirements/(AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
 DEPENDENCY_LINK = re.compile(r"\]\((AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
 PRIORITY_RANK = {"must": 3, "should": 2, "could": 1}
@@ -148,6 +174,22 @@ def check_form(files) -> None:
                 error(item.path, f"frontmatter id '{item.get('id')}' must equal {item.id}")
             if item.h1 != f"# {item.id} — {item.get('title')}":
                 error(item.path, f"H1 must read '# {item.id} — {item.get('title')}'")
+
+
+def check_numbers(files) -> None:
+    """One number of a kind names one ID: AVE-REQ-0103 beside AVE-REQ-103 is a second file."""
+    by_number = {}
+    for found in files.values():
+        for item in found:
+            by_number.setdefault((item.kind, item.number), []).append(item)
+    for (kind, number), items in sorted(by_number.items()):
+        if len({item.id for item in items}) > 1:
+            error(
+                WORKDIR,
+                f"AVE-{kind} number {number} names several working files ("
+                + ", ".join(sorted(item.path.name for item in items))
+                + "); a number is allocated once per kind, whatever its zero padding",
+            )
 
 
 def marker_error(item, what: str, marker: str) -> None:
@@ -359,6 +401,46 @@ def check_epics_features(base, files) -> None:
             error(parent.path, f"§ Features must link {item.path.name}")
 
 
+def check_parent_completion(files) -> None:
+    """An epic or feature (baseline or derived) is done, and a box of its acceptance section
+    ticked, only when every child that is neither superseded nor deferred is done."""
+    children = {}
+    for found in files.values():
+        for item in found:
+            if item.kind != "EPIC":
+                children.setdefault(item.get("parent"), []).append(item)
+    for item_id, found in sorted(files.items()):
+        for item in found:
+            if item.kind == "REQ":
+                continue
+            status = item.get("status")
+            section = "Feature acceptance" if item.kind == "FEAT" else "Success criteria"
+            was_done = "done" in item.log_statuses()
+            ticked = any(TICKED_BOX.match(line) for line in item.sections.get(section, []))
+            if ticked and not (was_done and status in ("done", "superseded")):
+                error(
+                    item.path,
+                    f"a box of § {section} is ticked while status is '{status}'"
+                    + ("" if was_done else " and the Status log has no done line")
+                    + "; the boxes are ticked only while the file is done",
+                )
+            if status != "done":
+                continue
+            unfinished = [
+                child
+                for child in sorted(children.get(item_id, []), key=lambda child: child.path.name)
+                if child.get("status") not in ("done", "superseded", "deferred")
+            ]
+            if unfinished:
+                error(
+                    item.path,
+                    f"status done while {unfinished[0].id} is '{unfinished[0].get('status')}'"
+                    f" ({len(unfinished)} unfinished of {len(children[item_id])} children); an"
+                    " epic or feature is done only when every child that is neither superseded"
+                    " nor deferred is done",
+                )
+
+
 def check_requirements(importer, base, files):
     """Checks b and c for the baseline requirements; returns the AC totals."""
     totals = Counter()
@@ -398,6 +480,12 @@ def check_requirements(importer, base, files):
             error(item.path, f"future-scope requirement must stay deferred (status '{status}')")
         if req["scope"] == "v1" and status == "deferred":
             error(item.path, "version-one requirement cannot be deferred (baseline scope v1)")
+        if status == "proposed":
+            error(
+                item.path,
+                "an imported requirement starts ready and never returns to proposed (the"
+                " lifecycle holds no such move)",
+            )
         if item.get("primary_gate") != req["gate"]:
             notes.append(
                 f"Gate change: {req['id']} primary_gate {item.get('primary_gate')}"
@@ -469,6 +557,11 @@ def check_supersession(item, req, files, absorbed) -> None:
             )
         return
     name = successor.id
+    if successor.get("primary_gate") != req["gate"]:
+        notes.append(
+            f"Gate change: {req['id']} → {name} primary_gate {successor.get('primary_gate')}"
+            f" (baseline {req['gate']})"
+        )
     if req["scope"] == "future" and (
         successor.get("scope") != "future" or successor.get("status") != "deferred"
     ):
@@ -572,13 +665,15 @@ def check_derived(base, files) -> None:
         | {f["id"] for f in base["features"]}
         | {r["id"] for r in base["reqs"]}
     )
+    # Every requirement on the supersession chain of a human baseline requirement, the retired
+    # ones in its middle included: each replaced a human requirement and keeps source human.
     human_successors = set()
     for req in base["reqs"]:
         found = files.get(req["id"], [])
         if req["source"] == "human" and len(found) == 1 and found[0].get("status") == "superseded":
-            successor, _seen = chain_end(files, found[0].get("superseded_by"))
+            successor, seen = chain_end(files, found[0].get("superseded_by"))
             if successor is not None:
-                human_successors.add(successor.id)
+                human_successors.update(seen)
     for item_id, found in sorted(files.items()):
         if item_id in baseline_ids:
             continue
@@ -716,43 +811,91 @@ def check_dependency_cycles(reqs) -> None:
 
 
 def read_roadmap():
-    """The requirement lists of docs/ROADMAP.md: (milestone -> entry, problems).
+    """The milestone entries of docs/ROADMAP.md: (milestone -> entry, problems).
 
-    entry: {"status": word, "listed": [IDs of '- **Requirements ...:**'], "proposed": [IDs of
-    '- **Proposed during ...:**']}; the Deferred group is the entry FUTURE.
+    entry: {"status": the word of the entry's Status line, "listed": [IDs of its requirement
+    list], "proposed": [IDs of its 'Proposed during' line]}; the Deferred group is the entry
+    FUTURE. The gate reads the lines with the template's labels (ROADMAP_LISTS), one of each per
+    entry, and the one Status line of a milestone entry (MILESTONE_STATUS); fence lines follow
+    the rule of the requirement files, so a list the gate reads is a list readers see.
     """
     entries, problems = {}, []
-    current, fenced = None, False
+    current, name, fenced = None, "", False
     text = ROADMAP.read_text(encoding="utf-8")
     if "<!--" in text:
         problems.append("an HTML comment (<!--) hides text from readers; the roadmap holds none")
-    for line in text.split("\n"):
-        if line.startswith("```"):
-            fenced = not fenced
-            continue
+    for number, line in enumerate(text.split("\n"), 1):
         if fenced:
+            if line == reqfile.FENCE_CLOSE:
+                fenced = False
+            elif reqfile.FENCE_LIKE.match(line):
+                problems.append(
+                    f"line {number}: a fenced block closes with ``` at column 0 and holds no other"
+                    " fence line"
+                )
+            continue
+        if reqfile.FENCE_LIKE.match(line):
+            if reqfile.FENCE_OPEN.match(line):
+                fenced = True
+            else:
+                problems.append(
+                    f"line {number}: a fence line reads ``` or ```<language> at column 0"
+                    f" ('{line[:20]}'); a list inside any other fence is a code sample to readers"
+                )
             continue
         match = MILESTONE.match(line)
         if match or line.startswith("### Deferred "):
             name = match.group(1) if match else "FUTURE"
             if name in entries:
                 problems.append(f"milestone {name} has two entries")
-            current = entries.setdefault(name, {"status": "", "listed": [], "proposed": []})
+            current = entries.setdefault(
+                name, {"status": "", "status_lines": 0, "listed": [], "proposed": [], "lists": []}
+            )
             continue
         if line.startswith("#"):
             current = None
             continue
         if current is None:
             continue
-        if line.startswith("- **Status:**"):
-            current["status"] = (line[len("- **Status:**") :].split() or [""])[0]
+        where = "the Deferred group" if name == "FUTURE" else f"milestone {name}"
+        if name != "FUTURE" and "**status" in line.lower():
+            current["status_lines"] += 1
+            match = MILESTONE_STATUS.match(line)
+            if match:
+                current["status"] = match.group(1)
+            else:
+                problems.append(
+                    f"{where}: the Status line reads '- **Status:** planned', 'in-progress' or"
+                    f" 'done' and nothing else ('{line[:60]}')"
+                )
             continue
-        if line.startswith("- **Requirements") or line.startswith("- **Proposed during"):
-            key = "listed" if line.startswith("- **Requirements") else "proposed"
-            for text_id, target_id in ROADMAP_LINK.findall(line):
-                if text_id != target_id:
-                    problems.append(f"the link text {text_id} names another file than {target_id}")
-                current[key].append(target_id)
+        group = "deferred" if name == "FUTURE" else "milestone"
+        key = next((k for g, k, label in ROADMAP_LISTS if g == group and label.match(line)), None)
+        label = line.split(":**")[0] + ":**" if ":**" in line else line[:60]
+        if key is None:
+            if LIST_LIKE.match(line):
+                problems.append(
+                    f"{where}: '{label}' is no requirement-list label of the template"
+                    " ('- **Requirements (dependency order):**' and"
+                    " '- **Proposed during <reviews>:**' under a milestone,"
+                    " '- **Requirements:**' in the Deferred group)"
+                )
+            continue
+        if key in current["lists"]:
+            problems.append(f"{where} holds two '{label}' lines; an entry holds one list of a kind")
+        current["lists"].append(key)
+        for text_id, target_id in ROADMAP_LINK.findall(line):
+            if text_id != target_id:
+                problems.append(f"the link text {text_id} names another file than {target_id}")
+            current[key].append(target_id)
+    if fenced:
+        problems.append("a fenced block stays open at the end of the file")
+    for name, entry in entries.items():
+        if name != "FUTURE" and entry["status_lines"] != 1:
+            problems.append(
+                f"milestone {name} holds {entry['status_lines']} Status lines; every milestone"
+                " entry holds one, '- **Status:** planned', 'in-progress' or 'done'"
+            )
     return entries, problems
 
 
@@ -844,7 +987,7 @@ def print_summary(reqs, totals) -> None:
 
 def main() -> int:
     if len(sys.argv) > 1:
-        print("Usage: python3 scripts/check_baseline.py (no arguments)", file=sys.stderr)
+        print("Usage: python3 -I -B scripts/check_baseline.py (no arguments)", file=sys.stderr)
         return 2
     try:
         importer = load_importer()
@@ -865,7 +1008,9 @@ def main() -> int:
         return 1 if any(line.startswith("ERROR:") for line in errors) else 2
     files = load_working()
     check_form(files)
+    check_numbers(files)
     check_epics_features(base, files)
+    check_parent_completion(files)
     totals = check_requirements(importer, base, files)
     check_derived(base, files)
     reqs = check_all_requirements(base, files)

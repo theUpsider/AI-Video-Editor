@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: the final review round returned FAIL for the five M0 requirements; the fix round is briefed._
+_Last updated: 2026-10-06 — M0 open: the fixes of the final review are integrated on `m0-final-integration`; the five M0 requirements are in `verification`._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -17,24 +17,23 @@ Host: Windows 11 ARM64; every check runs in the development container (`scripts/
 
 ## Current objective
 
-Finish M0: close the findings of the final review round on AVE-REQ-093/094/096/097/098, review again (brief
-first, status `verification` first), move the five to `done` in the order 093 → 094 → 096/097/098, run the M0
-milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
+Finish M0: review AVE-REQ-093/094/096/097/098 on the integration branch (reviewer and skeptic per requirement),
+move the five to `done` in the order 093 → 094 → 096/097/098, bring the branch into the working branch and
+`main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## In progress
 
-- Final review round `wf_7d9d015c-906` (2026-10-06, `2df637f`; AVE-REQ-094 at `d4147d8`): FAIL for all five, 13
-  blocking findings, each a remaining gap or a false statement; the reports are handback parts 5 to 8 of the
-  gates brief and part 6 of the probe brief (`docs/briefs/handbacks/`, linked from the fix brief).
-- Fix round, [brief](briefs/2026-10-06-m0-final-review-fixes.md): track A (baseline gate), track B1 (run
-  environment, fingerprint by content, hooks), track B2 (evidence tool, suite runner, plugin, checker), one
-  writer each in a worktree from `41973c5`, two at a time. Launched 2026-10-06 as workflow `wf_5cd13360-464`
-  ([script](workflows/m0-final-review-fixes.js)); handbacks not recorded; on resume without a recorded
-  handback, inspect the three worktree branches the script names (local until their handback) and re-run the
-  script for a track without a commit.
-- The lead's part: AVE-REQ-094 on branch `ave-req-094-probe-evidence` (pushed; only character devices named
-  `nvidia<N>` or `renderD<N>` that open count), and the rule corrections of
-  [WF-008](WORKFLOW_LOG.md) (review runs take a brief; every worktree writer confirms its base commit).
+- Integration branch `m0-final-integration` (this file's branch): the working branch with the three tracks of
+  the fix round `wf_5cd13360-464` ([brief](briefs/2026-10-06-m0-final-review-fixes.md), handback parts 1 to 3
+  in `docs/briefs/handbacks/`) and the AVE-REQ-094 task branch merged in. The 13 blocking findings of the first
+  round are closed: characters and headings of requirement files by allow-list and container-aware reading, an
+  exact milestone Status line, steps that start from a named set of variables, a fingerprint made of the bytes
+  the steps read, media stand-ins first on `PATH`, tags only in files a runner runs, the exact Stop command,
+  GPU nodes counted as character devices that open; each non-blocking finding is fixed or stated as a limit.
+- AVE-REQ-093/094/096/097/098 `verification`. The review run starts from
+  [its brief](briefs/2026-10-06-m0-final-review-2.md); not launched when this file was written, and a launch is
+  recorded here with its run ID and re-run command. The working branch receives this branch after the reviews
+  pass (`CLAUDE.md` § Delegation).
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -47,11 +46,9 @@ milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## Next recommended work
 
-1. Launch the fix round from its brief, integrate each track (merge without committing, release tier, handback
-   part), repair AVE-REQ-094 on its branch.
-2. Record `verification` for the five requirements, write the review brief, launch the review run with a
-   skeptic per PASS; on every upheld PASS tick the ACs, fill § Test evidence, set `done`, update
-   TRACEABILITY.md, commit, push; then `git push origin <commit>:main` after green CI.
+1. Launch the review run from its brief; file each report as a handback part; on every upheld PASS tick the
+   ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
 3. `milestone-review` M0; record the result in ROADMAP.md.
 4. Launch M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` in isolated worktrees from the commit
    that closes M0 (each draft becomes a brief with that hash first).

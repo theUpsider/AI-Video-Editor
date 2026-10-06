@@ -9,14 +9,18 @@ check_baseline.py turns into an error: a file both gates accept has one reading,
 reader sees the frontmatter, the headings, the Description and the criteria the gates checked.
 
 Canonical form, in short:
-  characters   UTF-8 without a byte-order mark; line feeds only; no control, format or
-               line-separator character and no space character other than U+0020;
+  characters   UTF-8 without a byte-order mark; line feeds only; every other character stands on
+               the allow-list: U+0020 to U+007E and the signs of EXTRA_CHARACTERS below;
   frontmatter  line 1 is "---"; then "key: value" lines with the template's keys in the template's
                order, each once, unquoted; then "---", one blank line and the H1;
   headings     the H1 once, then every template heading "## <name>" once, in the template's
-               order, written at column 0; no other heading in any Markdown form (indented,
-               underlined, inside a list item or quote, or as an HTML tag);
-  HTML         no comment, no line that starts with "<";
+               order, written at column 0; no other heading: outside fenced blocks a line is
+               judged after its leading spaces and again after each container marker (">", "-",
+               "*", "+", "N.", "N)"), and what remains opens no ATX heading ("#" to "######"
+               before a space or the line's end) and is no run of "=" or of "-" alone; no HTML
+               heading tag;
+  HTML         no comment, no line that starts with "<", and no tag ("<" before a letter, "/",
+               "!" or "?") outside code spans; a code span opens and closes on one line;
   fences       "```" or "```<language>" at column 0, closed by "```";
   criteria     "- [ ] AC-n <text>" or "- [x] AC-n <text>", and nothing else in that section;
   Status       dated log lines only, "- YYYY-MM-DD — <status> — <text>", dates never decreasing.
@@ -30,7 +34,6 @@ from __future__ import annotations
 import datetime
 import hashlib
 import re
-import unicodedata
 from collections import OrderedDict
 
 STATUSES = (
@@ -91,26 +94,96 @@ NAME = re.compile(r"^(AVE-(EPIC|FEAT|REQ)-(\d+))-[a-z0-9-]+\.md$")
 FM_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*): (\S(?:.*\S)?)$")
 AC_LINE = re.compile(r"^- \[([ x])\] (AC-[1-9]\d*) (\S.*)$")
 LOG_LINE = re.compile(r"^- (\d{4})-(\d{2})-(\d{2}) — ([a-z-]+) — (\S.*)$")
-ATX = re.compile(r"^ {0,3}#{1,6}([ \t]|$)")
-CONTAINER_ATX = re.compile(r"^[ \t]*(?:>[ \t]*|[-*+][ \t]+|\d{1,9}[.)][ \t]+)+#{1,6}([ \t]|$)")
-UNDERLINE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+# What a line reads once its leading spaces and its container markers are gone (see readings).
+ATX = re.compile(r"#{1,6}(?: |$)")
+UNDERLINE = re.compile(r"(?:=+|-+) *$")
+# A container marker: a quote sign, a bullet or an ordered-list number before a space or the end.
+CONTAINER = re.compile(r">|[-*+](?= |$)|\d{1,9}[.)](?= |$)")
 HTML_LINE = re.compile(r"^ {0,3}<")
 HTML_HEADING = re.compile(r"</?h[1-6]\b", re.IGNORECASE)
 FENCE_LIKE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 FENCE_OPEN = re.compile(r"^```[A-Za-z0-9_+.-]*$")
 FENCE_CLOSE = "```"
+# The characters of a working file besides the line feed and U+0020 to U+007E: the signs the
+# working files held on 2026-10-06 (the baseline package is ASCII). Every other character fails,
+# visible or invisible; a sign joins this list in a change of this file, which the diff shows.
+EXTRA_CHARACTERS = {
+    0x00A7: "section sign",
+    0x00B1: "plus-minus sign",
+    0x2013: "en dash",
+    0x2014: "em dash",
+    0x2192: "rightwards arrow",
+    0x2265: "greater-than or equal to",
+    0x2282: "subset of",
+}
+# Raw HTML outside code spans: "<" before a letter, "/", "!" or "?".
+RAW_HTML = re.compile(r"<[A-Za-z/!?]")
+# The characters a backslash makes plain text (CommonMark: ASCII punctuation).
+ESCAPABLE = frozenset("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+# A marker reason says something: it holds a letter or a digit of U+0020 to U+007E.
+REASON = re.compile(r"[A-Za-z0-9]")
 
 
 def digest(text: str) -> str:
-    """The eight-digit mark that ties a recorded change to the text it covers."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+    """The sixteen-digit mark that ties a recorded change to the text it covers."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _bad_character(char: str) -> bool:
-    if char in "\n ":
-        return False
-    category = unicodedata.category(char)
-    return category in ("Cc", "Cf", "Zl", "Zp", "Zs")
+    return not (char == "\n" or " " <= char <= "~" or ord(char) in EXTRA_CHARACTERS)
+
+
+def readings(line: str):
+    """The line after its leading spaces, then after each container marker in turn.
+
+    A Markdown reader opens a heading inside a quote or a list item and on an indented
+    continuation line of one, so every reading is judged, whatever the indentation.
+    """
+    rest = line.lstrip(" ")
+    found = [rest]
+    while True:
+        match = CONTAINER.match(rest)
+        if not match:
+            return found
+        rest = rest[match.end() :].lstrip(" ")
+        found.append(rest)
+
+
+def outside_code_spans(line: str):
+    """(The text of a line outside its code spans, whether a run of backticks stays unpaired).
+
+    A code span opens with a run of backticks and closes with the next run of the same length
+    on the line; a backslash before a backtick outside a span makes that backtick plain text.
+    The reader fails a line with an unpaired run, so no span reaches over a line end and the
+    spans read here are the spans a Markdown reader pairs.
+    """
+    kept, position, unpaired = [], 0, False
+    while position < len(line):
+        char = line[position]
+        if char == "\\" and line[position + 1 : position + 2] in ESCAPABLE:
+            kept.append(line[position : position + 2])
+            position += 2
+            continue
+        if char != "`":
+            kept.append(char)
+            position += 1
+            continue
+        end = position
+        while line[end : end + 1] == "`":
+            end += 1
+        closer = None
+        for run in re.finditer(r"`+", line[end:]):
+            if len(run.group()) == end - position:
+                closer = end + run.end()
+                break
+        if closer is None:
+            unpaired = True
+            kept.append(line[position:end])
+            position = end
+        else:
+            kept.append(" ")
+            position = closer
+    return "".join(kept), unpaired
 
 
 class ReqFile:
@@ -150,8 +223,8 @@ class ReqFile:
                     name = "a carriage return" if char == "\r" else f"U+{ord(char):04X}"
                     self._problem(
                         f"line {number}: {name} is no character of a requirement file (line"
-                        " feeds end lines, U+0020 is the only space, no control or format"
-                        " character)"
+                        " feeds end lines; the allow-list holds U+0020 to U+007E and the signs"
+                        " of EXTRA_CHARACTERS in scripts/reqfile.py)"
                     )
                     break
 
@@ -232,7 +305,21 @@ class ReqFile:
                         " section"
                     )
                 continue
-            if ATX.match(line):
+            plain, unpaired = outside_code_spans(line)
+            if unpaired:
+                self._problem(
+                    f"line {number}: a run of backticks stays unpaired; a code span opens and"
+                    f" closes on one line ('{line[:50]}')"
+                )
+            if RAW_HTML.search(plain):
+                self._problem(
+                    f"line {number}: raw HTML outside a code span"
+                    f" ('{plain[RAW_HTML.search(plain).start() :][:30]}')"
+                )
+            forms = readings(line)
+            if ATX.match(forms[0]):
+                # A heading at column 0 or behind leading spaces: the H1, a template heading, or
+                # a problem (an indented line is none of the two).
                 if line.startswith("# ") and not self.h1 and current is None:
                     self.h1 = line
                     continue
@@ -255,11 +342,11 @@ class ReqFile:
                 self.sections[name] = []
                 self.raw_sections[name] = []
                 continue
-            if CONTAINER_ATX.match(line):
+            if any(ATX.match(form) for form in forms[1:]):
                 self._problem(
                     f"line {number}: a heading inside a list item or quote ('{line[:50]}')"
                 )
-            if UNDERLINE.match(line):
+            if any(UNDERLINE.match(form) for form in forms):
                 self._problem(
                     f"line {number}: a line of = or - underlines a heading or draws a rule"
                     f" ('{line[:20]}')"
@@ -374,13 +461,13 @@ class ReqFile:
 
         The marker opens the line's text, so a line that quotes the rule, names another requirement
         or continues an earlier sentence records nothing; a reason that starts with < is the
-        template's placeholder.
+        template's placeholder, and a reason without a letter or a digit says nothing.
         """
         prefix = marker + ": "
         for _date, _status, text in self.log():
             if text.startswith(prefix):
                 reason = text[len(prefix) :].strip()
-                if reason and not reason.startswith("<"):
+                if not reason.startswith("<") and REASON.search(reason):
                     return reason
         return ""
 

@@ -10,6 +10,9 @@
   evidence can never point at nothing.
 * Every collected test file and every loaded conftest.py is a file Git knows: one that an ignore
   rule hides stops the run, so evidence comes only from files of the tree the fingerprint names.
+  Inside a repository (a ``.git`` entry in the tree's directory or in one above it) a Git that
+  fails to answer stops the run as well; a tree without a repository is the one case in which
+  nothing is asked.
 * ``--evidence-report PATH`` writes one JSON record per collected test (node ID, outcome, tags,
   contract flag) for ``scripts/evidence.py``, with the invocation (arguments, configuration
   file). A deselected test is recorded as ``deselected`` and a selected test that never started
@@ -56,12 +59,22 @@ def _evidence_module() -> ModuleType:
     return module
 
 
+def _in_repository(root: Path) -> bool:
+    """True when ``root`` or a directory above it holds a ``.git`` entry, the mark by which Git
+    finds a repository. The answer needs no Git command, so a Git that fails changes nothing."""
+    return any((directory / ".git").exists() for directory in (root, *root.parents))
+
+
 def _ignored_by_git(paths: set[Path]) -> list[str]:
-    """The files of ``paths`` inside the work tree that a Git ignore rule hides."""
+    """The files of ``paths`` inside the work tree that a Git ignore rule hides.
+
+    A tree without a repository (a source archive) has nothing to ask and nothing hidden. Inside
+    a repository the session needs Git's answer: a Git that does not start, or that ends with
+    another status than "ignored" or "none ignored", is a usage error."""
     inside = sorted(
         path.relative_to(GIT_ROOT).as_posix() for path in paths if path.is_relative_to(GIT_ROOT)
     )
-    if not inside:
+    if not inside or not _in_repository(GIT_ROOT):
         return []
     environment = {k: v for k, v in os.environ.items() if k not in _REDIRECTING}
     try:
@@ -73,10 +86,22 @@ def _ignored_by_git(paths: set[Path]) -> list[str]:
             check=False,
             env=environment,
         )
-    except OSError:
-        return []
-    # 0: at least one path is ignored; 1: none; anything else: no work tree to ask.
-    return sorted(completed.stdout.split()) if completed.returncode == 0 else []
+    except OSError as error:
+        raise pytest.UsageError(
+            f"Git did not start ({error}), so no answer says which test files it ignores: inside"
+            " a repository the session runs only with that answer"
+        ) from error
+    # 0: at least one path is ignored; 1: none; anything else: Git failed.
+    if completed.returncode == 0:
+        return sorted(completed.stdout.split())
+    if completed.returncode != 1:
+        reason = (completed.stderr.strip().splitlines() or ["no message"])[-1]
+        raise pytest.UsageError(
+            f"Git failed (git check-ignore: exit {completed.returncode}, {reason}), so no answer"
+            " says which test files it ignores: inside a repository the session runs only with"
+            " that answer"
+        )
+    return []
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

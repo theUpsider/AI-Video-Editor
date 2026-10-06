@@ -9,17 +9,21 @@
 # Read-only: prints a report and changes nothing. Never prints a credential value, only whether a
 # variable is set. The other Claude Code capabilities (workflow tool, subagents, models, hooks,
 # permission mode) are not visible to a shell; docs/ENVIRONMENT_CAPABILITIES.md records them.
-# AVE_PROBE_DEV_DIR replaces /dev as the directory searched for device nodes (tests).
+# Test inputs: AVE_PROBE_DEV_DIR replaces /dev (device nodes), AVE_PROBE_PROC_DIR replaces /proc
+# (meminfo, cpuinfo), AVE_PROBE_ROOT replaces the repository root that the disk, Git and
+# writability lines measure, and AVE_PROBE_SMI_TIMEOUT replaces the 10 s limit of the nvidia-smi
+# query. The accelerator verdict opens each counted device node once and sends it nothing.
 # Not part of verify.sh: network results depend on the environment's policy.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${AVE_PROBE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DEV_DIR="${AVE_PROBE_DEV_DIR:-/dev}"
+PROC_DIR="${AVE_PROBE_PROC_DIR:-/proc}"
 OFFLINE=0
 case "${1:-}" in
   "") ;;
   --offline) OFFLINE=1 ;;
-  -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) printf 'Usage: ./scripts/probe-environment.sh [--offline]\n' >&2; exit 2 ;;
 esac
 
@@ -35,26 +39,66 @@ section "Platform and resources"
 item "kernel" "$(uname -srm)"
 [ -r /etc/os-release ] && item "os" "$(. /etc/os-release && printf '%s' "$PRETTY_NAME")"
 item "cpus" "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
-item "cpu model" "$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
-item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' /proc/meminfo 2>/dev/null)"
-item "disk (repository)" "$(df -h . 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
+# arm64 kernels list no "model name" in cpuinfo: lscpu names the model there, or prints "-".
+cpu_model="$(grep -m1 'model name' "$PROC_DIR/cpuinfo" 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
+[ -n "$cpu_model" ] || cpu_model="$(lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -n 1)"
+[ "$cpu_model" != "-" ] || cpu_model=""
+item "cpu model" "${cpu_model:-unknown}"
+item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' "$PROC_DIR/meminfo" 2>/dev/null)"
+# The disk and Git lines measure the repository, whichever directory the probe starts in.
+item "disk (repository)" "$(df -h "$ROOT" 2>/dev/null | awk 'NR == 2 { print $4 " free of " $2 }')"
 
 section "Accelerators"
 gpu=""
-if have nvidia-smi; then
-  gpu="$(first nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
-  item "nvidia-smi" "${gpu:-no GPU reported}"
-else
+# smi_query — the GPU list of nvidia-smi under a time limit: a driver query that hangs is ended
+# (killed 2 s after the limit when it ignores the signal) and counts as a failure.
+smi_query() {
+  timeout -k 2 "${AVE_PROBE_SMI_TIMEOUT:-10}" nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+}
+if ! have nvidia-smi; then
   item "nvidia-smi" "not installed"
+elif ! have timeout; then
+  # Without a time limit the query could block the probe: it is left out and reports no GPU.
+  item "nvidia-smi" "no GPU reported (timeout unavailable)"
+else
+  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory> MiB" on its
+  # standard output: without a driver or a device it prints a diagnostic and fails, and a line
+  # without a memory figure is a diagnostic or a header, no device.
+  if smi="$(smi_query 2>/dev/null)"; then
+    gpu="$(printf '%s\n' "$smi" | grep -m1 -E '^.*[^,[:space:]].*,[[:space:]]*[0-9]+ MiB$')"
+  fi
+  item "nvidia-smi" "${gpu:-no GPU reported}"
 fi
-nvidia_nodes="$(find "$DEV_DIR" -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
+# Listed: every entry named nvidia* and every entry of dri. Counted: a per-GPU node only, which is
+# a character device whose whole name is nvidia<N> or dri/renderD<N> and which this user can open.
+# Driver control nodes (nvidiactl, nvidia-uvm, nvidia-modeset, nvidia-caps), display-only nodes
+# (dri/card<N>), directories (dri/by-path), regular files and names with a suffix exist on hosts
+# without a GPU this environment can compute on.
+nvidia_nodes="$(find "$DEV_DIR" -mindepth 1 -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
 dri_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 2>/dev/null | sort | tr '\n' ' ')"
 item "/dev/nvidia* devices" "${nvidia_nodes:-none}"
 item "/dev/dri devices" "${dri_nodes:-none}"
-# The verdict counts devices only: FFmpeg's built-in hardware encoders (Media tools) need one.
-evidence="$(printf '%s' "${gpu:+$gpu }$nvidia_nodes$dri_nodes" | sed 's/ *$//')"
+# device_nodes <directory> <whole-name pattern> — the character devices of the directory with such a
+# name, one per line, sorted (a symbolic link counts as the device it points to).
+device_nodes() {
+  find -L "$1" -mindepth 1 -maxdepth 1 -type c 2>/dev/null | grep -E "/$2\$" | sort
+}
+# node_opens <path> — this user can open the node for reading and writing.
+node_opens() { (exec 3<>"$1") 2>/dev/null; }
+open_nodes="" closed_nodes=""
+while IFS= read -r node; do
+  [ -n "$node" ] || continue
+  if node_opens "$node"; then open_nodes="$open_nodes$node "; else closed_nodes="$closed_nodes$node "; fi
+done <<NODES
+$(device_nodes "$DEV_DIR" 'nvidia[0-9]+'; device_nodes "$DEV_DIR/dri" 'renderD[0-9]+')
+NODES
+# The verdict counts GPU devices only (a GPU row of nvidia-smi, per-GPU device nodes that open):
+# FFmpeg's built-in hardware encoders (Media tools) need one.
+evidence="$(printf '%s' "${gpu:+$gpu }$open_nodes" | sed 's/ *$//')"
 if [ -n "$evidence" ]; then
   printf 'accelerator: present (%s)\n' "$evidence"
+elif [ -n "$closed_nodes" ]; then
+  printf 'accelerator: none (no access to %s)\n' "${closed_nodes% }"
 else
   printf 'accelerator: none (no device)\n'
 fi
@@ -95,8 +139,8 @@ done
     -exec basename {} \; | sort | tr '\n' ' ')"
 
 section "Git"
-item "worktrees" "$(git worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
-item "branch" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
+item "worktrees" "$(git -C "$ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ') listed"
+item "branch" "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo none)"
 
 section "Claude Code and session"
 # The development container holds no `claude` command: there the version comes from the host.
@@ -117,10 +161,16 @@ if [ "$OFFLINE" -eq 1 ]; then
 elif ! have curl; then
   item "probes" "curl not installed"
 else
+  # One HEAD request per host (-I) with a 10 s limit: any status code proves that the host answers,
+  # and no body is downloaded, so the verdict does not depend on bandwidth. curl writes the code
+  # 000 when no response arrives (refused, unresolved, TLS failure, the time limit): unreachable.
   for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://registry.npmjs.org/ \
     https://github.com/ https://huggingface.co/api/models?limit=1 https://api.anthropic.com/ \
     https://api.openai.com/; do
-    code="$(curl -sS -o /dev/null -m 8 -w '%{http_code}' "$url" 2>/dev/null)" || code="unreachable"
-    item "${url#https://}" "HTTP ${code:-none}"
+    code="$(curl -sS -o /dev/null -I -m 10 -w '%{http_code}' "$url" 2>/dev/null)"
+    case "$code" in
+      [1-9][0-9][0-9]) item "${url#https://}" "HTTP $code" ;;
+      *) item "${url#https://}" "unreachable" ;;
+    esac
   done
 fi

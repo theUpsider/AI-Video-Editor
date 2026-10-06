@@ -142,7 +142,7 @@ At most two writing agents (implementer, tester, architect, writing workflow age
 
 ## 6. Verify — "run relevant verification", "independently review requirement"
 
-1. Run `./scripts/verify.sh --tier release`; it must pass (Definition of Done item 4: the release tier runs every tagged test). Repair failures through section 7.
+1. Stage new files (`git add -A`: the tree fingerprint names an unstaged new file as untracked, so evidence recorded before staging reads stale after the commit), then run `./scripts/verify.sh --tier release`; it must pass (Definition of Done item 4: the release tier runs every tagged test). Repair failures through section 7.
 2. Record the transition `in-progress → verification` (TRACEABILITY.md Implementation and Tests from the requirement's Implementation evidence).
 3. Invoke the `verify-requirement` skill with argument `AVE-REQ-NNN` (Skill tool, or `/verify-requirement AVE-REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
    - As a workflow run (several requirements, reviewers in private clones, a skeptic stage): the run is a delegated task and starts from a brief (section 4) that names the requirements and their criteria, the commit, the clone rule as its allowed paths, the commands and the report schema; its script is copied to `docs/workflows/`. Each reviewer follows `.claude/skills/verify-requirement/SKILL.md` from the repository. A skeptic, given the same brief and the reviewer's report, tries to refute each PASS with evidence from a run or a file; a refuted PASS counts as FAIL. Reviewer and skeptic reports persist as the brief's handback parts.
@@ -219,7 +219,7 @@ Before a refactor that moves a module boundary, changes a shared interface, the 
 ## 13. Context hygiene
 
 - Update PROGRESS.md at every transition; the SessionStart hook and `resume-project` recover from it after compaction.
-- Record delegated work in flight stop-safe in PROGRESS.md: `launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>` (with the brief path). A later session cannot see a task of this one, so PROGRESS.md never says that work is running; `scripts/check-project-control.sh` check 7 rejects "running", "underway" and "in flight" there.
+- Record delegated work in flight stop-safe in PROGRESS.md: `launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>` (with the brief path). A later session cannot see a task of this one, so PROGRESS.md never says that work is running; `scripts/check-project-control.sh` check 7 rejects "running", "underway", "under way", "in flight", "ongoing", "still executing" and "runs now" there.
 - PROGRESS.md names only commits, branches and files the remote holds (`CLAUDE.md` § Git, § Parallel work above).
 - Persist decisions the moment you make them: ADRs, assumptions, Status-log lines. Conversation context is volatile.
 - Load only what the current step needs: the current milestone entry, the requirement, its parent and dependencies, the governing ADRs and ARCHITECTURE.md sections. Prefer `grep` and single sections to whole documents.

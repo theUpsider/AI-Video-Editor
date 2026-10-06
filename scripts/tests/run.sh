@@ -5,17 +5,23 @@
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
 #   test-verify-tiers.sh    tier selection, exit codes and heavy-media lock of scripts/verify.sh
-#   test-probe-environment.sh  scripts/probe-environment.sh (offline: measured resources, accelerator
-#                           verdict, Claude Code version, OS user, writability; never prints secrets)
+#   test-probe-environment.sh  scripts/probe-environment.sh (measured resources, media tools, toolchains,
+#                           browsers and Git; accelerator verdict; Claude Code version, OS user,
+#                           writability; network lines through a fake curl; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through
 # `scripts/evidence.py unittest`.)
 # Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, number of checks,
 # criterion tags) goes into the run's evidence directory: a suite's tags count only through that
 # result, and only when the suite exited 0 and its `<NAME> TOTAL: pass=N fail=M` line reports N >= 1
 # and M = 0. A listed suite that exited 0 without running a check, or with a failed check in its own
-# total, fails here (AVE-REQ-097 AC-4: a no-op script and a caught failure establish nothing).
+# total, fails here: a no-op script and a caught failure establish nothing.
 # Every suite builds its fixtures in a temp dir outside every Git work tree and leaves the working
 # tree unchanged; with a temp dir inside a work tree this script stops before the first suite.
+# This file holds no criterion tag: the runner has no suite result of its own, and scripts/evidence.py
+# stops on a comment tag in a file of this directory that is neither a listed suite nor a test_*.py
+# file. The list of suites is the `run_suite <file>` lines at the end of this file, one per line and
+# at the start of the line, which scripts/evidence.py reads; the cases that run this script are in
+# test_evidence.py.
 # Exit: 0 every suite passed · 1 a suite failed · 2 usage error.
 set -uo pipefail
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
