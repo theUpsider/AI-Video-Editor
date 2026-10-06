@@ -9,6 +9,10 @@
 # runs Python statements with the helpers of MUT_PRELUDE below.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$W/../.." && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/baseline-tests.XXXXXX")" || exit 2
@@ -346,8 +350,8 @@ run_case() {
   else
     out="$(cd "$C" && python3 scripts/requirements/import_baseline.py --check 2>&1)"; code=$?
   fi
-  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | grep -qF -- "$want"; } &&
-    { [ -z "${NOT_WANT:-}" ] || ! printf '%s\n' "$out" | grep -Eq -- "$NOT_WANT"; }; then
+  if [ "$code" = "$want_exit" ] && { [ -z "$want" ] || printf '%s\n' "$out" | quiet -F -- "$want"; } &&
+    { [ -z "${NOT_WANT:-}" ] || ! printf '%s\n' "$out" | quiet -E -- "$NOT_WANT"; }; then
     PASS=$((PASS + 1)); printf '  ok   %-50s %s\n' "$name" "$(printf '%s\n' "$out" | grep -F -m1 -- "${want:-OK:}" | cut -c1-150)"
   else
     FAIL=$((FAIL + 1)); printf '  FAIL %-50s exit=%s (want %s)\n%s\n' "$name" "$code" "$want_exit" "$(printf '%s\n' "$out" | tail -25)"

@@ -7,6 +7,10 @@
 # every check passes.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+# quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
+# first match; under pipefail the writer of the pipeline can then die of SIGPIPE, which fails a positive
+# check and passes a negated one by chance.
+quiet() { grep "$@" >/dev/null; }
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$W/../.." && pwd)"
 PROBE="$W/../probe-environment.sh"
@@ -14,7 +18,7 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/probe-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
 PASS=0; FAIL=0
 check() { if eval "$2"; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1   [$2]"; fi; }
-has() { printf '%s\n' "$OUT" | grep -Eq -- "$1"; }
+has() { printf '%s\n' "$OUT" | quiet -E -- "$1"; }
 
 # path_without <command>... — prints PATH with the named commands hidden: a directory that holds
 # one of them is replaced by a mirror of its other entries.
@@ -49,7 +53,7 @@ OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" HF_TOKEN="$SECRET" ANTH
 check "offline probe exits 0" '[ "$CODE" = 0 ]'
 for heading in "Platform and resources" "Accelerators" "Media tools" "Toolchains" "Browsers" "Git" \
   "Claude Code and session" "Product credential variables" "Network"; do
-  check "reports section: $heading" 'printf "%s\n" "$OUT" | grep -q "^## $heading"'
+  check "reports section: $heading" 'printf "%s\n" "$OUT" | quiet "^## $heading"'
 done
 # AVE-REQ-094 AC-1: resources are measured values.
 check "cpus equals getconf _NPROCESSORS_ONLN ($(getconf _NPROCESSORS_ONLN))" 'has "^cpus +$(getconf _NPROCESSORS_ONLN)\$"'
@@ -59,16 +63,16 @@ check "disk reports free and total space" 'has "^disk \(repository\) +[0-9.,]+[K
 check "no device, no nvidia-smi: nvidia-smi not installed" 'has "^nvidia-smi +not installed$"'
 check "no device, no nvidia-smi: accelerator: none (no device)" 'has "^accelerator: none \(no device\)$"'
 check "exactly one accelerator verdict" '[ "$(printf "%s\n" "$OUT" | grep -c "^accelerator:")" = 1 ]'
-check "no line claims a GPU" '! printf "%s\n" "$OUT" | grep -Eqi "gpu (available|present|found)"'
+check "no line claims a GPU" '! printf "%s\n" "$OUT" | quiet -Ei "gpu (available|present|found)"'
 # AVE-REQ-094 AC-1: the shell-observable part of the Claude Code and permission rows.
 check "claude absent from PATH: not installed" 'has "^claude +not installed$"'
 check "os user is the user running the probe" 'has "^os user +$(id -un) \(uid $(id -u)\)$"'
 WRITABLE=no; [ -w "$REPO" ] && WRITABLE=yes
-check "repository writability matches the file system ($WRITABLE)" 'printf "%s\n" "$OUT" | grep -qxF "$(printf "%-28s %s" "repository writable" "$WRITABLE ($REPO)")"'
+check "repository writability matches the file system ($WRITABLE)" 'printf "%s\n" "$OUT" | quiet -xF "$(printf "%-28s %s" "repository writable" "$WRITABLE ($REPO)")"'
 check "network probes skipped offline" 'has "skipped \(--offline\)"'
 check "a set credential is reported as set" 'has "^HF_TOKEN +set$"'
 check "an empty credential is reported as unset" 'has "^ANTHROPIC_API_KEY +unset$"'
-check "no credential value is printed" '! printf "%s\n" "$OUT" | grep -qF "$SECRET"'
+check "no credential value is printed" '! printf "%s\n" "$OUT" | quiet -F "$SECRET"'
 # AVE-REQ-098 AC-3: every credential the probe reports is documented in .env.example.
 NAMES="$(printf '%s\n' "$OUT" | awk '/^## Product credential variables/ { on = 1; next } /^## / { on = 0 } on && NF { print $1 }')"
 UNLISTED=""; for name in $NAMES; do grep -q "^$name=" "$REPO/.env.example" 2>/dev/null || UNLISTED="$UNLISTED $name"; done
