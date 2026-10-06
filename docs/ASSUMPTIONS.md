@@ -49,7 +49,10 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Impact:** If false, the verification gate and recovery context fall back to
   [CLAUDE.md](../CLAUDE.md) instructions and CI.
 - **Status:** confirmed — 2026-10-01 — the resumed session showed the "Project state" block injected by
-  [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh) (source: resume).
+  [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh) (source: resume). Stop hook: confirmed —
+  2026-10-06 — `.git/claude-verify/last-result`, a record only
+  [.claude/hooks/stop-verify.sh](../.claude/hooks/stop-verify.sh) writes, read
+  `PASS 2026-10-06T03:23:21Z cfaf58aff77b…` after a turn of the working session ended.
 - **Links:** [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md)
 
 ### ASM-002 — Baseline tooling
@@ -321,3 +324,18 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   tooling.
 - **Status:** open
 - **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-023 — The verification toolchain and local state are trusted; CI decides for `main`
+- **Date:** 2026-10-06
+- **Assumption:** The mechanical gates trust the interpreter, the shell and the tools on `PATH` of the development
+  container and of CI, and they treat `var/verify/` and `.git/claude-verify/` as local, unauthenticated state.
+  `verify.sh` clears the caller's Git, Python and pytest variables and reads no cache from the tree; a replaced
+  tool, a hand-written manifest or a hand-written Stop-gate record lies outside every diff and outside the gates.
+- **Reason:** A gate cannot prove the machine it runs on. The red-team pass of 2026-10-06 closed every path through
+  repository files and environment variables that it found; what remains needs write access to the toolchain or
+  to ignored state.
+- **Impact:** The run that certifies a requirement is the one an independent reviewer starts in a private clone
+  (`verify-requirement`), and the run that admits a commit to `main` is CI's on a fresh checkout. A local PASS
+  alone moves nothing to `main`.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md), [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)

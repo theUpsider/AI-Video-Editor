@@ -14,7 +14,7 @@ mkdir -p docs/requirements docs/decisions docs/briefs .claude/agents .claude/hoo
 cp "$REPO/scripts/verify.sh" "$REPO/scripts/check-project-control.sh" "$REPO/scripts/dev-container.sh" scripts/
 cp "$REPO/.devcontainer/Dockerfile" .devcontainer/
 cp "$REPO/.claude/hooks/session-start.sh" "$REPO/.claude/hooks/stop-verify.sh" .claude/hooks/
-cp "$REPO/scripts/lib/verify-state.sh" scripts/lib/
+cp "$REPO/scripts/lib/verify-state.sh" "$REPO/scripts/lib/media-tier-only.sh" scripts/lib/
 # The baseline tools are required files; their checks need the real requirements package, so the
 # fixture holds passing stand-ins (these suites test the gate mechanics).
 printf '#!/usr/bin/env python3\nprint("OK: baseline check stand-in for test fixtures")\n' > scripts/check_baseline.py
@@ -36,7 +36,7 @@ cp "$REPO/scripts/evidence.py" "$REPO/scripts/reqfile.py" scripts/
 cp "$REPO/.claude/settings.json" .claude/
 cp "$REPO/.gitignore" "$REPO/.gitattributes" "$REPO/.env.example" .
 cp "$REPO/.github/workflows/verify.yml" .github/workflows/
-chmod +x scripts/*.sh scripts/check_baseline.py scripts/requirements/import_baseline.py .claude/hooks/*.sh
+chmod +x scripts/*.sh scripts/lib/media-tier-only.sh scripts/check_baseline.py scripts/requirements/import_baseline.py .claude/hooks/*.sh
 
 cat > CLAUDE.md <<'EOF'
 # Project instructions

@@ -10,10 +10,12 @@ tags of its own cases.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
 import os
+import py_compile
 import re
 import shutil
 import subprocess
@@ -63,10 +65,10 @@ def _outcomes(items: list[dict[str, Any]]) -> list[str]:
 
 
 def _unit_module(tag: str, extra: str = "") -> str:
-    """A unit-test file tagged with ``tag``: one passing test plus the ``extra`` class body."""
+    """A unit-test file with one passing test, tagged with ``tag``, plus the ``extra`` class body."""
     return (
-        f"# {tag}\nimport unittest\n\n\nclass Case(unittest.TestCase):\n"
-        f"    def test_passes(self):\n        pass\n\n{extra}"
+        "import unittest\n\n\nclass Case(unittest.TestCase):\n"
+        f"    # {tag}\n    def test_passes(self):\n        pass\n\n{extra}"
     )
 
 
@@ -120,14 +122,36 @@ NOT_PASSING_MODULES = (
         "passed unexpectedly: test_fixture.Case.test_other",
     ),
     ("file without tests", "# {tag}\nimport unittest\n", "no test ran"),
+    (
+        "tag above a method that is no test",
+        "import unittest\n\n\nclass Case(unittest.TestCase):\n    def test_passes(self):\n"
+        "        pass\n\n    # {tag}\n    def never_collected_test(self):\n        pass\n",
+        "stands above no test",
+    ),
+    (
+        "tag above a test that is never collected",
+        "import unittest\n\n\nclass Case(unittest.TestCase):\n    def test_passes(self):\n"
+        "        pass\n\n\nclass Helper:\n    # {tag}\n    def test_other(self):\n        pass\n",
+        "stands above test_other, which did not run",
+    ),
+    (
+        "generator test whose body never runs",
+        _unit_module("{tag}", "    def test_other(self):\n        self.assertEqual(1, 2)\n        yield\n"),
+        "error: test_fixture.Case.test_other",
+    ),
+    (
+        "coroutine test whose body never runs",
+        _unit_module("{tag}", "    async def test_other(self):\n        self.assertEqual(1, 2)\n"),
+        "error: test_fixture.Case.test_other",
+    ),
 )
 
 
 class RunDirectory:
     """A synthetic verify.sh run directory."""
 
-    def __init__(self, base: Path) -> None:
-        self.path = base / "runs" / "20261002T000000Z-1"
+    def __init__(self, base: Path, name: str = "20261002T000000Z-1") -> None:
+        self.path = base / "runs" / name
         self.path.mkdir(parents=True)
 
     def report(self, name: str, tests: list[dict[str, Any]]) -> None:
@@ -176,6 +200,47 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(state(collected[_tag(12, 3)], True), "inspected")
         self.assertEqual(state(collected[_tag(12, 4)], False), "failed")
         self.assertEqual(state([], False), "missing")
+        not_run = [{"test": "t::m", "outcome": "not-run", "contract": False, "report": "r"}]
+        self.assertEqual(state(not_run, False), "not-run")
+        self.assertEqual(state(not_run, True), "inspected")
+        self.assertEqual(state(collected[_tag(12, 1)] + not_run, False), "passed")
+        self.assertEqual(evidence.unrun(collected[_tag(12, 1)] + not_run), 1)
+
+    # AVE-REQ-097 AC-4
+    def test_the_done_gate_judges_every_tier(self) -> None:
+        """Failed, contract-only and missing evidence fail in every tier; a tagged test that
+        exists and did not run leaves the criterion to the release tier, which fails on it. A
+        test deselected in one report and executed in another of the same run did run."""
+        known = {_id(12): _requirement(12, "done", 5)}
+        self.run_dir.report(
+            "unit",
+            [
+                _test("t::a", "passed", [_tag(12, 1)]),
+                _test("t::m", "not-run", [_tag(12, 2)]),
+                _test("t::b", "passed", [_tag(12, 3)]),
+                _test("t::n", "not-run", [_tag(12, 3)]),
+                _test("t::x", "not-run", [_tag(12, 4)]),
+            ],
+        )
+        self.run_dir.report("media", [_test("t::x", "passed", [_tag(12, 4)])])
+        missing = f"{_tag(12, 5)}: missing in this run"
+        self.assertEqual(evidence.done_problems(self.run_dir.path, known, "fast"), [missing])
+        self.assertEqual(evidence.done_problems(self.run_dir.path, known, "media"), [missing])
+        self.assertEqual(
+            evidence.done_problems(self.run_dir.path, known),
+            [
+                f"{_tag(12, 2)}: 1 tagged test(s) did not run in this run",
+                f"{_tag(12, 3)}: 1 tagged test(s) did not run in this run",
+                missing,
+            ],
+        )
+        with self._known(*known.values()):
+            for tier, expected in (("fast", 1), ("release", 1)):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = evidence.main(
+                        ["check-done", "--dir", str(self.run_dir.path), "--tier", tier]
+                    )
+                self.assertEqual(code, expected, tier)
 
     # AVE-REQ-097 AC-4
     def test_done_requirements_need_passing_non_contract_evidence(self) -> None:
@@ -215,7 +280,10 @@ class EvidenceTests(unittest.TestCase):
             ("Verification tooling regression suites", "PASS"),
             ("Evidence tooling unit tests", "PASS"),
         )
-        self.assertEqual(evidence.collect(self.run_dir.path, known).criteria, {})
+        idle = evidence.collect(self.run_dir.path, known).criteria
+        self.assertEqual(sorted(idle), [_tag(12, 1), _tag(12, 2), _tag(12, 3)])
+        for items in idle.values():
+            self.assertEqual(evidence.criterion_state(items, False), "not-run")
         evidence.write_suite_result(self.run_dir.path, ran, 0, 3)
         result = json.loads((self.run_dir.path / "suite-test-ran.sh.json").read_text())
         self.assertEqual(result["exitstatus"], 0)
@@ -229,20 +297,25 @@ class EvidenceTests(unittest.TestCase):
             ],
         )
         collected = evidence.collect(self.run_dir.path, known)
-        self.assertEqual(sorted(collected.criteria), [_tag(12, 1), _tag(12, 2)])
+        self.assertEqual(sorted(collected.criteria), [_tag(12, 1), _tag(12, 2), _tag(12, 3)])
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["passed"])
+        self.assertEqual(_outcomes(collected.criteria[_tag(12, 3)]), ["not-run"])
         self.assertEqual(
-            collected.suites, [{"file": str(ran.resolve()), "exitstatus": 0, "checks": 3}]
+            collected.suites,
+            [{"file": str(ran.resolve()), "exitstatus": 0, "checks": 3, "failed": 0}],
         )
-        self.assertEqual(
-            evidence.done_problems(self.run_dir.path, known),
-            [f"{_tag(12, 3)}: missing in this run"],
-        )
+        idle_problem = f"{_tag(12, 3)}: 1 tagged test(s) did not run in this run"
+        self.assertEqual(evidence.done_problems(self.run_dir.path, known), [idle_problem])
+        self.assertEqual(evidence.done_problems(self.run_dir.path, known, "fast"), [])
         # A suite that ran and failed counts against every criterion it carries.
         evidence.write_suite_result(self.run_dir.path, ran, 1, 3)
         collected = evidence.collect(self.run_dir.path, known)
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["failed"])
         self.assertEqual(_outcomes(collected.criteria[_tag(12, 2)]), ["failed"])
+        # A suite whose own total reports a failed check caught a failure and returned success.
+        evidence.write_suite_result(self.run_dir.path, ran, 0, 3, 1)
+        collected = evidence.collect(self.run_dir.path, known)
+        self.assertEqual(_outcomes(collected.criteria[_tag(12, 1)]), ["failed"])
         # A suite that exited 0 without running a check is a placeholder: it counts against every
         # criterion it carries, and so does a result that records no check count at all.
         evidence.write_suite_result(self.run_dir.path, ran, 0, 0)
@@ -254,7 +327,7 @@ class EvidenceTests(unittest.TestCase):
             [
                 f"{_tag(12, 1)}: failed in this run",
                 f"{_tag(12, 2)}: failed in this run",
-                f"{_tag(12, 3)}: missing in this run",
+                idle_problem,
             ],
         )
         stored = json.loads((self.run_dir.path / "suite-test-ran.sh.json").read_text())
@@ -268,7 +341,8 @@ class EvidenceTests(unittest.TestCase):
         """scripts/tests/run.sh records a result for each suite it runs, and only for those: a
         tagged suite it does not list gives no evidence, a failing listed one counts against its
         criterion, and a listed one that exits 0 without printing a ``TOTAL: pass=N fail=M`` line
-        with N >= 1 fails the runner and counts against its criterion too."""
+        with N >= 1, or with M >= 1 in that line, fails the runner and counts against its
+        criterion too."""
         project = self.tmp / "project"
         tests = project / "scripts" / "tests"
         tests.mkdir(parents=True)
@@ -278,16 +352,17 @@ class EvidenceTests(unittest.TestCase):
         listed = re.findall(
             r"^run_suite (\S+)", (tests / "run.sh").read_text(encoding="utf-8"), flags=re.M
         )
-        self.assertGreater(len(listed), 2)
-        failing, noop = listed[-1], listed[-2]
+        self.assertGreater(len(listed), 3)
+        failing, noop, caught = listed[-1], listed[-2], listed[-3]
         bodies = {
             "pass": "printf 'STUB TOTAL: pass=1 fail=0\\n'\nexit 0\n",
             "fail": "printf 'STUB TOTAL: pass=0 fail=1\\n'\nexit 1\n",
             "noop": "exit 0\n",  # a placeholder: exits 0 and runs no check
+            "caught": "printf 'STUB TOTAL: pass=3 fail=1\\n'\nexit 0\n",  # a caught failure
         }
+        kinds = {failing: "fail", noop: "noop", caught: "caught"}
         stubs = [
-            (name, _tag(12, number), "fail" if name == failing else "noop" if name == noop else "pass")
-            for number, name in enumerate(listed, 1)
+            (name, _tag(12, number), kinds.get(name, "pass")) for number, name in enumerate(listed, 1)
         ]
         stubs.append(("test-placeholder.sh", _tag(13, 1), "fail"))  # tagged, never run by run.sh
         for name, tag, kind in stubs:
@@ -304,30 +379,78 @@ class EvidenceTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
         self.assertIn(f"<== FAIL: {noop} (no check ran", completed.stdout)
+        self.assertIn(f"<== FAIL: {caught} (its total reports 1 failed check(s)", completed.stdout)
         self.assertIn(f"<== FAIL: {failing} (exit 1)", completed.stdout)
         self.assertIn(f"<== PASS: {listed[0]} (1 checks)", completed.stdout)
         known = {
             _id(12): _requirement(12, "done", len(listed)),
             _id(13): _requirement(13, "done", 1),
+            _id(97): _requirement(97, "in-progress", 4),  # run.sh names a criterion in a comment
         }
-        collected = evidence.collect(self.run_dir.path, known).criteria
+        with (
+            mock.patch.object(evidence, "ROOT", project),
+            mock.patch.object(evidence, "TOOLING_TESTS", tests),
+        ):
+            collected = evidence.collect(self.run_dir.path, known).criteria
+            problems = evidence.done_problems(self.run_dir.path, known)
         for name, tag, kind in stubs[:-1]:
             self.assertEqual(_outcomes(collected[tag]), ["passed" if kind == "pass" else "failed"], name)
             self.assertEqual(collected[tag][0]["test"], f"scripts/tests/{name}")
-        self.assertNotIn(_tag(13, 1), collected)
+        self.assertEqual(_outcomes(collected[_tag(13, 1)]), ["not-run"])
         self.assertEqual(
-            evidence.done_problems(self.run_dir.path, known),
+            problems,
             [
+                f"{_tag(12, len(listed) - 2)}: failed in this run",
                 f"{_tag(12, len(listed) - 1)}: failed in this run",
                 f"{_tag(12, len(listed))}: failed in this run",
-                f"{_tag(13, 1)}: missing in this run",
+                f"{_tag(13, 1)}: 1 tagged test(s) did not run in this run",
             ],
         )
+
+    # AVE-REQ-097 AC-1
+    def test_the_suite_runner_stops_when_its_temp_dir_lies_inside_a_work_tree(self) -> None:
+        """The suites run Git commands in their fixtures. With TMPDIR inside a repository those
+        commands would act on it, so run.sh stops before the first suite and leaves the commit,
+        the branch and the working tree as they were."""
+        project = self.tmp / "enclosing"
+        tests = project / "scripts" / "tests"
+        tests.mkdir(parents=True)
+        shutil.copy(ROOT / "scripts" / "tests" / "run.sh", tests / "run.sh")
+
+        def git(*arguments: str) -> str:
+            command = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+            completed = subprocess.run(
+                [*command, *arguments], check=True, capture_output=True, text=True
+            )
+            return completed.stdout
+
+        git("init", "-q")
+        (project / "notes.txt").write_text("one\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "one")
+        (project / "notes.txt").write_text("two\n", encoding="utf-8")
+        git("commit", "-qam", "two")
+        (project / "work-in-progress.txt").write_text("unsaved\n", encoding="utf-8")
+        scratch = project / "var" / "tmp"
+        scratch.mkdir(parents=True)
+        before = (git("rev-parse", "HEAD"), git("status", "--porcelain"), git("branch"))
+        completed = subprocess.run(
+            ["bash", str(tests / "run.sh")],
+            env={**os.environ, "TMPDIR": str(scratch)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2, completed.stdout + completed.stderr)
+        self.assertIn("lies inside a Git work tree", completed.stderr)
+        self.assertNotIn("==>", completed.stdout)
+        self.assertEqual((git("rev-parse", "HEAD"), git("status", "--porcelain"), git("branch")), before)
+        self.assertEqual(list(scratch.iterdir()), [])
 
     def _run_unit(self, source: str | None) -> tuple[int, str]:
         """Runs ``evidence.py unittest`` on a directory holding ``test_fixture.py`` (none when
         ``source`` is None), with this case's run directory."""
-        directory = self.tmp / "unit"
+        directory = self.tooling  # a suite result counts for a file of the tooling directory
         shutil.rmtree(directory, ignore_errors=True)
         directory.mkdir()
         if source is not None:
@@ -342,6 +465,46 @@ class EvidenceTests(unittest.TestCase):
             check=False,
         )
         return completed.returncode, completed.stdout + completed.stderr
+
+    # AVE-REQ-097 AC-4
+    def test_a_unit_test_file_reaches_no_other_file_and_no_result_of_the_runner(self) -> None:
+        """Each file runs in its own interpreter: one that ends the interpreter fails for lack of
+        a result, and one that replaces the runner's judgement changes no other file's result."""
+        with self.subTest("a file that ends the interpreter"):
+            self._check_unit_file(
+                "# {tag}\nimport os\n\nos._exit(0)\n",
+                1,
+                "the test process ended without a result (exit 0)",
+            )
+        with self.subTest("a file that replaces the runner's judgement"):
+            shutil.rmtree(self.tooling)
+            self.tooling.mkdir()
+            for stale in self.run_dir.path.glob("suite-*.json"):
+                stale.unlink()
+            (self.tooling / "test_aaa.py").write_text(
+                "import sys\nimport unittest\n\n\nclass Case(unittest.TestCase):\n"
+                "    def test_patch(self):\n"
+                "        sys.modules['__main__']._unit_problems = lambda result: []\n",
+                encoding="utf-8",
+            )
+            (self.tooling / "test_zzz.py").write_text(
+                f"# {_tag(12, 1)}\nimport unittest\n\n\nclass Case(unittest.TestCase):\n"
+                "    def test_fails(self):\n        self.assertEqual(1, 2)\n",
+                encoding="utf-8",
+            )
+            environment = {k: v for k, v in os.environ.items() if k != "AVE_EVIDENCE_DIR"}
+            completed = subprocess.run(
+                [sys.executable, "-B", str(EVIDENCE), "unittest", "--dir", str(self.run_dir.path)]
+                + [str(self.tooling)],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+            known = {_id(12): _requirement(12, "done", 1)}
+            collected = evidence.collect(self.run_dir.path, known).criteria
+            self.assertEqual(_outcomes(collected[_tag(12, 1)]), ["failed"])
 
     def _check_unit_file(self, source: str, expected_exit: int, problem: str | None) -> None:
         known = {_id(12): _requirement(12, "done", 1)}
@@ -394,17 +557,46 @@ class EvidenceTests(unittest.TestCase):
         self.assertRegex(manifest["commit"], r"^[0-9a-f]{40}$")
         self.assertIn("scripts/verify.sh", manifest["configuration"])
         self.assertIn("ffmpeg", manifest["toolchain"])
+        self.assertIn("environment", manifest["toolchain"])
+        self.assertEqual(manifest["pytest"], {})
         self.assertEqual(manifest["criteria"][_tag(12, 1)][0]["test"], "t::a")
         self.assertEqual(manifest["criteria"][_tag(12, 2)][0]["test"], str(suite.resolve()))
         self.assertEqual(
-            manifest["suites"], [{"file": str(suite.resolve()), "exitstatus": 0, "checks": 1}]
+            manifest["suites"],
+            [{"file": str(suite.resolve()), "exitstatus": 0, "checks": 1, "failed": 0}],
         )
-        self.run_dir.steps(("Project control files", "PASS"), ("Backend unit tests", "FAIL"))
+        second = RunDirectory(self.tmp, "20261002T000001Z-1")
+        second.steps(("Project control files", "PASS"), ("Backend unit tests", "FAIL"))
         with (
             mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
             self._known(_requirement(12, "in-progress", 2)),
         ):
-            self.assertEqual(evidence.record(self.run_dir.path, "fast", "")["result"], "FAIL")
+            self.assertEqual(evidence.record(second.path, "fast", "")["result"], "FAIL")
+            # A run is recorded once: an old run takes no new fingerprint or tier.
+            for tier, fingerprint in (("fast", "0" * 40), ("release", "f" * 40)):
+                with self.assertRaises(evidence.EvidenceError) as raised:
+                    evidence.record(self.run_dir.path, tier, fingerprint)
+                self.assertIn("is recorded already", str(raised.exception))
+            stored = json.loads((self.run_dir.path / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual((stored["tier"], stored["fingerprint"]), ("fast", "f" * 40))
+
+    # AVE-REQ-097 AC-2
+    def test_a_tag_outside_a_comment_line_credits_no_criterion(self) -> None:
+        """Expected-output strings and fixture text of a suite name criteria too; only a comment
+        line tags a case, so the audit of untested criteria reads the evidence tool."""
+        suite = self.tooling / "test-suite.sh"
+        suite.write_text(
+            f'#!/usr/bin/env bash\n# {_tag(12, 1)}\nexpect "x" 0 "Recorded change: {_tag(12, 2)} differs"\n'
+            f"sed 's/^{_tag(12, 3)} //' file\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(evidence.comment_tags(suite), [(2, _tag(12, 1))])
+        evidence.write_suite_result(self.run_dir.path, suite, 0, 1)
+        known = {_id(12): _requirement(12, "done", 3)}
+        self.assertEqual(
+            evidence.done_problems(self.run_dir.path, known),
+            [f"{_tag(12, 2)}: missing in this run", f"{_tag(12, 3)}: missing in this run"],
+        )
 
     # AVE-REQ-097 AC-2
     def test_tooling_tags_that_name_no_criterion_stop_the_run_with_file_and_line(self) -> None:
@@ -434,15 +626,70 @@ class EvidenceTests(unittest.TestCase):
                     code = evidence.main([*command, "--dir", str(self.run_dir.path)])
                 self.assertEqual(code, 2, command)
                 self.assertIn(f"{shown}:5: ", stderr.getvalue())
-        # A suite result names its file and line as well, wherever the file lies.
-        suite.unlink()
+        # A suite result counts for a tooling test file of this tree only: one that names a file
+        # elsewhere, carries another name or other tags than its file was written by no runner.
+        suite.write_text(f"#!/usr/bin/env bash\n# {_tag(12, 1)}\ntrue\n", encoding="utf-8")
         elsewhere = self.tmp / "elsewhere" / "test-other.sh"
         elsewhere.parent.mkdir()
-        elsewhere.write_text(f"true\n# {_tag(12, 3)}\n", encoding="utf-8")
-        evidence.write_suite_result(self.run_dir.path, elsewhere, 0, 1)
+        elsewhere.write_text(f"true\n# {_tag(12, 2)}\n", encoding="utf-8")
+        planted = evidence.write_suite_result(self.run_dir.path, elsewhere, 0, 1)
         with self.assertRaises(evidence.EvidenceError) as raised:
             evidence.done_problems(self.run_dir.path, {known.id: known})
-        self.assertIn(f"{elsewhere.resolve()}:2: {_tag(12, 3)!r}", str(raised.exception))
+        self.assertIn("names no tooling test file of this tree", str(raised.exception))
+        planted.unlink()
+        real = evidence.write_suite_result(self.run_dir.path, suite, 0, 1)
+        self.assertEqual(
+            evidence.done_problems(self.run_dir.path, {known.id: known}),
+            [f"{_tag(12, 2)}: missing in this run"],
+        )
+        renamed = real.with_name("suite-note.json")
+        real.rename(renamed)
+        with self.assertRaises(evidence.EvidenceError) as raised:
+            evidence.done_problems(self.run_dir.path, {known.id: known})
+        self.assertIn("names no tooling test file of this tree", str(raised.exception))
+        stored = json.loads(renamed.read_text(encoding="utf-8"))
+        renamed.unlink()
+        stored["tags"].append({"line": 9, "tag": _tag(12, 2)})
+        real.write_text(json.dumps(stored), encoding="utf-8")
+        with self.assertRaises(evidence.EvidenceError) as raised:
+            evidence.done_problems(self.run_dir.path, {known.id: known})
+        self.assertIn("its tags differ from the comment tags", str(raised.exception))
+
+    # AVE-REQ-097 AC-2
+    def test_the_toolchain_names_the_media_tool_the_product_resolves(self) -> None:
+        """AVE_FFMPEG replaces the ffmpeg of PATH for the product, so the manifest records the
+        binary it names; no Git variable of the caller redirects the commit lookup."""
+        stub = self.tmp / "ffmpeg"
+        stub.write_text("#!/bin/sh\necho 'ffmpeg version 0.0-stub'\n", encoding="utf-8")
+        stub.chmod(0o755)
+        with mock.patch.dict(os.environ, {"AVE_FFMPEG": str(stub), "GIT_DIR": str(self.tmp / "x")}):
+            self.assertEqual(evidence.toolchain()["ffmpeg"], "ffmpeg version 0.0-stub")
+            self.assertRegex(evidence._run(["git", "rev-parse", "HEAD"]), r"^[0-9a-f]{40}$")
+
+    # AVE-REQ-097 AC-4
+    def test_a_pytest_report_without_executed_tests_proves_nothing(self) -> None:
+        report = self.run_dir.path / "pytest-unit.json"
+        self.assertIn("no report", evidence.report_problems(report)[0])
+        cases = {
+            "no test": ([], 0, "no test ran"),
+            "deselected tests only": ([_test("t::a", "deselected", [])], 0, "no test ran"),
+            "a selected test that never ran": (
+                [_test("t::a", "passed", []), _test("t::b", "not-run", [])],
+                0,
+                "1 selected test(s) never ran, for example t::b",
+            ),
+            "a failed session": ([_test("t::a", "failed", [])], 1, "the session ended with status 1"),
+        }
+        for name, (tests, status, problem) in cases.items():
+            with self.subTest(name):
+                data = {"schema": 1, "exitstatus": status, "tests": tests}
+                report.write_text(json.dumps(data), encoding="utf-8")
+                self.assertIn(problem, evidence.report_problems(report))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(evidence.main(["check-report", "--file", str(report)]), 1)
+        data = {"schema": 1, "exitstatus": 0, "tests": [_test("t::a", "passed", [])]}
+        report.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(evidence.report_problems(report), [])
 
     def _show(self, *args: str) -> int:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -458,12 +705,12 @@ class EvidenceTests(unittest.TestCase):
         with mock.patch.object(evidence, "VERIFY_DIR", self.tmp):
             evidence.record(self.run_dir.path, "fast", "")
             with self._known(_requirement(12, "in-progress", 1)):
-                for args in ([], [_id(999)]):
+                # In every form: without IDs, for the unknown ID and for a known one.
+                for args in ([], [_id(999)], [_id(12)]):
                     stderr = io.StringIO()
                     with contextlib.redirect_stderr(stderr):
                         self.assertEqual(self._show(*args), 2, args)
                     self.assertIn(f"unknown requirement IDs: {_id(999)}", stderr.getvalue())
-                self.assertEqual(self._show(_id(12)), 0)
 
     # AVE-REQ-097 AC-2
     def test_stale_evidence_is_reported_and_refused_when_freshness_is_required(self) -> None:
@@ -474,12 +721,16 @@ class EvidenceTests(unittest.TestCase):
             self._known(_requirement(12, "in-progress", 1)),
         ):
             evidence.record(self.run_dir.path, "fast", "a" * 40)
-            with mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40):
-                self.assertEqual(self._show("--require-fresh"), 0)
             with mock.patch.object(evidence, "current_fingerprint", return_value="b" * 40):
                 self.assertEqual(self._show("--require-fresh"), 1)
+            with mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40):
+                self.assertEqual(self._show("--require-fresh"), 0)
+                # Another toolchain than the recorded one certifies nothing either.
+                other = {**evidence.toolchain(), "ffmpeg": "ffmpeg version 0.0-other"}
+                with mock.patch.object(evidence, "toolchain", return_value=other):
+                    self.assertEqual(self._show("--require-fresh"), 1)
             # A run without a fingerprint (outside Git) is never fresh.
-            evidence.record(self.run_dir.path, "fast", "")
+            evidence.record(RunDirectory(self.tmp, "20261002T000001Z-1").path, "fast", "")
             with mock.patch.object(evidence, "current_fingerprint", return_value=""):
                 self.assertEqual(self._show("--require-fresh"), 1)
 
@@ -497,9 +748,247 @@ class EvidenceTests(unittest.TestCase):
             self.run_dir.steps(("Backend unit tests", "PASS"), ("Backend lint", "FAIL"))
             evidence.record(self.run_dir.path, "fast", "a" * 40)
             self.assertEqual(self._show(*flags), 1)
-            self.run_dir.steps(("Backend unit tests", "PASS"), ("Backend lint", "PASS"))
-            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            second = RunDirectory(self.tmp, "20261002T000001Z-1")
+            second.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+            second.steps(("Backend unit tests", "PASS"), ("Backend lint", "PASS"))
+            evidence.record(second.path, "fast", "a" * 40)
             self.assertEqual(self._show(*flags), 0)
+            # A failed media run of the same tree stays decisive after a newer fast run passed.
+            media = RunDirectory(self.tmp, "20261002T000002Z-1")
+            media.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+            media.report("media", [_test("t::m", "failed", [_tag(12, 1)])])
+            media.steps(("Backend unit tests", "PASS"), ("Backend media tests", "FAIL"))
+            evidence.record(media.path, "media", "a" * 40)
+            third = RunDirectory(self.tmp, "20261002T000003Z-1")
+            third.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+            third.steps(("Backend unit tests", "PASS"))
+            evidence.record(third.path, "fast", "a" * 40)
+            self.assertEqual(self._show(*flags), 1)
+            self.assertEqual(self._show(*flags, "--tier", "fast"), 0)
+            # The heaviest fresh run is the one shown, whatever was recorded last.
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                evidence.main(["show", _id(12)])
+            self.assertIn("tier media, FAIL", shown.getvalue())
+
+    # AVE-REQ-097 AC-4
+    def test_require_complete_refuses_a_missing_and_a_contract_only_criterion(self) -> None:
+        """A passing fresh run certifies a requirement complete only when each of its criteria has
+        passing evidence from a test that replaces no provider."""
+        self.run_dir.report(
+            "unit",
+            [
+                _test("t::a", "passed", [_tag(12, 1)]),
+                _test("t::c", "passed", [_tag(13, 1)], contract=True),
+            ],
+        )
+        self.run_dir.steps(("Backend unit tests", "PASS"))
+        known = [_requirement(number, "verification", 1) for number in (12, 13, 14)]
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(*known),
+            mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40),
+        ):
+            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            for number, expected in ((12, 0), (13, 1), (14, 1)):
+                with self.subTest(_id(number)):
+                    self.assertEqual(self._show(_id(number), "--require-fresh"), 0)
+                    flags = (_id(number), "--require-fresh", "--require-complete")
+                    self.assertEqual(self._show(*flags), expected)
+
+    # AVE-REQ-097 AC-4
+    def test_a_run_without_a_step_log_is_recorded_as_failed(self) -> None:
+        """No step ran, so nothing passed: the manifest of such a run reads FAIL."""
+        self.run_dir.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(_requirement(12, "in-progress", 1)),
+        ):
+            manifest = evidence.record(self.run_dir.path, "fast", "a" * 40)
+        self.assertEqual((manifest["steps"], manifest["result"]), ([], "FAIL"))
+
+    # AVE-REQ-097 AC-2
+    def test_without_a_fresh_run_show_reports_the_newest_recorded_one(self) -> None:
+        later = RunDirectory(self.tmp, "20261002T000001Z-1")
+        runs = (
+            (self.run_dir, "media", "2026-10-02T00:00:00Z"),
+            (later, "fast", "2026-10-02T00:00:05Z"),
+        )
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(),
+            mock.patch.object(evidence, "current_fingerprint", return_value="b" * 40),
+        ):
+            for run, tier, moment in runs:
+                run.steps(("Project control files", "PASS"))
+                with mock.patch.object(evidence, "_now", return_value=moment):
+                    evidence.record(run.path, tier, "a" * 40)
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                self.assertEqual(evidence.main(["show"]), 0)
+        self.assertIn("tier fast, PASS", shown.getvalue())
+        self.assertIn("Freshness: STALE", shown.getvalue())
+
+    def _repository(self) -> tuple[Path, Any]:
+        """A Git repository with one commit that holds the files a manifest describes, and a
+        function that runs Git in it."""
+        project = self.tmp / "repository"
+        (project / "scripts" / "lib").mkdir(parents=True)
+        shutil.copy(ROOT / "scripts" / "lib" / "verify-state.sh", project / "scripts" / "lib")
+        (project / "scripts" / "verify.sh").write_bytes(b"#!/usr/bin/env bash\n")
+
+        def git(*arguments: str) -> str:
+            command = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+            completed = subprocess.run(
+                [*command, *arguments], check=True, capture_output=True, text=True
+            )
+            return completed.stdout.strip()
+
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-qm", "one")
+        return project, git
+
+    # AVE-REQ-097 AC-2
+    def test_the_manifest_names_the_commit_the_file_hashes_and_uncommitted_changes(self) -> None:
+        project, git = self._repository()
+        tools = {"python3": "0", "ffmpeg": "ffmpeg version 0.0-stub"}
+        verify = project / "scripts" / "verify.sh"
+        with (
+            mock.patch.object(evidence, "ROOT", project),
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            mock.patch.object(evidence, "toolchain", return_value=tools),
+            self._known(),
+        ):
+            self.run_dir.steps(("Project control files", "PASS"))
+            clean = evidence.record(self.run_dir.path, "fast", "f" * 40)
+            verify.write_bytes(b"#!/usr/bin/env bash\n# edited\n")
+            second = RunDirectory(self.tmp, "20261002T000001Z-1")
+            second.steps(("Project control files", "PASS"))
+            edited = evidence.record(second.path, "fast", "e" * 40)
+        self.assertEqual(clean["commit"], git("rev-parse", "HEAD"))
+        self.assertEqual(clean["toolchain"], tools)
+        self.assertEqual(
+            clean["configuration"],
+            {
+                "scripts/verify.sh": hashlib.sha256(b"#!/usr/bin/env bash\n").hexdigest(),
+                "backend/pyproject.toml": "missing",
+                "backend/uv.lock": "missing",
+            },
+        )
+        self.assertFalse(clean["uncommitted_changes"])
+        self.assertEqual(edited["commit"], clean["commit"])
+        self.assertTrue(edited["uncommitted_changes"])
+        self.assertEqual(
+            edited["configuration"]["scripts/verify.sh"],
+            hashlib.sha256(b"#!/usr/bin/env bash\n# edited\n").hexdigest(),
+        )
+
+    # AVE-REQ-097 AC-2
+    def test_an_uncommitted_edit_makes_the_recorded_run_stale(self) -> None:
+        """Freshness follows the working tree: the fingerprint is the Stop gate's, which changes
+        with an edit that no commit holds, while the commit stays the same."""
+        project, git = self._repository()
+        quiet_git = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        with (
+            mock.patch.object(evidence, "ROOT", project),
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            mock.patch.object(evidence, "toolchain", return_value={"python3": "0"}),
+            mock.patch.dict(os.environ, quiet_git),
+            self._known(),
+        ):
+            head = git("rev-parse", "HEAD")
+            before = evidence.current_fingerprint()
+            self.assertRegex(before, r"^[0-9a-f]{40}$")
+            self.assertNotEqual(before, head)
+            self.run_dir.steps(("Project control files", "PASS"))
+            evidence.record(self.run_dir.path, "fast", before)
+            self.assertEqual(self._show("--require-fresh"), 0)
+            (project / "scripts" / "verify.sh").write_bytes(b"#!/usr/bin/env bash\nexit 1\n")
+            self.assertEqual(git("rev-parse", "HEAD"), head)
+            self.assertNotEqual(evidence.current_fingerprint(), before)
+            self.assertEqual(self._show("--require-fresh"), 1)
+
+    # AVE-REQ-097 AC-4
+    def test_no_file_beside_the_script_stands_in_for_a_standard_module(self) -> None:
+        """A bytecode file beside evidence.py that carries the name of a standard-library module
+        (Git ignores ``*.pyc``, so no status or diff shows it) is never imported: the script keeps
+        its own directory out of the module path, whatever environment starts it."""
+        scripts = self.tmp / "copy" / "scripts"
+        tests = scripts / "tests"
+        tests.mkdir(parents=True)
+        for name in ("evidence.py", "reqfile.py"):
+            shutil.copy(ROOT / "scripts" / name, scripts / name)
+        shadow = self.tmp / "shadow.py"
+        shadow.write_text(
+            "import os\nprint('shadow module imported', flush=True)\nos._exit(0)\n", encoding="utf-8"
+        )
+        py_compile.compile(str(shadow), cfile=str(scripts / "unittest.pyc"), doraise=True)
+        failing = _unit_module(_tag(97, 4), "    def test_other(self):\n        self.assertEqual(1, 2)\n")
+        (tests / "test_fixture.py").write_text(failing, encoding="utf-8")
+        dropped = ("AVE_EVIDENCE_DIR", "PYTHONSAFEPATH")
+        environment = {k: v for k, v in os.environ.items() if k not in dropped}
+        completed = subprocess.run(
+            [sys.executable, "-B", str(scripts / "evidence.py"), "unittest", str(tests)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = completed.stdout + completed.stderr
+        self.assertNotIn("shadow module imported", output)
+        self.assertEqual(completed.returncode, 1, output)
+        self.assertIn("failed: test_fixture.Case.test_other", output)
+
+    # AVE-REQ-097 AC-4
+    def test_the_suite_runner_fails_when_a_suite_result_cannot_be_recorded(self) -> None:
+        """Inside verify.sh a suite counts through its recorded result: when the result cannot be
+        written, run.sh fails although every suite passed."""
+        project = self.tmp / "unrecorded"
+        tests = project / "scripts" / "tests"
+        tests.mkdir(parents=True)
+        for name in ("evidence.py", "reqfile.py"):
+            shutil.copy(ROOT / "scripts" / name, project / "scripts" / name)
+        shutil.copy(ROOT / "scripts" / "tests" / "run.sh", tests / "run.sh")
+        listed = re.findall(
+            r"^run_suite (\S+)", (tests / "run.sh").read_text(encoding="utf-8"), flags=re.M
+        )
+        self.assertGreater(len(listed), 3)
+        for name in listed:
+            stub = tests / name
+            stub.write_text(
+                "#!/usr/bin/env bash\nprintf 'STUB TOTAL: pass=1 fail=0\\n'\n", encoding="utf-8"
+            )
+            stub.chmod(0o755)
+        outcomes = {}
+        for label, directory in (("recorded", self.run_dir.path), ("lost", self.tmp / "no-run")):
+            completed = subprocess.run(
+                ["bash", str(tests / "run.sh")],
+                env={**os.environ, "AVE_EVIDENCE_DIR": str(directory)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            outcomes[label] = (completed.returncode, completed.stdout)
+        self.assertEqual(outcomes["recorded"][0], 0, outcomes["recorded"][1])
+        self.assertEqual(outcomes["lost"][0], 1, outcomes["lost"][1])
+        self.assertIn(f"<== FAIL: {listed[0]} (result not recorded in ", outcomes["lost"][1])
+
+    # AVE-REQ-097 AC-4
+    def test_a_run_that_left_a_tagged_test_out_certifies_no_requirement_complete(self) -> None:
+        self.run_dir.report(
+            "unit",
+            [_test("t::a", "passed", [_tag(12, 1)]), _test("t::m", "not-run", [_tag(12, 1)])],
+        )
+        self.run_dir.steps(("Backend unit tests", "PASS"))
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(_requirement(12, "verification", 1)),
+            mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40),
+        ):
+            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            self.assertEqual(self._show(_id(12), "--require-fresh"), 0)
+            self.assertEqual(self._show(_id(12), "--require-fresh", "--require-complete"), 1)
 
     # AVE-REQ-097 AC-2
     def test_unknown_or_malformed_tags_are_reported(self) -> None:
@@ -514,17 +1003,21 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("names no requirement file", problems[1])
         self.assertIn("is not of the form", problems[2])
 
-    def _requirement_file(self, number: int, status: str = "done", ticks: str = "x") -> Path:
+    def _requirement_file(
+        self, number: int, status: str = "done", ticks: str = "x", ident: str = ""
+    ) -> Path:
         """A working requirement file in canonical form with two ticked criteria."""
-        path = self.tmp / f"{_id(number)}-sample.md"
+        ident = ident or _id(number)
+        path = self.tmp / f"{ident}-sample.md"
         path.write_text(
-            f"---\nid: {_id(number)}\ntitle: Sample\ntype: functional\nstatus: {status}\n"
+            f"---\nid: {ident}\ntitle: Sample\ntype: functional\nstatus: {status}\n"
             "priority: must\nparent: AVE-FEAT-001\nsource: derived\nscope: v1\n"
             "primary_gate: M1\norigins: []\ndependencies: []\nscenarios: []\n---\n\n"
-            f"# {_id(number)} — Sample\n\n## Intent\nStub.\n\n## Description\nStub.\n\n"
+            f"# {ident} — Sample\n\n## Intent\nStub.\n\n## Description\nStub.\n\n"
             f"## Acceptance criteria\n- [{ticks}] AC-1 One.\n- [{ticks}] AC-2 Two.\n\n"
             "## Edge cases\nNone.\n\n## Dependencies\nNone.\n\n"
-            "## Verification strategy\n- AC-1 — unit.\n\n"
+            "## Verification strategy\n- AC-1 — unit — a test.\n"
+            "- AC-2 — inspection — a judgement no test can make.\n\n"
             "## Implementation evidence\n- `src/x` — stub\n\n## Test evidence\n"
             "- AC-1 → `tests/x.py::t` — pass\n- AC-2 → inspection: checked the log — pass\n\n"
             "## Status\n- 2026-10-02 — done — verify-requirement PASS (lead)\n",
@@ -553,6 +1046,43 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(requirement.criteria, ("AC-1", "AC-2"))
         self.assertEqual(requirement.inspected, frozenset({"AC-2"}))
         self.assertEqual(requirement.problems, ())
+
+    # AVE-REQ-097 AC-4
+    def test_an_inspection_line_counts_only_for_a_criterion_verified_by_inspection(self) -> None:
+        line = "- AC-1 → inspection: read the code — pass\n"
+        with self.subTest("the strategy names no inspection for the criterion"):
+            path = self._requirement_file(50)
+            self._edit(path, "## Test evidence\n", "## Test evidence\n" + line)
+            self.assertEqual(evidence.read_requirement(path).inspected, frozenset({"AC-2"}))
+        with self.subTest("the strategy names inspection"):
+            path = self._requirement_file(50)
+            self._edit(path, "- AC-1 — unit — a test.", "- AC-1 — unit and inspection — both.")
+            self._edit(path, "## Test evidence\n", "## Test evidence\n" + line)
+            self.assertEqual(evidence.read_requirement(path).inspected, frozenset({"AC-1", "AC-2"}))
+        with self.subTest("an inspection line inside a fenced block"):
+            path = self._requirement_file(50)
+            self._edit(
+                path,
+                "- AC-2 → inspection: checked the log — pass\n",
+                "```text\n- AC-2 → inspection: checked the log — pass\n```\n",
+            )
+            self.assertEqual(evidence.read_requirement(path).inspected, frozenset())
+
+    # AVE-REQ-097 AC-2, AVE-REQ-097 AC-4
+    def test_requirement_ids_of_any_width_stay_apart(self) -> None:
+        """AVE-REQ-0180 never stands in for AVE-REQ-018, and two files with one ID stop the tool."""
+        short = self._requirement_file(18)
+        self._requirement_file(180, status="proposed", ticks=" ", ident=_id(18) + "0")
+        with mock.patch.object(evidence, "REQUIREMENTS", self.tmp):
+            known = evidence.requirements()
+            self.assertEqual(sorted(known), [_id(18), _id(18) + "0"])
+            self.assertEqual(known[_id(18)].status, "done")
+            self.assertEqual(known[_id(18) + "0"].status, "proposed")
+            self.assertEqual(evidence.tag_problems([_id(18) + "0 AC-1"], [], known), [])
+            shutil.copy(short, self.tmp / f"{_id(18)}-copy.md")
+            with self.assertRaises(evidence.EvidenceError) as raised:
+                evidence.requirements()
+            self.assertIn(f"{_id(18)} has two working files", str(raised.exception))
 
     # AVE-REQ-097 AC-4, AVE-REQ-093 AC-4
     def test_a_done_requirement_without_evidence_fails_the_done_gate(self) -> None:

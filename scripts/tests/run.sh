@@ -12,10 +12,11 @@
 # `scripts/evidence.py unittest`.)
 # Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, number of checks,
 # criterion tags) goes into the run's evidence directory: a suite's tags count only through that
-# result, and only when the suite exited 0 and its `<NAME> TOTAL: pass=N fail=M` line reports N >= 1.
-# A listed suite that exited 0 without running a check fails here (AVE-REQ-097 AC-4: a no-op script
-# establishes nothing).
-# Every suite builds its fixtures in a temp dir and leaves the working tree unchanged.
+# result, and only when the suite exited 0 and its `<NAME> TOTAL: pass=N fail=M` line reports N >= 1
+# and M = 0. A listed suite that exited 0 without running a check, or with a failed check in its own
+# total, fails here (AVE-REQ-097 AC-4: a no-op script and a caught failure establish nothing).
+# Every suite builds its fixtures in a temp dir outside every Git work tree and leaves the working
+# tree unchanged; with a temp dir inside a work tree this script stops before the first suite.
 # Exit: 0 every suite passed · 1 a suite failed · 2 usage error.
 set -uo pipefail
 W="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,33 +29,54 @@ case "${1:-}" in
 esac
 [ "$#" -le 1 ] || { printf 'Usage: scripts/tests/run.sh [--all-awks]\n' >&2; exit 2; }
 
+# The suites run Git commands in their fixtures: a temp dir inside a work tree would aim them at it.
+SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/run-suites.XXXXXX")" ||
+  { printf 'scripts/tests/run.sh: no temporary directory\n' >&2; exit 2; }
+if git -C "$SCRATCH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  rmdir "$SCRATCH"
+  printf 'scripts/tests/run.sh: the temporary directory %s lies inside a Git work tree; set TMPDIR outside it\n' \
+    "${TMPDIR:-/tmp}" >&2
+  exit 2
+fi
+rmdir "$SCRATCH"
+
 FAILED=""
-# record_suite <suite> <exit status> <checks> — writes the suite's result when verify.sh runs this script.
+# record_suite <suite> <exit status> <checks> <failed checks> — writes the suite's result when
+# verify.sh runs this script.
 record_suite() {
   [ -n "${AVE_EVIDENCE_DIR:-}" ] || return 0
-  python3 -B "$W/../evidence.py" record-suite --dir "$AVE_EVIDENCE_DIR" --file "$W/$1" --exit "$2" --checks "$3"
+  python3 -B "$W/../evidence.py" record-suite --dir "$AVE_EVIDENCE_DIR" --file "$W/$1" --exit "$2" \
+    --checks "$3" --failed "$4"
 }
 run_suite() {
-  local name="$1" status checks out
+  local name="$1" status checks failed total out
   shift
   out="$(mktemp "${TMPDIR:-/tmp}/run-suite.XXXXXX")" ||
     { printf '<== FAIL: %s (no temp file for its output)\n' "$name"; FAILED="$FAILED $name"; return; }
   printf '\n==> %s\n' "$name"
   "$W/$name" "$@" 2>&1 | tee "$out"
   status=${PIPESTATUS[0]}
-  checks="$(grep -Eo 'TOTAL: pass=[0-9]+ fail=[0-9]+' "$out" | tail -n 1 | sed -E 's/.*pass=([0-9]+) fail=.*/\1/')"
+  total="$(grep -Eo 'TOTAL: pass=[0-9]{1,9} fail=[0-9]{1,9}([^0-9]|$)' "$out" | tail -n 1)"
   rm -f "$out"
+  checks="$(printf '%s\n' "$total" | sed -E 's/.*pass=([0-9]+) fail=([0-9]+).*/\1/')"
+  failed="$(printf '%s\n' "$total" | sed -E 's/.*pass=([0-9]+) fail=([0-9]+).*/\2/')"
   checks="${checks:-0}"
-  if [ "$status" -eq 0 ] && [ "$checks" -ge 1 ]; then
-    printf '<== PASS: %s (%s checks)\n' "$name" "$checks"
-  elif [ "$status" -eq 0 ]; then
-    printf '<== FAIL: %s (no check ran: no "TOTAL: pass=N fail=M" line with N >= 1)\n' "$name"
-    FAILED="$FAILED $name(no-check)"
-  else
+  failed="${failed:-0}"
+  if [ "$status" -ne 0 ]; then
     printf '<== FAIL: %s (exit %s)\n' "$name" "$status"
     FAILED="$FAILED $name"
+  elif [ "$failed" -ge 1 ]; then
+    printf '<== FAIL: %s (its total reports %s failed check(s) while it exited 0)\n' "$name" "$failed"
+    FAILED="$FAILED $name(failed-checks)"
+    status=1
+  elif [ "$checks" -lt 1 ]; then
+    printf '<== FAIL: %s (no check ran: no "TOTAL: pass=N fail=M" line with N >= 1)\n' "$name"
+    FAILED="$FAILED $name(no-check)"
+    status=1
+  else
+    printf '<== PASS: %s (%s checks)\n' "$name" "$checks"
   fi
-  if ! record_suite "$name" "$status" "$checks"; then
+  if ! record_suite "$name" "$status" "$checks" "$failed"; then
     printf '<== FAIL: %s (result not recorded in %s)\n' "$name" "$AVE_EVIDENCE_DIR"
     FAILED="$FAILED $name(evidence)"
   fi

@@ -99,10 +99,11 @@ git log --oneline --grep='AVE-REQ-012[:,]'
 # Requirements in a status; version-one requirements of a gate
 grep -l '^status: in-progress' docs/requirements/AVE-REQ-*.md
 grep -l '^primary_gate: M1$' docs/requirements/AVE-REQ-*.md
-# ACs without a tagged test (expected only for ACs verified by inspection)
-for ac in $(grep -oE '^- \[[ x]\] AC-[0-9]+' docs/requirements/AVE-REQ-012-*.md | grep -oE 'AC-[0-9]+'); do
-  git grep -q -w --untracked "AVE-REQ-012 $ac" -- ':!*.md' || echo "no tagged test: AVE-REQ-012 $ac"
-done
+# ACs without a tagged test (expected only for ACs verified by inspection): after a verify.sh run,
+# `missing` marks a criterion no test carries, `not-run` one whose tests exist and did not run in that
+# tier. The evidence tool reads test markers and comment tags; a grep of the tag would also match
+# expected-output strings and fixture text.
+python3 -B scripts/evidence.py show AVE-REQ-012
 # Tags in code or tests that point to no requirement file
 git grep -h -o -E --untracked 'AVE-REQ-[0-9]{3,}' -- ':!*.md' ':!ai-video-editor-requirements' | sort -u | while read -r id; do
   ls docs/requirements/"$id"-*.md >/dev/null 2>&1 || echo "orphan tag: $id"
@@ -206,5 +207,5 @@ move in an ADR (see the revisit trigger in
 | [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md) | in-progress | `scripts/check_baseline.py`, `scripts/reqfile.py`, `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md` | `scripts/tests/test-check-baseline.sh` (AC-1, AC-3, AC-4), `scripts/tests/test_evidence.py` (AC-4), inspection (AC-2) | — | [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
 | [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md) | verification | `docs/ENVIRONMENT_CAPABILITIES.md`, `scripts/probe-environment.sh`, `docs/WORKFLOW_LOG.md`, `CLAUDE.md` § Delegation, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-probe-environment.sh` (AC-1), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
 | [AVE-REQ-096](requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md) | in-progress | `docs/briefs/`, `docs/briefs/handbacks/`, `scripts/check-project-control.sh`, `scripts/verify.sh`, `.claude/skills/develop/SKILL.md`, `CLAUDE.md`, `.claude/settings.json` | `scripts/tests/test-checker.sh` (AC-1, AC-2), `scripts/tests/test-verify-tiers.sh` (AC-4), inspection (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |
-| [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | in-progress | `scripts/verify.sh`, `scripts/evidence.py`, `scripts/reqfile.py`, `scripts/tests/run.sh`, `backend/tests/evidence_plugin.py` | `scripts/tests/test-verify-tiers.sh`, `scripts/tests/test_evidence.py`, `backend/tests/unit/test_evidence_plugin.py`, `scripts/tests/test-stop-hook.sh` (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
+| [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md) | in-progress | `scripts/verify.sh`, `scripts/verify.d/`, `scripts/lib/verify-state.sh`, `scripts/evidence.py`, `scripts/reqfile.py`, `scripts/tests/run.sh`, `backend/tests/evidence_plugin.py`, `.claude/hooks/stop-verify.sh` | `scripts/tests/test-verify-tiers.sh`, `scripts/tests/test_evidence.py`, `backend/tests/unit/test_evidence_plugin.py`, `scripts/tests/test-stop-hook.sh` (AC-1–AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md), [ADR-003](decisions/ADR-003-requirements-baseline-import.md) |
 | [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md) | in-progress | `docs/PROGRESS.md`, `.claude/hooks/session-start.sh`, `.claude/hooks/stop-verify.sh`, `scripts/check-project-control.sh`, `.env.example`, `docs/ENVIRONMENT_CAPABILITIES.md`, `CLAUDE.md` § Git, `.claude/skills/develop/SKILL.md`, `.claude/skills/resume-project/SKILL.md` | `scripts/tests/test-session-start.sh` (AC-1, AC-2), `scripts/tests/test-checker.sh` (AC-2, AC-3, AC-4), `scripts/tests/test-probe-environment.sh` (AC-3), `scripts/tests/test-stop-hook.sh` (AC-4), inspection (AC-1, AC-3, AC-4) | — | [ADR-001](decisions/ADR-001-specification-driven-development-workflow.md) |

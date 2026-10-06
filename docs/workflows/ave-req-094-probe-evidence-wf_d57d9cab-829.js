@@ -16,7 +16,7 @@ const BRIEF = 'docs/briefs/2026-10-03-ave-req-094-probe-evidence.md'
 const WT = 'ave-req-094-probe-evidence'
 const WRITE = { model: '<tier alias>', effort: 'xhigh' }
 const VERIFY = { model: '<tier alias>', effort: 'high' }
-const TRAILERS = '<the session's Co-Authored-By and Claude-Session trailer lines>'
+const TRAILERS = '<the Co-Authored-By and Claude-Session trailer lines of the session>'
 
 const hostFacts = `Host facts: Windows 11 with Git Bash; the repository's checks run inside a Linux development container (ADR-009): \`./scripts/verify.sh\` enters it by itself, and every other check, test or probe command takes the prefix \`./scripts/dev-container.sh\` (bash scripts/tests/<suite>.sh, bash scripts/tests/run.sh, ./scripts/probe-environment.sh, curl, python3). Repository text states things affirmatively (avoid "X, not Y", "rather than", "instead of") and never contains model identifiers.`
 

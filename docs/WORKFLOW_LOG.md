@@ -200,3 +200,25 @@ Not an improvement entry: the measured starting point that later entries compare
   the tree of `35f99c5` passes.
 - Keep or revert, with reason: keep; the check takes under a minute and the working branch stays green commit
   by commit, which the fast-forward rule for `main` relies on.
+
+### WF-007 — 2026-10-06 — The path to `done` ran the fast tier only
+- Observed failure and evidence: red-team lens 097-E (finding 8,
+  [handback part 2](briefs/handbacks/2026-10-03-m0-gates-red-team.part-2.md)) set a requirement to `done` with one
+  criterion untested and one evidenced by a contract test only; `./scripts/verify.sh` passed (fast tier, 9 of 9
+  steps), because `evidence.py check-done` ran in the release tier alone, and `develop` § 6 and § 8,
+  `verify-requirement` and `milestone-review` named no tier, so their runs were fast-tier runs.
+- Root-cause hypothesis: the Definition of Done said "`./scripts/verify.sh` passes" while only the release tier
+  runs every tagged test and judges `done` requirements.
+- One proposed workflow/skill/context change: Definition of Done item 4 (CLAUDE.md, requirements README) and the
+  three skills name `./scripts/verify.sh --tier release`; the done step runs in every tier and fails failed,
+  contract-only and missing evidence there, so the Stop gate holds a wrongly finished requirement at once.
+- Expected metric and fixed evaluation set (plus held-out cases): `done` requirements whose criteria lack
+  evidence in the run that precedes the transition; evaluation set: the lens's reproduction (AVE-REQ-018 set to
+  `done` with AC-3 untagged and AC-2 contract-only) in the fast tier. Held-out: the `done` transitions of M0 and
+  of the following milestones.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, the reproduction passed the fast tier. After, measured through
+  `scripts/tests/test_evidence.py::test_the_done_gate_judges_every_tier`: the fast and media tiers fail on the
+  missing criterion, and the release tier also fails on a tagged test that did not run.
+- Keep or revert, with reason: keep; the step adds seconds to the fast tier and removes the one path on which a
+  requirement could reach `done` without a run that judged it.

@@ -231,15 +231,22 @@ In effect:
    `@pytest.mark.scenario("AT-NN")`; tooling tests in `scripts/tests/` use `# AVE-REQ-NNN AC-n` comment lines.
    The evidence plugin ([backend/tests/evidence_plugin.py](../backend/tests/evidence_plugin.py)) rejects a tag
    that names no existing criterion or scenario before any test runs; see [TRACEABILITY.md](TRACEABILITY.md).
-   A tooling tag counts only through a suite result of the run (file, exit status, number of checks, tags;
-   a suite that exited 0 without running a check counts against its tags), which
-   [scripts/tests/run.sh](../scripts/tests/run.sh) writes for each shell suite it runs and
-   `scripts/evidence.py unittest` for each unit-test file; a tooling tag that names no existing criterion
-   fails the "Evidence manifest" step with its file and line.
-3. Tests are deterministic and run non-interactively. verify.sh runs pytest with `--forbid-skips`: a skipped,
-   expected-to-fail or unexpectedly passing test, or a module skipped at collection, fails the run; the
-   tooling unit tests run under `scripts/evidence.py unittest`, which applies the same rule and also fails a
-   file without tests. Fix flaky tests at the root.
+   A tooling tag counts only through a suite result of the run (file, exit status, numbers of checks and of
+   failed checks, tags; a suite that exited 0 without running a check, or with a failed check in its own
+   total, counts against its tags), which [scripts/tests/run.sh](../scripts/tests/run.sh) writes for each shell
+   suite it runs and `scripts/evidence.py unittest` for each unit-test file; a tooling tag that names no
+   existing criterion fails the "Evidence manifest" step with its file and line. Tags of a shell suite count
+   per file; in a unit-test file each tag stands directly above the test it names. A test that exists and did
+   not run in a tier (deselected, or a tooling file without a suite result) is recorded as `not-run` and
+   evidences nothing.
+3. Tests are deterministic and run non-interactively. verify.sh runs pytest with the configuration of
+   `backend/pyproject.toml` alone and with `--forbid-skips`: a skipped, expected-to-fail or unexpectedly
+   passing test, a module skipped at collection, or a selected test that never ran fails the run, and each
+   pytest step fails without a report that holds executed tests; a test file Git ignores stops the session.
+   The tooling unit tests run under `scripts/evidence.py unittest`, each file in its own interpreter with
+   warnings as errors, which applies the same rule and also fails a file without tests. Fix flaky tests at
+   the root; in shell suites a check never pipes into `grep -q` (under `pipefail` the writer can die of
+   SIGPIPE and flip the check): the suites' `quiet` reads its whole input.
 4. `./scripts/verify.sh` runs every test level; core user journeys run as end-to-end or smoke
    tests.
 5. `./scripts/verify.sh` never needs credentials or paid services. External services run on
@@ -255,7 +262,8 @@ In effect:
    the checks (on a host that verifies in the development container:
    `./scripts/dev-container.sh bash -c 'flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" <command>'`).
    A command that already holds the lock and starts verify.sh's media or release tier sets
-   `AVE_HEAVY_LOCK_HELD=1`, so the run takes no second lock. `scripts/tests/test-verify-tiers.sh` tests the lock.
+   `AVE_HEAVY_LOCK_HELD=1`, so the run takes no second lock; the run first confirms that the lock is held and
+   fails before any step when nobody holds it. `scripts/tests/test-verify-tiers.sh` tests the lock.
 
 Commands: `cd backend && uv run pytest -m "not media and not slow"` (fast),
 `flock "${AVE_HEAVY_LOCK:-${TMPDIR:-/tmp}/ave-heavy-media.lock}" uv run pytest -m "media or slow"` (media and
@@ -274,24 +282,38 @@ In effect since bootstrap
 1. **Single entry point.** [scripts/verify.sh](../scripts/verify.sh) is the one command
    humans, Claude, the Stop hook and CI run. It runs every step of its tier, prints a summary, and exits
    1 when any step fails (2 on a usage error).
-2. **Tiers.** `--tier fast` (default): project control files, requirements baseline integrity, evidence
-   tooling tests, backend format/lint/types, unit tests. `--tier media` adds the real-media and population
-   tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
-   every installed awk) and the check that every `done` requirement is evidenced by this run. Component steps
-   live in [scripts/verify.d/](../scripts/verify.d/); each is a required file, so none can go missing silently.
+2. **Tiers.** `--tier fast` (default): project control files, no ignored file among sources, tests,
+   scripts and hooks, requirements baseline integrity, evidence tooling tests, backend format/lint/types,
+   unit tests (their media tools are a stand-in that exits 1, so the fast tier renders nothing).
+   `--tier media` adds the real-media and population tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
+   every installed awk). Every tier ends its checks with the step "Done requirements evidenced by this run":
+   a `done` requirement with failed, contract-only or missing evidence fails it, and in the release tier,
+   which runs every test, a tagged test that did not run fails it too. Component steps live in
+   [scripts/verify.d/](../scripts/verify.d/); each is a required file, verify.sh sources exactly the required
+   ones, a step file that cannot be loaded fails the run, and the checker fails on any other entry there.
+   A run clears the caller's Git, Python and pytest variables, loads no pytest plugin by itself, keeps
+   bytecode and the type checker's cache in a scratch directory outside the tree, keeps the directory of a
+   script out of every Python module path and selects tests by marker expression only
+   ([ASM-023](ASSUMPTIONS.md) names what stays trusted).
    The media and release tiers hold the heavy-media lock for their whole run (§ Testing strategy item 6); in the
    development container the lock file lives on the shared state volume (`AVE_HEAVY_LOCK`).
-3. **Evidence.** Each run records `var/verify/runs/<run-id>/`: the step log, one pytest report per test step,
-   one suite result per tooling test file that ran, and `manifest.json`, which ties the results to the commit, the tree fingerprint, the toolchain, the
-   configuration hashes and every criterion and scenario tag ([scripts/evidence.py](../scripts/evidence.py);
-   `var/verify/latest-<tier>.json` holds the newest of each tier). `evidence.py show` reports a manifest
-   STALE once the tree changes: stale evidence certifies nothing. The steps "Working tree unchanged by
-   verification" and "Evidence manifest" run last.
+3. **Evidence.** Each run records a new directory `var/verify/runs/<run-id>/`: the step log, one pytest
+   report per test step, one suite result per tooling test file that ran, and `manifest.json`, written once,
+   which ties the results to the commit, the tree fingerprint, the toolchain (the media tools the product
+   resolves and a digest of the installed backend packages), the configuration hashes, the pytest invocations
+   and every criterion and scenario tag ([scripts/evidence.py](../scripts/evidence.py);
+   `var/verify/latest-<tier>.json` holds the newest of each tier). `evidence.py show` takes the heaviest
+   manifest that is fresh and reports a manifest STALE once the tree or the toolchain changes: stale evidence
+   certifies nothing, and `--require-complete` fails for a failed fresh run of any tier and for a tagged test
+   that did not run. A tree the fingerprint cannot see (index flags, filter attributes, ignore rules outside
+   `.gitignore`, an embedded repository) has no fingerprint, so nothing is fresh there. The steps "Working
+   tree unchanged by verification" and "Evidence manifest" run last.
 4. **Stop gate.** [.claude/hooks/stop-verify.sh](../.claude/hooks/stop-verify.sh) runs
    `verify.sh --tier fast` when Claude finishes a turn and the working tree differs from the last passing
    tree, so no turn triggers media renders. A failure blocks stopping and feeds the log tail back to
-   Claude; after `CLAUDE_VERIFY_MAX_ATTEMPTS` (default 3) consecutive failures the gate releases with a
-   warning. `CLAUDE_VERIFY_GATE=off` disables it for humans. Results and the full log live in
+   Claude; after `CLAUDE_VERIFY_MAX_ATTEMPTS` (default 3; 1 to 10) consecutive failures the gate releases with
+   a warning. `CLAUDE_VERIFY_GATE=off` disables it for humans; check 12 fails a settings file that sets a gate
+   variable, removes the gate or adds a second Stop command. Results and the full log live in
    `.git/claude-verify/` (one per worktree).
 5. **Session start.** [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh)
    reports the uncommitted paths (a bounded list), the last verification result and whether it matches the

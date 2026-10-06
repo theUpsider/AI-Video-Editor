@@ -7,10 +7,13 @@ outcomes and markers are known, and checks the session's exit status and evidenc
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from tests import evidence_plugin
 
 pytestmark = pytest.mark.req("AVE-REQ-097 AC-2", "AVE-REQ-097 AC-4")
 
@@ -71,6 +74,118 @@ def test_report_records_tags_outcomes_and_contract_flags(pytester: pytest.Pytest
     assert tests["test_skipped"]["outcome"] == "skipped"
     assert tests["test_expected_failure"]["outcome"] == "xfailed"
     assert data["schema"] == 1
+    assert any(arg.startswith("--evidence-report=") for arg in data["invocation"]["args"])
+    assert "inifile" in data["invocation"]
+
+
+def test_a_deselected_test_is_recorded_and_evidences_nothing(pytester: pytest.Pytester) -> None:
+    """A test left out by a marker expression, ``-k`` or ``--deselect`` exists and did not run:
+    the report names it with its tags, so no run that left it out counts as complete."""
+    status, data = _run(
+        pytester,
+        MODULE,
+        "--deselect",
+        "test_generated.py::test_tagged_fail",
+        "-k",
+        "not skipped and not expected",
+    )
+    assert status == pytest.ExitCode.OK
+    outcomes = {Path(t["nodeid"]).name.split("::")[1]: t["outcome"] for t in data["tests"]}
+    assert outcomes == {
+        "test_tagged_pass": "passed",
+        "test_contract_pass": "passed",
+        "test_tagged_fail": "deselected",
+        "test_skipped": "deselected",
+        "test_expected_failure": "deselected",
+    }
+    left_out = next(t for t in data["tests"] if t["nodeid"].endswith("::test_tagged_fail"))
+    assert left_out["req"] == ["AVE-REQ-012 AC-3"]
+
+
+@pytest.mark.parametrize(
+    ("source", "args"),
+    [
+        pytest.param(
+            "import pytest\n\ndef test_a_precondition():\n"
+            '    pytest.exit("precondition unavailable", returncode=0)\n\n'
+            "def test_b():\n    assert 1 == 2\n",
+            (),
+            id="pytest.exit-with-status-0",
+        ),
+        pytest.param("def test_passes():\n    pass\n", ("--collect-only",), id="collect-only"),
+        pytest.param("def test_passes():\n    pass\n", ("--setup-plan",), id="setup-plan"),
+    ],
+)
+def test_forbid_skips_fails_a_session_whose_selected_tests_never_ran(
+    pytester: pytest.Pytester, source: str, args: tuple[str, ...]
+) -> None:
+    """A session that ends with status 0 without running a selected test proves nothing: under
+    --forbid-skips it fails, and the report records the test as not-run."""
+    status, _ = _run(pytester, source, *args)
+    assert status == pytest.ExitCode.OK
+    status, data = _run(pytester, source, "--forbid-skips", *args)
+    assert status == pytest.ExitCode.TESTS_FAILED
+    assert data["exitstatus"] == pytest.ExitCode.TESTS_FAILED
+    assert "not-run" in {test["outcome"] for test in data["tests"]}
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [("--deselect", "test_generated.py::test_tagged_fail"), ("-k", "not tagged_fail")],
+    ids=["deselect", "keyword"],
+)
+def test_a_verification_session_selects_by_marker_expression_only(
+    pytester: pytest.Pytester, selection: tuple[str, str]
+) -> None:
+    """Under --forbid-skips a test left out by --deselect or -k (an option an installed file or the
+    environment can inject) stops the session before any test runs."""
+    pytester.makepyfile(test_generated=MODULE)
+    result = pytester.runpytest_inprocess(
+        "-p", "tests.evidence_plugin", "-p", "no:cacheprovider", "--forbid-skips", *selection
+    )
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "selects its tests by marker expression only" in "\n".join(
+        result.errlines + result.outlines
+    )
+
+
+def test_the_recorder_cannot_be_blocked(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(test_generated="def test_passes():\n    pass\n")
+    result = pytester.runpytest_inprocess(
+        "-p", "tests.evidence_plugin", "-p", "no:cacheprovider", "-p", "no:ave-evidence-recorder"
+    )
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "the evidence recorder is blocked" in "\n".join(result.errlines + result.outlines)
+
+
+def test_a_test_file_that_git_ignores_stops_the_session(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tagged test in a directory that .gitignore hides is invisible to git status, to the
+    tree fingerprint and to a search of the tracked tree: collecting it is a usage error. The
+    same file in a directory Git sees is collected."""
+    source = 'import pytest\n\n@pytest.mark.req("AVE-REQ-012 AC-1")\ndef test_x():\n    pass\n'
+    subprocess.run(["git", "init", "-q", str(pytester.path)], check=True)  # noqa: S607
+    (pytester.path / ".gitignore").write_text("htmlcov/\n", encoding="utf-8")
+    monkeypatch.setattr(evidence_plugin, "GIT_ROOT", pytester.path)
+    visible = pytester.mkdir("visible")
+    (visible / "test_seen.py").write_text(source, encoding="utf-8")
+    arguments = ("-p", "tests.evidence_plugin", "-p", "no:cacheprovider")
+    assert pytester.runpytest_inprocess(*arguments).ret == pytest.ExitCode.OK
+    hidden = pytester.mkdir("htmlcov")
+    (hidden / "test_hidden.py").write_text(source, encoding="utf-8")
+    result = pytester.runpytest_inprocess(*arguments)
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    output = "\n".join(result.errlines + result.outlines)
+    assert "test files that Git ignores" in output
+    assert "htmlcov/test_hidden.py" in output
+    (hidden / "test_hidden.py").unlink()
+    (hidden / "conftest.py").write_text("collect_ignore = []\n", encoding="utf-8")
+    (hidden / "test_other.py").write_text(source, encoding="utf-8")
+    (pytester.path / ".gitignore").write_text("htmlcov/conftest.py\n", encoding="utf-8")
+    result = pytester.runpytest_inprocess(*arguments)
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "htmlcov/conftest.py" in "\n".join(result.errlines + result.outlines)
 
 
 PASSING_MODULE = "def test_passes():\n    pass\n"
@@ -123,6 +238,7 @@ def test_forbid_skips_fails_a_session_with_a_test_that_did_not_run(
     pytester.makepyfile(test_passing=PASSING_MODULE)
     status, data = _run(pytester, source)
     assert status == pytest.ExitCode.OK
+    assert data["exitstatus"] == pytest.ExitCode.OK
     outcomes = {test["nodeid"]: test["outcome"] for test in data["tests"]}
     assert outcomes == {"test_passing.py::test_passes": "passed", nodeid: outcome}
     status, _ = _run(pytester, source, "--forbid-skips")

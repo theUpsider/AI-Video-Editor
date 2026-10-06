@@ -21,6 +21,16 @@
 # untracked and modified non-ignored content, so generated media and render outputs belong in
 # .gitignore. A tree that contains a submodule or embedded repository gets no fingerprint (Git
 # records only its commit), so the Stop gate always runs verify.sh there.
+# A tree the fingerprint cannot see gets none either (AVE-REQ-097 AC-2): an index flag
+# (assume-unchanged, skip-worktree) hides an edit of a tracked file, a filter attribute rewrites
+# what Git hashes, and an ignore rule outside the .gitignore files (.git/info/exclude, the user's
+# excludes file) hides an untracked file. A working file whose line ends differ from its
+# normalized blob (CRLF under `eol=lf`) adds its raw bytes to the fingerprint.
+
+# This checkout only: no Git variable of the caller points the commands at another repository,
+# index or object store.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  GIT_COMMON_DIR GIT_NAMESPACE
 
 # True inside a Git work tree.
 vstate_in_git() {
@@ -74,10 +84,26 @@ vstate_set() {
   return 1
 }
 
-# Prints the fingerprint of the current working tree. Returns 1 outside Git or on any Git error.
+# True when the working tree holds something the fingerprint cannot see (header). awk reads each
+# whole listing, which keeps the pipeline status reliable under pipefail.
+vstate_blind() {
+  local listed visible
+  git ls-files -v 2>/dev/null | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit !found }' && return 0
+  git -c core.quotePath=false ls-files --cached --others --exclude-standard 2>/dev/null |
+    git check-attr --stdin filter 2>/dev/null |
+    awk '!/: filter: (unspecified|unset)$/ { found = 1 } END { exit !found }' && return 0
+  listed="$(git ls-files --others --exclude-per-directory=.gitignore 2>/dev/null | wc -l)"
+  visible="$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)"
+  [ "$listed" = "$visible" ] || return 0
+  return 1
+}
+
+# Prints the fingerprint of the current working tree. Returns 1 outside Git, on any Git error and
+# for a tree the fingerprint cannot see.
 vstate_fingerprint() {
-  local dir real_index objects tmp_index tmp_objects tree status=1
+  local dir real_index objects tmp_index tmp_objects tree divergent path status=1
   vstate_in_git || return 1
+  vstate_blind && return 1
   dir="$(vstate_dir)" || return 1
   real_index="$(git rev-parse --git-path index 2>/dev/null)" || return 1
   objects="$(git rev-parse --git-path objects 2>/dev/null)" || return 1
@@ -103,8 +129,22 @@ vstate_fingerprint() {
       awk '$1 == "160000" { found = 1 } END { exit !found }' &&
     tree="$(GIT_INDEX_FILE="$tmp_index" GIT_OBJECT_DIRECTORY="$tmp_objects" \
       GIT_ALTERNATE_OBJECT_DIRECTORIES="$objects" git write-tree 2>/dev/null)"; then
-    printf '%s\n' "$tree"
-    status=0
+    # Git hashes a text file in its normalized form: a working file with other line ends joins
+    # the fingerprint with its raw bytes, so the bytes a step reads are the bytes fingerprinted.
+    divergent="$(GIT_INDEX_FILE="$tmp_index" git -c core.quotePath=false ls-files --eol 2>/dev/null |
+      awk -F'\t' '{ split($1, state, " "); if (state[2] == "w/crlf" || state[2] == "w/mixed") print $2 }')"
+    if [ -n "$divergent" ]; then
+      tree="$({
+        printf '%s\n' "$tree"
+        printf '%s\n' "$divergent" | while IFS= read -r path; do
+          printf '%s %s\n' "$(git hash-object --no-filters -- "$path" 2>/dev/null)" "$path"
+        done
+      } | git hash-object --stdin 2>/dev/null)" || tree=""
+    fi
+    if [ -n "$tree" ]; then
+      printf '%s\n' "$tree"
+      status=0
+    fi
   fi
   rm -rf "$tmp_index" "$tmp_index.lock" "$tmp_objects"
   return "$status"

@@ -6,7 +6,7 @@ from fractions import Fraction
 
 import pytest
 
-from ave.domain.rates import PROVISIONAL_FPS, resolve_auto_frame_rate, update_auto_frame_rate
+from ave.domain.rates import resolve_auto_frame_rate, update_auto_frame_rate
 from tests.assets import fake_asset
 
 NTSC60 = Fraction(60000, 1001)
@@ -16,7 +16,9 @@ NTSC60 = Fraction(60000, 1001)
 def test_no_source_gives_a_provisional_30() -> None:
     """AVE-REQ-018 AC-3: without sources the project shows a provisional 30 fps."""
     resolution = resolve_auto_frame_rate([])
-    assert resolution.fps == PROVISIONAL_FPS
+    # The criterion names the value: comparing with the implementation's own constant would pass
+    # for any default.
+    assert resolution.fps == Fraction(30)
     assert resolution.provisional
 
 

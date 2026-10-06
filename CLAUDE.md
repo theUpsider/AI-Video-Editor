@@ -93,7 +93,7 @@ Otherwise choose a reasonable industry-standard approach, record it (assumption 
   1. implementation exists;
   2. every AC is satisfied and ticked;
   3. tests or other verification exist for every AC, tagged `AVE-REQ-NNN AC-n`;
-  4. `./scripts/verify.sh` passes;
+  4. `./scripts/verify.sh --tier release` passes on the tree that moves to `done`;
   5. `verify-requirement` returned PASS with no blocking findings;
   6. traceability is updated: Implementation evidence and Test evidence filled (no `_TBD`), TRACEABILITY.md row with matching status.
 - Lifecycle: `proposed → ready → in-progress → verification → done`; failed verification returns to `in-progress`; `blocked` and `superseded` follow the requirements README. Frontmatter `status` is canonical; the `## Status` log records every transition.

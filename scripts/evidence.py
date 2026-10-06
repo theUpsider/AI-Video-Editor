@@ -15,22 +15,30 @@ Commands:
       Write DIR/manifest.json from DIR's step log, reports and suite results; refresh
       latest-<tier>.json.
   show [AVE-REQ-NNN ...] [--tier TIER] [--require-fresh] [--require-complete]
-      Per-criterion evidence from the newest manifest, with its freshness against the current
-      tree. --require-fresh exits 1 when the tree changed since that run; --require-complete
-      exits 1 when the run failed or a named requirement has a criterion without passing,
-      non-contract evidence.
-  check-done --dir DIR
+      Per-criterion evidence from the heaviest manifest that is fresh (same tree fingerprint and
+      toolchain as now), or from the newest one when none is. --require-fresh exits 1 when the
+      tree or the toolchain changed since that run; --require-complete exits 1 when the run, or
+      a fresh run of any tier, failed, or a named requirement has a criterion without passing,
+      non-contract evidence or with a tagged test that did not run.
+  check-done --dir DIR [--tier TIER]
       Exit 1 when a requirement with status `done` has a criterion that this run's results do
-      not evidence (used by verify.sh in the release tier).
+      not evidence. Every tier fails on failed, contract-only and missing evidence; the release
+      tier (the default) also fails on a tagged test that did not run. verify.sh runs it in
+      every tier.
   unittest [--dir DIR] [DIRECTORY]
       Run the Python unit tests of DIRECTORY (default scripts/tests), each test_*.py file as one
       suite, and exit 1 when any file fails. A file fails when a test fails or errors, is skipped,
       is expected to fail or passes unexpectedly, or when no test ran (the --forbid-skips rule of
       the pytest plugin). With DIR (default $AVE_EVIDENCE_DIR), write each file's suite result.
-  record-suite --dir DIR --file FILE --exit STATUS --checks N
-      Write DIR/suite-<file name>.json: the file, its exit status, the number of checks it ran and
-      the criterion tags of its comment lines with their line numbers (used by scripts/tests/run.sh
-      for each shell suite). A suite passes only with exit status 0 and N >= 1.
+  record-suite --dir DIR --file FILE --exit STATUS --checks N [--failed M]
+      Write DIR/suite-<file name>.json: the file, its exit status, the numbers of checks it ran
+      and of checks that failed, and the criterion tags of its comment lines with their line
+      numbers (used by scripts/tests/run.sh for each shell suite). A suite passes only with exit
+      status 0, N >= 1 and M = 0.
+  check-report --file FILE
+      Exit 1 when a pytest evidence report is missing, records a session that did not end with
+      status 0, holds no executed test, or holds a selected test that never ran (used by the
+      backend test steps: a session that passed without running its tests proves nothing).
 
 Evidence rules (docs/requirements/README.md, Definition of Done):
   * a criterion is evidenced by a test that carries its tag and passed in the run, or by an
@@ -40,27 +48,45 @@ Evidence rules (docs/requirements/README.md, Definition of Done):
     interface only and never evidence a criterion on their own;
   * the tooling tests in scripts/tests/ (shell suites and Python unit tests) tag their cases with
     ``# AVE-REQ-NNN AC-n`` comment lines; those tags count only through a suite result of the run,
-    with the exit status and the check count of that file: a file that never ran gives no
-    evidence, and a failing one, or a shell suite that exited 0 without running a check, counts
-    against its criteria;
+    with the exit status and the check counts of that file: a file that never ran gives no
+    evidence, and a failing one, or a shell suite that exited 0 without running a check or with a
+    failed check in its total, counts against its criteria; in a unit-test file each tag stands
+    directly above the test it names, and a tag above no test that ran fails the file;
   * every tooling tag names an existing criterion: one that does not stops ``record`` and
-    ``check-done`` with the file and line.
+    ``check-done`` with the file and line;
+  * a test that exists and did not run (a deselected pytest test, a tooling file without a suite
+    result of the run) is recorded as ``not-run``: it evidences nothing, and a run that left a
+    tagged test out certifies no requirement complete;
+  * an inspection line counts for a criterion whose ## Verification strategy line names
+    inspection (``- AC-n — inspection — <why>``);
+  * a run is recorded once, and a suite result counts when it belongs to a tooling test file of
+    this tree and carries that file's tags. ``var/verify/`` is local, unauthenticated data: the
+    run that certifies a requirement is the one the reviewer or CI starts.
 
 Python standard library only; writes only into the run directory it is given and var/verify/.
 """
 
 from __future__ import annotations
 
+import os
+import sys
+
+if __name__ == "__main__" and not sys.flags.safe_path:
+    # AVE-REQ-097 AC-4: the script's directory stays out of the module path, so no file beside this
+    # script (a module, a bytecode file that Git ignores) stands in for a standard-library module.
+    os.execv(sys.executable, [sys.executable, "-P", "-B", os.path.abspath(__file__), *sys.argv[1:]])
+
 import argparse
+import functools
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
-import sys
+import tempfile
 import types
 import unittest
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,9 +104,25 @@ TIERS = ("fast", "media", "release")
 SCHEMA = 1
 KEEP_RUNS = 20
 
-CRITERION_TAG = re.compile(r"^AVE-REQ-(\d{3}) AC-(\d+)$")
+CRITERION_TAG = re.compile(r"^(AVE-REQ-\d{3,}) AC-(\d+)$")
 SCENARIO_TAG = re.compile(r"^AT-\d{2}$")
-_TAG_IN_TEXT = re.compile(r"\bAVE-REQ-\d{3} AC-\d+\b")
+_TAG_IN_TEXT = re.compile(r"\bAVE-REQ-\d{3,} AC-\d+\b")
+_STRATEGY_LINE = re.compile(r"^- (AC-\d+) — ([^—]*) — ")
+NOT_RUN = "not-run"
+"""Outcome of a test that exists and was not executed in the run."""
+_UNRUN_OUTCOMES = (NOT_RUN, "deselected")
+"""Report outcomes of a test that did not run: selected and never started, or deselected."""
+_TEST_DEF = re.compile(r"^\s*(?:async\s+)?def (test_\w+)\(")
+_REDIRECTING = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+)
+"""Variables that point Git at another repository, index or object store."""
 _INSPECTION_LINE = re.compile(r"^- (AC-\d+) → inspection:")
 _CONFIGURATION = ("scripts/verify.sh", "backend/pyproject.toml", "backend/uv.lock")
 
@@ -126,10 +168,16 @@ def read_requirement(path: Path) -> Requirement:
     check_baseline.py uses: the status and the criteria of the done gate are the ones the baseline
     gate checked (AVE-REQ-097 AC-4)."""
     item = reqfile.read(path)
+    # An inspection line counts for a criterion whose strategy line names inspection.
+    by_inspection = {
+        match.group(1)
+        for line in item.sections.get("Verification strategy", [])
+        if (match := _STRATEGY_LINE.match(line)) and "inspection" in match.group(2)
+    }
     inspected = frozenset(
         match.group(1)
         for line in item.sections.get("Test evidence", [])
-        if (match := _INSPECTION_LINE.match(line))
+        if (match := _INSPECTION_LINE.match(line)) and match.group(1) in by_inspection
     )
     return Requirement(
         item.id, path, item.get("status"), tuple(item.criteria()), inspected, tuple(item.problems)
@@ -138,12 +186,18 @@ def read_requirement(path: Path) -> Requirement:
 
 def requirements() -> dict[str, Requirement]:
     """Every working requirement, by ID (check-project-control.sh reports malformed file names)."""
-    found = (
-        read_requirement(path)
-        for path in sorted(REQUIREMENTS.glob("AVE-REQ-[0-9]*.md"))
-        if reqfile.NAME.match(path.name)
-    )
-    return {requirement.id: requirement for requirement in found}
+    found: dict[str, Requirement] = {}
+    for path in sorted(REQUIREMENTS.glob("AVE-REQ-[0-9]*.md")):
+        if not reqfile.NAME.match(path.name):
+            continue
+        requirement = read_requirement(path)
+        if requirement.id in found:
+            raise EvidenceError(
+                f"{requirement.id} has two working files: {found[requirement.id].path.name}"
+                f" and {path.name}"
+            )
+        found[requirement.id] = requirement
+    return found
 
 
 def form_problems(known: dict[str, Requirement]) -> list[str]:
@@ -175,7 +229,7 @@ def tag_problems(
         if not match:
             problems.append(f"{tag!r} is not of the form 'AVE-REQ-NNN AC-n'")
             continue
-        requirement = known.get(f"AVE-REQ-{match.group(1)}")
+        requirement = known.get(match.group(1))
         if requirement is None:
             problems.append(f"{tag!r} names no requirement file")
         elif f"AC-{match.group(2)}" not in requirement.criteria:
@@ -199,6 +253,7 @@ class Evidence:
     scenarios: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     tests: dict[str, int] = field(default_factory=dict)
     suites: list[dict[str, Any]] = field(default_factory=list)
+    invocations: dict[str, Any] = field(default_factory=dict)
 
 
 def read_steps(run_dir: Path) -> list[dict[str, Any]]:
@@ -229,10 +284,13 @@ def comment_tags(path: Path) -> list[tuple[int, str]]:
     return found
 
 
-def write_suite_result(run_dir: Path, suite: Path, exitstatus: int, checks: int = 0) -> Path:
-    """Records that ``suite`` ran in this run with ``exitstatus`` and ``checks`` executed checks:
-    ``run_dir/suite-<name>.json`` holds the file, the exit status, the check count and the tags of
-    its comment lines. A suite with exit status 0 and no check counts as failed when collected."""
+def write_suite_result(
+    run_dir: Path, suite: Path, exitstatus: int, checks: int = 0, failed: int = 0
+) -> Path:
+    """Records that ``suite`` ran in this run with ``exitstatus``, ``checks`` executed checks and
+    ``failed`` failed ones: ``run_dir/suite-<name>.json`` holds the file, the exit status, both
+    counts and the tags of its comment lines. A suite with exit status 0 and no check, or with a
+    failed check, counts as failed when collected."""
     if not run_dir.is_dir():
         raise EvidenceError(f"run directory {run_dir} does not exist")
     if not suite.is_file():
@@ -242,6 +300,7 @@ def write_suite_result(run_dir: Path, suite: Path, exitstatus: int, checks: int 
         "file": _shown(suite),
         "exitstatus": int(exitstatus),
         "checks": int(checks),
+        "failed": int(failed),
         "tags": [{"line": line, "tag": tag} for line, tag in comment_tags(suite)],
     }
     target = run_dir / f"suite-{suite.name}.json"
@@ -249,13 +308,35 @@ def write_suite_result(run_dir: Path, suite: Path, exitstatus: int, checks: int 
     return target
 
 
+def tooling_files() -> list[Path]:
+    """The tooling test files of this tree: shell suites and Python unit tests."""
+    return sorted(
+        path for pattern in TOOLING_PATTERNS for path in TOOLING_TESTS.glob(pattern) if path.is_file()
+    )
+
+
 def read_suite_results(run_dir: Path) -> list[dict[str, Any]]:
-    """The suite results of one run directory, each with the name of its result file."""
+    """The suite results of one run directory, each with the name of its result file.
+
+    A result counts only when it belongs to a tooling test file of this tree: it names the file,
+    its own name derives from the file's and its tags are the file's comment tags. Anything else
+    in the run directory was written by no runner.
+    """
+    files = {_shown(path): path for path in tooling_files()}
     results = []
     for path in sorted(run_dir.glob("suite-*.json")):
         result = json.loads(path.read_text(encoding="utf-8"))
         if result.get("schema") != SCHEMA:
             raise EvidenceError(f"{path}: unsupported suite result schema")
+        suite = files.get(str(result.get("file")))
+        if suite is None or path.name != f"suite-{suite.name}.json":
+            raise EvidenceError(
+                f"{path}: names no tooling test file of this tree ({result.get('file')!r}); a suite"
+                " result is written by scripts/tests/run.sh or `evidence.py unittest` only"
+            )
+        tags = [{"line": line, "tag": tag} for line, tag in comment_tags(suite)]
+        if result.get("tags") != tags:
+            raise EvidenceError(f"{path}: its tags differ from the comment tags of {result['file']}")
         results.append({**result, "report": path.name})
     return results
 
@@ -270,9 +351,8 @@ def tooling_tag_problems(
         for result in results
         for entry in result["tags"]
     }
-    for pattern in TOOLING_PATTERNS:
-        for path in sorted(TOOLING_TESTS.glob(pattern)):
-            located.update((_shown(path), line, tag) for line, tag in comment_tags(path))
+    for path in tooling_files():
+        located.update((_shown(path), line, tag) for line, tag in comment_tags(path))
     return [
         f"{file}:{line}: {problem}"
         for file, line, tag in sorted(located)
@@ -287,9 +367,11 @@ def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evide
         report = json.loads(report_path.read_text(encoding="utf-8"))
         if report.get("schema") != SCHEMA:
             raise EvidenceError(f"{report_path}: unsupported report schema")
+        if "invocation" in report:
+            evidence.invocations[report_path.name] = report["invocation"]
         for test in report["tests"]:
-            outcome = test["outcome"]
-            evidence.tests[outcome] = evidence.tests.get(outcome, 0) + 1
+            evidence.tests[test["outcome"]] = evidence.tests.get(test["outcome"], 0) + 1
+            outcome = NOT_RUN if test["outcome"] in _UNRUN_OUTCOMES else test["outcome"]
             item = {
                 "test": test["nodeid"],
                 "outcome": outcome,
@@ -307,11 +389,18 @@ def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evide
             "tooling test tags that name no existing criterion:\n  " + "\n  ".join(problems)
         )
     for result in results:
-        checks = int(result.get("checks", 0))
-        # AVE-REQ-097 AC-4: a suite that exited 0 but ran no check is a placeholder and fails.
-        outcome = "passed" if result["exitstatus"] == 0 and checks >= 1 else "failed"
+        checks, failed = int(result.get("checks", 0)), int(result.get("failed", 0))
+        # AVE-REQ-097 AC-4: a suite that exited 0 but ran no check is a placeholder, and one whose
+        # own total reports a failed check caught a failure and returned success: both fail.
+        passed = result["exitstatus"] == 0 and checks >= 1 and failed == 0
+        outcome = "passed" if passed else "failed"
         evidence.suites.append(
-            {"file": result["file"], "exitstatus": result["exitstatus"], "checks": checks}
+            {
+                "file": result["file"],
+                "exitstatus": result["exitstatus"],
+                "checks": checks,
+                "failed": failed,
+            }
         )
         for tag in sorted({entry["tag"] for entry in result["tags"]}):
             item = {
@@ -321,7 +410,27 @@ def collect(run_dir: Path, known: dict[str, Requirement] | None = None) -> Evide
                 "report": result["report"],
             }
             evidence.criteria.setdefault(tag, []).append(item)
+    # A tooling test file without a suite result of this run exists and did not run.
+    reported = {result["file"] for result in results}
+    for path in tooling_files():
+        if _shown(path) in reported:
+            continue
+        for tag in sorted({tag for _line, tag in comment_tags(path)}):
+            item = {"test": _shown(path), "outcome": NOT_RUN, "contract": False, "report": ""}
+            evidence.criteria.setdefault(tag, []).append(item)
+    # A pytest test deselected in one report and executed in another of the same run did run.
+    for tagged in (evidence.criteria, evidence.scenarios):
+        for tag, items in tagged.items():
+            ran = {item["test"] for item in items if item["outcome"] != NOT_RUN}
+            tagged[tag] = [
+                item for item in items if item["outcome"] != NOT_RUN or item["test"] not in ran
+            ]
     return evidence
+
+
+def unrun(items: list[dict[str, Any]]) -> int:
+    """How many of a criterion's tagged tests exist and did not run."""
+    return sum(1 for item in items if item["outcome"] == NOT_RUN)
 
 
 def _unit_problems(result: unittest.TestResult) -> list[str]:
@@ -342,9 +451,84 @@ def _unit_problems(result: unittest.TestResult) -> list[str]:
     return problems
 
 
+def tagged_tests(path: Path) -> list[tuple[int, str, str]]:
+    """(line, tag, test name) for each comment tag of a unit-test file; the name is the ``def
+    test_…`` on the next code line (decorators skipped), or "" when no test follows the tag."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    found = []
+    for number, tag in comment_tags(path):
+        name = ""
+        for line in lines[number:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("#", "@")):
+                continue
+            match = _TEST_DEF.match(line)
+            name = match.group(1) if match else ""
+            break
+        found.append((number, tag, name))
+    return found
+
+
+class _RecordingResult(unittest.TextTestResult):
+    """Remembers the method name of every test that started."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.started: set[str] = set()
+
+    def startTest(self, test: unittest.TestCase) -> None:  # noqa: N802 - unittest's name
+        self.started.add(test.id().rsplit(".", 1)[-1])
+        super().startTest(test)
+
+
+def run_unit_file(path: Path, result_path: Path) -> int:
+    """Runs one ``test_*.py`` file in this interpreter and writes ``{"tests": n, "problems":
+    [...]}`` to ``result_path`` (the ``unittest-file`` command, started once per file).
+
+    Warnings are errors, so a test that returns a value (a generator or a coroutine whose body
+    never ran) fails; each comment tag must stand above a test that ran."""
+    warnings.simplefilter("error")
+    loader = unittest.TestLoader()
+    suite = loader.discover(str(path.parent), pattern=path.name, top_level_dir=str(path.parent))
+    runner = unittest.TextTestRunner(
+        stream=sys.stdout, verbosity=1, resultclass=_RecordingResult, warnings="error"
+    )
+    result = runner.run(suite)
+    problems = _unit_problems(result)
+    for line, tag, name in tagged_tests(path):
+        if not name:
+            problems.append(f"line {line}: the tag {tag} stands above no test")
+        elif name not in result.started:
+            problems.append(f"line {line}: {tag} stands above {name}, which did not run")
+    _write_json(result_path, {"tests": result.testsRun, "problems": problems})
+    return 1 if problems else 0
+
+
+def _run_unit_child(path: Path) -> tuple[int, list[str]]:
+    """Runs one unit-test file in a child interpreter; returns (tests run, problems).
+
+    A file that ends the interpreter, or replaces the runner's judgement in its own process,
+    reaches no other file and no result of this process: without a result the file fails."""
+    with tempfile.TemporaryDirectory(prefix="evidence-unit.") as scratch:
+        result_path = Path(scratch) / "result.json"
+        command = [sys.executable, "-B", str(Path(__file__).resolve()), "unittest-file"]
+        completed = subprocess.run(  # noqa: S603 - the interpreter running this file
+            [*command, str(path), "--result", str(result_path)], check=False
+        )
+        try:
+            data = json.loads(result_path.read_text(encoding="utf-8"))
+            tests, problems = int(data["tests"]), [str(problem) for problem in data["problems"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            return 0, [f"the test process ended without a result (exit {completed.returncode})"]
+    if completed.returncode != 0 and not problems:
+        problems.append(f"the test process exited {completed.returncode}")
+    return tests, problems
+
+
 def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
-    """Runs each ``test_*.py`` file of ``directory`` as one suite; writes its suite result into
-    ``run_dir`` when given. Exit status 1 when any file fails or none exists."""
+    """Runs each ``test_*.py`` file of ``directory`` as one suite, each in its own interpreter;
+    writes its suite result into ``run_dir`` when given. Exit status 1 when any file fails or
+    none exists."""
     files = sorted(directory.glob(UNIT_PATTERN))
     if not files:
         print(f"FAIL: no {UNIT_PATTERN} file in {directory}")
@@ -352,17 +536,14 @@ def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
     failed = []
     for path in files:
         print(f"--- {_shown(path)}", flush=True)
-        loader = unittest.TestLoader()
-        suite = loader.discover(str(directory), pattern=path.name, top_level_dir=str(directory))
-        result = unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(suite)
-        problems = _unit_problems(result)
+        tests_run, problems = _run_unit_child(path)
         if problems:
             failed.append(path)
             print(f"FAIL: {_shown(path)} — a test that did not pass proves nothing:")
             for problem in problems:
                 print(f"  {problem}")
         if run_dir is not None:
-            write_suite_result(run_dir, path, 1 if problems else 0, result.testsRun)
+            write_suite_result(run_dir, path, 1 if problems else 0, tests_run, len(problems))
     if failed:
         print(f"evidence.py unittest: FAIL ({len(failed)} of {len(files)} file(s))")
         return 1
@@ -371,27 +552,38 @@ def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
 
 
 def criterion_state(items: list[dict[str, Any]], inspected: bool) -> str:
-    """``passed``, ``inspected``, ``contract-only``, ``failed`` or ``missing``."""
-    if any(item["outcome"] != "passed" for item in items):
+    """``passed``, ``inspected``, ``contract-only``, ``failed``, ``not-run`` (every tagged test
+    exists and none ran) or ``missing`` (no test carries the tag)."""
+    ran = [item for item in items if item["outcome"] != NOT_RUN]
+    if any(item["outcome"] != "passed" for item in ran):
         return "failed"
-    if any(not item["contract"] for item in items):
+    if any(not item["contract"] for item in ran):
         return "passed"
     if inspected:
         return "inspected"
-    return "contract-only" if items else "missing"
+    if ran:
+        return "contract-only"
+    return NOT_RUN if items else "missing"
 
 
 # --------------------------------------------------------------------------------------------
 # Manifest
 
 
-def _run(argv: list[str]) -> str:
+def _run(argv: list[str], whole: bool = False) -> str:
+    """The first line (the whole text with ``whole``) a command prints, or "unavailable". No Git
+    variable of the caller points the command at another repository."""
+    environment = {k: v for k, v in os.environ.items() if k not in _REDIRECTING}
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, check=False, cwd=ROOT)
+        completed = subprocess.run(
+            argv, capture_output=True, text=True, check=False, cwd=ROOT, env=environment
+        )
     except OSError:
         return "unavailable"
-    lines = completed.stdout.strip().splitlines()
-    return lines[0] if completed.returncode == 0 and lines else "unavailable"
+    text = completed.stdout.strip()
+    if completed.returncode != 0 or not text:
+        return "unavailable"
+    return text if whole else text.splitlines()[0]
 
 
 def current_fingerprint() -> str:
@@ -412,13 +604,35 @@ def configuration() -> dict[str, str]:
     return {str(path.relative_to(ROOT)): _sha256(path) for path in files}
 
 
+_ENVIRONMENT_LISTING = (
+    "import importlib.metadata as m;"
+    "print(chr(10).join(sorted(d.metadata['Name'] + '==' + d.version for d in m.distributions())))"
+)
+
+
 def toolchain() -> dict[str, str]:
+    """The tools a run uses: the media tools are the binaries the product resolves (AVE_FFMPEG and
+    AVE_FFPROBE, else PATH), and ``environment`` is a digest of the packages installed in the
+    backend environment (a package outside uv.lock changes it)."""
+    ffmpeg = os.environ.get("AVE_FFMPEG") or "ffmpeg"
+    ffprobe = os.environ.get("AVE_FFPROBE") or "ffprobe"
     return {
         "python3": sys.version.split()[0],
         "uv": _run(["uv", "--version"]),
-        "ffmpeg": _run(["ffmpeg", "-hide_banner", "-version"]),
-        "ffprobe": _run(["ffprobe", "-hide_banner", "-version"]),
+        "ffmpeg": _run([ffmpeg, "-hide_banner", "-version"]),
+        "ffprobe": _run([ffprobe, "-hide_banner", "-version"]),
+        "environment": _environment_digest(),
     }
+
+
+@functools.cache
+def _environment_digest() -> str:
+    """A digest of the packages installed in the backend environment (read once per process)."""
+    backend = ["uv", "run", "--frozen", "--quiet", "--directory", "backend", "python", "-c"]
+    packages = _run([*backend, _ENVIRONMENT_LISTING], whole=True)
+    if packages == "unavailable":
+        return packages
+    return hashlib.sha256(packages.encode("utf-8")).hexdigest()[:16]
 
 
 def _now() -> str:
@@ -435,6 +649,11 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
     """Writes ``run_dir/manifest.json`` and ``latest-<tier>.json``; prunes old runs."""
     if not run_dir.is_dir():
         raise EvidenceError(f"run directory {run_dir} does not exist")
+    if (run_dir / "manifest.json").exists():
+        raise EvidenceError(
+            f"{run_dir} is recorded already: a run is recorded once, for the tree and the tier"
+            " that produced its results"
+        )
     steps = read_steps(run_dir)
     evidence = collect(run_dir)
     status = _run(["git", "status", "--porcelain", "--untracked-files=all"])
@@ -449,6 +668,7 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
         "recorded": _now(),
         "toolchain": toolchain(),
         "configuration": configuration(),
+        "pytest": evidence.invocations,
         "steps": steps,
         "tests": evidence.tests,
         "suites": evidence.suites,
@@ -463,8 +683,8 @@ def record(run_dir: Path, tier: str, fingerprint: str) -> dict[str, Any]:
     return manifest
 
 
-def latest_manifest(tier: str | None) -> tuple[Path, dict[str, Any]]:
-    """The newest manifest of ``tier``, or of any tier when ``tier`` is None."""
+def manifests(tier: str | None) -> list[tuple[Path, dict[str, Any]]]:
+    """The newest manifest of ``tier``, or of every tier when ``tier`` is None."""
     candidates = [VERIFY_DIR / f"latest-{name}.json" for name in ((tier,) if tier else TIERS)]
     found = [
         (path, json.loads(path.read_text(encoding="utf-8")))
@@ -474,7 +694,18 @@ def latest_manifest(tier: str | None) -> tuple[Path, dict[str, Any]]:
     if not found:
         wanted = f"tier {tier}" if tier else "any tier"
         raise EvidenceError(f"no recorded verification run for {wanted}; run ./scripts/verify.sh")
-    return max(found, key=lambda pair: pair[1]["recorded"])
+    return found
+
+
+def staleness(manifest: dict[str, Any], fingerprint: str, tools: dict[str, str]) -> str:
+    """Why a manifest certifies nothing about the current tree and toolchain ("" when fresh)."""
+    if not manifest["fingerprint"] or manifest["fingerprint"] != fingerprint:
+        return "the tree changed since this run"
+    recorded = manifest.get("toolchain", {})
+    changed = sorted(name for name in set(recorded) | set(tools) if recorded.get(name) != tools.get(name))
+    if changed:
+        return "the toolchain differs from this run's (" + ", ".join(changed) + ")"
+    return ""
 
 
 # --------------------------------------------------------------------------------------------
@@ -489,8 +720,15 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    path, manifest = latest_manifest(args.tier)
-    fresh = bool(manifest["fingerprint"]) and manifest["fingerprint"] == current_fingerprint()
+    fingerprint, tools = current_fingerprint(), toolchain()
+    found = manifests(args.tier)
+    fresh_ones = [pair for pair in found if not staleness(pair[1], fingerprint, tools)]
+    # The heaviest fresh run decides: a fast run never hides a media or release run of this tree.
+    if fresh_ones:
+        path, manifest = max(fresh_ones, key=lambda pair: TIERS.index(pair[1]["tier"]))
+    else:
+        path, manifest = max(found, key=lambda pair: pair[1]["recorded"])
+    stale = staleness(manifest, fingerprint, tools)
     dirty = " (with uncommitted changes)" if manifest["uncommitted_changes"] else ""
     shown = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
     print(
@@ -498,14 +736,16 @@ def cmd_show(args: argparse.Namespace) -> int:
         f"commit {manifest['commit'][:12]}{dirty}, recorded {manifest['recorded']}"
     )
     print(
-        "Freshness: FRESH — the tree is unchanged since this run"
-        if fresh
-        else "Freshness: STALE — the tree changed since this run; it certifies nothing about the "
-        f"current tree (rerun ./scripts/verify.sh --tier {manifest['tier']})"
+        f"Freshness: STALE — {stale}; it certifies nothing about the current tree (rerun"
+        f" ./scripts/verify.sh --tier {manifest['tier']})"
+        if stale
+        else "Freshness: FRESH — the tree and the toolchain are unchanged since this run"
     )
     known = requirements()
-    shown_ids = args.ids or sorted({tag[:11] for tag in manifest["criteria"]})
-    unknown = [name for name in shown_ids if name not in known]
+    recorded_ids = sorted({tag.split(" ")[0] for tag in manifest["criteria"]})
+    shown_ids = args.ids or recorded_ids
+    # A manifest that names a requirement without a working file is refused in both forms.
+    unknown = sorted({name for name in [*shown_ids, *recorded_ids] if name not in known})
     if unknown:
         raise EvidenceError(
             f"unknown requirement IDs: {', '.join(unknown)} (no file in docs/requirements/)"
@@ -520,14 +760,21 @@ def cmd_show(args: argparse.Namespace) -> int:
         for criterion in requirement.criteria:
             items = manifest["criteria"].get(f"{requirement_id} {criterion}", [])
             state = criterion_state(items, criterion in requirement.inspected)
-            incomplete |= state not in ("passed", "inspected")
-            print(f"  {criterion:<6} {state:<14} {_test_summary(items)}")
-    failed_run = manifest["result"] != "PASS"
-    if args.require_complete and failed_run:
-        print("Completeness: the run FAILED; a failed run certifies no requirement complete")
-    if args.require_fresh and not fresh:
+            left = unrun(items)
+            incomplete |= state not in ("passed", "inspected") or left > 0
+            note = f" — {left} tagged test(s) did not run" if left and state != NOT_RUN else ""
+            print(f"  {criterion:<6} {state:<14} {_test_summary(items)}{note}")
+    failed_runs = sorted(
+        {manifest["tier"]} if manifest["result"] != "PASS" else set()
+    ) + sorted(m["tier"] for _path, m in fresh_ones if m["result"] != "PASS" and m is not manifest)
+    if args.require_complete and failed_runs:
+        print(
+            f"Completeness: the run of tier {', '.join(failed_runs)} FAILED; a failed run"
+            " certifies no requirement complete"
+        )
+    if args.require_fresh and stale:
         return 1
-    return 1 if args.require_complete and (incomplete or failed_run) else 0
+    return 1 if args.require_complete and (incomplete or failed_runs) else 0
 
 
 def _test_summary(items: list[dict[str, Any]], shown: int = 4) -> str:
@@ -539,7 +786,9 @@ def _test_summary(items: list[dict[str, Any]], shown: int = 4) -> str:
     return f"{len(items)} result(s): " + ", ".join(names[:shown]) + more
 
 
-def done_problems(run_dir: Path, known: dict[str, Requirement] | None = None) -> list[str]:
+def done_problems(
+    run_dir: Path, known: dict[str, Requirement] | None = None, tier: str = "release"
+) -> list[str]:
     """Criteria of `done` requirements that this run does not evidence, and requirement files
     outside the canonical form (their status and criteria have no single reading)."""
     known = requirements() if known is None else known
@@ -551,13 +800,19 @@ def done_problems(run_dir: Path, known: dict[str, Requirement] | None = None) ->
         for criterion in requirement.criteria:
             items = evidence.criteria.get(f"{requirement.id} {criterion}", [])
             state = criterion_state(items, criterion in requirement.inspected)
-            if state not in ("passed", "inspected"):
+            left = unrun(items)
+            if state in ("failed", "contract-only", "missing"):
                 problems.append(f"{requirement.id} {criterion}: {state} in this run")
+            elif tier == "release" and left:
+                # The release tier runs every test: one that did not run leaves the criterion open.
+                problems.append(
+                    f"{requirement.id} {criterion}: {left} tagged test(s) did not run in this run"
+                )
     return problems
 
 
 def cmd_check_done(args: argparse.Namespace) -> int:
-    problems = done_problems(Path(args.dir))
+    problems = done_problems(Path(args.dir), tier=args.tier)
     for problem in problems:
         print(f"ERROR: {problem}")
     done = sum(1 for r in requirements().values() if r.status == "done")
@@ -567,7 +822,51 @@ def cmd_check_done(args: argparse.Namespace) -> int:
             " this run, or requirement files outside the canonical form"
         )
         return 1
-    print(f"OK: every criterion of the {done} done requirements is evidenced by this run")
+    if args.tier == "release":
+        print(
+            f"OK: every criterion of the {done} done requirements has a passing test in this run"
+            " or a recorded inspection that its Verification strategy names"
+        )
+    else:
+        print(
+            f"OK: no criterion of the {done} done requirements has failed, contract-only or missing"
+            f" evidence in this run (tier {args.tier}; the release tier runs every tagged test)"
+        )
+    return 0
+
+
+def report_problems(path: Path) -> list[str]:
+    """Why a pytest evidence report proves nothing: no report, a session that did not end with
+    status 0, no executed test, or a selected test that never ran."""
+    if not path.is_file():
+        return ["no report: the pytest session ended before it wrote one"]
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        tests = report["tests"]
+        status = int(report["exitstatus"])
+        outcomes = [str(test["outcome"]) for test in tests]
+    except (ValueError, KeyError, TypeError):
+        return ["the report is unreadable"]
+    problems = []
+    if report.get("schema") != SCHEMA:
+        problems.append("unsupported report schema")
+    if status != 0:
+        problems.append(f"the session ended with status {status}")
+    if not any(outcome not in _UNRUN_OUTCOMES for outcome in outcomes):
+        problems.append("no test ran")
+    never = [test["nodeid"] for test in tests if test["outcome"] == NOT_RUN]
+    if never:
+        problems.append(f"{len(never)} selected test(s) never ran, for example {never[0]}")
+    return problems
+
+
+def cmd_check_report(args: argparse.Namespace) -> int:
+    problems = report_problems(Path(args.file))
+    for problem in problems:
+        print(f"ERROR: {args.file}: {problem}")
+    if problems:
+        print("FAIL: a pytest session that did not run its selected tests proves nothing")
+        return 1
     return 0
 
 
@@ -579,7 +878,7 @@ def cmd_unittest(args: argparse.Namespace) -> int:
 
 
 def cmd_record_suite(args: argparse.Namespace) -> int:
-    write_suite_result(Path(args.dir), Path(args.file), args.exit, args.checks)
+    write_suite_result(Path(args.dir), Path(args.file), args.exit, args.checks, args.failed)
     return 0
 
 
@@ -599,17 +898,26 @@ def main(argv: list[str] | None = None) -> int:
     show.set_defaults(handler=cmd_show)
     check = commands.add_parser("check-done", help="done requirements are evidenced by a run")
     check.add_argument("--dir", required=True)
+    check.add_argument("--tier", choices=TIERS, default="release")
     check.set_defaults(handler=cmd_check_done)
     unit = commands.add_parser("unittest", help="run the tooling unit tests; record each file")
     unit.add_argument("--dir", default=os.environ.get("AVE_EVIDENCE_DIR", ""))
     unit.add_argument("directory", nargs="?", default=str(TOOLING_TESTS))
     unit.set_defaults(handler=cmd_unittest)
+    unit_file = commands.add_parser("unittest-file", help="run one unit-test file (internal)")
+    unit_file.add_argument("file")
+    unit_file.add_argument("--result", required=True)
+    unit_file.set_defaults(handler=lambda a: run_unit_file(Path(a.file), Path(a.result)))
     suite = commands.add_parser("record-suite", help="record one tooling suite's result")
     suite.add_argument("--dir", required=True)
     suite.add_argument("--file", required=True)
     suite.add_argument("--exit", required=True, type=int)
     suite.add_argument("--checks", required=True, type=int, help="checks the suite ran (TOTAL pass=N)")
+    suite.add_argument("--failed", type=int, default=0, help="checks that failed (TOTAL fail=M)")
     suite.set_defaults(handler=cmd_record_suite)
+    report = commands.add_parser("check-report", help="a pytest report holds executed tests")
+    report.add_argument("--file", required=True)
+    report.set_defaults(handler=cmd_check_report)
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))

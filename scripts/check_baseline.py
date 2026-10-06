@@ -582,6 +582,13 @@ def check_derived(base, files) -> None:
     for item_id, found in sorted(files.items()):
         if item_id in baseline_ids:
             continue
+        if len(found) != 1:
+            error(
+                WORKDIR,
+                f"{item_id} must have exactly one working file (found: "
+                + ", ".join(item.path.name for item in found)
+                + ")",
+            )
         for item in found:
             if item.number <= BASELINE_MAX[item.kind]:
                 error(
