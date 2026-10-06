@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-03 — M0 open; work paused at the session's usage limit; § In progress names every re-run command._
+_Last updated: 2026-10-06 — M0 open: AVE-REQ-093 red-team findings fixed; AVE-REQ-097 lenses and the AVE-REQ-094 review pending; AVE-REQ-096/098 reviewed PASS._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -23,20 +23,23 @@ from the drafts.
 
 ## In progress
 
-- AVE-REQ-093 and AVE-REQ-097 `in-progress`: every PASS so far fell to one skeptic probe (fixes `0e4f8d9`,
-  `a681e4d`, `442f68c`, `a10e2df`, `56e5864`; Status logs hold each). A six-lens red-team pass
-  ([brief](briefs/2026-10-03-m0-gates-red-team.md)) enumerates the remaining probes: launched 2026-10-03;
-  verdict not recorded; on resume without a recorded verdict, re-run its script
-  (`wf_4514929c-244` in [docs/workflows/](workflows/README.md)) with `{commit: '35f99c5'}`. Then one review each with a skeptic.
-- AVE-REQ-094 `in-progress`: the repair run `wf_d57d9cab-829` ([brief](briefs/2026-10-03-ave-req-094-probe-evidence.md))
-  finished research, tests (`49ecb21`) and implementation (`fcd97f0`, branch `ave-req-094-probe-evidence`,
-  unmerged and pushed); review PASS at `fcd97f0`; its skeptic refuted the PASS (findings in [handback part 4](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-4.md)); repair on the branch, then review again.
+- AVE-REQ-093 and AVE-REQ-097 `in-progress`: the red-team pass ([brief](briefs/2026-10-03-m0-gates-red-team.md),
+  run `wf_98f469f7-ec5`) returned twenty findings from the three AVE-REQ-093 lenses
+  ([handback part 1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md)); all are fixed on this branch: one
+  reader (`scripts/reqfile.py`) for the baseline gate and the done gate, the canonical form, marker lines bound
+  to their text, the roadmap lists, the successor's identity, dependencies through supersession, an isolated
+  checker. The AVE-REQ-097 lenses and both critics ended with a model-access error and were launched again
+  (lens 097-F as `wf_44376763-43f`): launched 2026-10-06; verdict not recorded; on resume without a recorded
+  verdict, re-run each script in [docs/workflows/](workflows/README.md) with `{commit: '35f99c5'}`. Then the
+  AVE-REQ-097 fixes and one review each with a skeptic.
+- AVE-REQ-094 `in-progress` here and `verification` on branch `ave-req-094-probe-evidence` (pushed, `1768892`):
+  the repair of the skeptic's refutation is there (`1d9fd0d`). Its review `wf_7d239bd1-b31` ended with the same
+  access error and no verdict. Next: merge this branch into the task branch, release tier there, re-run the
+  review script with that commit; on an upheld PASS merge the branch `--no-commit`, release tier, `done` after
+  AVE-REQ-093.
 - AVE-REQ-096 and AVE-REQ-098 `in-progress`: review PASS at `d4d3883` (`wf_ed1f5104-63a`), challenges upheld;
   `done` follows AVE-REQ-093 and AVE-REQ-094.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
-- Next delegated tasks, drafts persisted: [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
-  [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md); each becomes a brief with the closing M0
-  commit at launch.
 
 ## Recently completed
 
@@ -58,8 +61,9 @@ from the drafts.
    fill § Test evidence, set `done` in the order 093 → 094 → 096/097/098, update TRACEABILITY.md, commit, push;
    then `git push origin <commit>:main` after green CI.
 2. `milestone-review` M0; record the result in ROADMAP.md.
-3. Launch M1 backend core ‖ M2 synchronization in isolated worktrees from the commit that closes M0 (finalize the
-   drafts with that hash first).
+3. Launch [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
+   [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md) in isolated worktrees from the commit that
+   closes M0 (each draft becomes a brief with that hash first).
 
 ## Blockers
 
@@ -82,5 +86,6 @@ None.
 ## Verification status
 
 `./scripts/verify.sh --tier release` PASS at `cd21812` in the development container (arm64; 12 of 12 steps); CI
-(x86_64) release tier green at `6ddd91e`, the newest commit CI had verified when this file was written; GitHub
-holds the state of later pushes. The fast tier passes on every commit of this branch (Stop gate).
+(x86_64) release tier green at `bb94bf7`, the newest commit CI had verified when this file was written, and red
+for the one commit `56e5864` (a link to a brief the next commit added; [WF-006](WORKFLOW_LOG.md)). GitHub holds
+the state of later pushes. The fast tier passes on every commit of this branch (Stop gate).

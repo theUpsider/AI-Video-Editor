@@ -70,6 +70,7 @@ expect "bad filename (digits)"             1 "ERROR: $R/AVE-REQ-3-bad.md: filena
 expect "bad filename (slug case)"          1 "ERROR: $R/AVE-REQ-003-Bad_Slug.md: filename must match" "cp $R/AVE-REQ-002-crlf-requirement.md $R/AVE-REQ-003-Bad_Slug.md"
 expect "id mismatch"                       1 "frontmatter id 'AVE-REQ-009' must equal the filename ID AVE-REQ-001" "sub $R/AVE-REQ-001-done-requirement.md 'id: AVE-REQ-001' 'id: AVE-REQ-009'"
 expect "invalid status"                    1 "invalid status 'started'" "sub $R/AVE-REQ-002-crlf-requirement.md 'status: proposed' 'status: started'"
+expect "repeated frontmatter key"          1 "AVE-REQ-001-done-requirement.md: frontmatter key status is repeated" "sub $R/AVE-REQ-001-done-requirement.md 'status: done' \"\$(printf 'status: ready\\nstatus: done')\""
 expect "invalid priority"                  1 "invalid priority 'high'" "sub $R/AVE-REQ-002-crlf-requirement.md 'priority: should' 'priority: high'"
 expect "invalid type"                      1 "invalid type 'feature'" "sub $R/AVE-REQ-002-crlf-requirement.md 'type: non-functional' 'type: feature'"
 expect "invalid source"                    1 "invalid source 'ai'" "sub $R/AVE-REQ-002-crlf-requirement.md 'source: derived' 'source: ai'"

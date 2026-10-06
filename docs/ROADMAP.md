@@ -21,6 +21,12 @@ When working, read only the current milestone entry; [PROGRESS.md](PROGRESS.md)
 6. Re-plan when discoveries invalidate assumptions; log each change in § Re-planning log.
 7. Do not treat the roadmap as immutable. Update it whenever requirements, assumptions or
    evidence change.
+8. Every requirement that is not superseded stands on exactly one requirement list: a version-one
+   requirement under the milestone its `primary_gate` names (on a `Proposed during …` line while it
+   is `proposed`), an exclusion in the Deferred group. A milestone with Status done lists finished
+   requirements only. `scripts/check_baseline.py` reads the lists of the milestone entries
+   (`### M<n> — …`, `- **Requirements …:**`, `- **Proposed during …:**`) and fails on a difference;
+   this file holds no HTML comment, so every list the gate reads is a list readers see.
 
 ## Planning rules
 

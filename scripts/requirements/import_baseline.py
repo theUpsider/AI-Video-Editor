@@ -550,8 +550,9 @@ def mapping_content(base: dict) -> str:
         " below records the import; frontmatter `status` is current.",
         "3. Log every change to a working requirement in its `## Status` section with the reason"
         " ([README.md](README.md) § Changing requirements).",
-        "4. A changed or removed baseline criterion needs a Status-log line"
-        " `AC-n changed: <reason>`;"
+        "4. A changed, removed or added criterion needs its marker line in the Status log"
+        " (`AC-n changed [<mark>]: <reason>`, `AC-n removed: <reason>`,"
+        " `AC-n added [<mark>]: <reason>`; [README.md](README.md) § Changing requirements rule 1);"
         " check_baseline.py reports it as a recorded change and fails on an unrecorded one. Added"
         " criteria take the next free AC number.",
         "5. `scope`, `parent`, `dependencies`, `origins` and `scenarios` equal the baseline"

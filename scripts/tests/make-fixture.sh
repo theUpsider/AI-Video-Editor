@@ -30,8 +30,9 @@ printf '# stand-in lock file for test fixtures\n' > backend/uv.lock
 mkdir -p backend/tests
 printf '"""stand-in evidence plugin for test fixtures"""\n' > backend/tests/evidence_plugin.py
 printf '# Task briefs\n\nTemplate and rules for task briefs (stand-in).\n' > docs/briefs/README.md
-# verify.sh records every run with the real evidence tool (standard library only).
-cp "$REPO/scripts/evidence.py" scripts/
+# verify.sh records every run with the real evidence tool and its requirement-file reader
+# (standard library only).
+cp "$REPO/scripts/evidence.py" "$REPO/scripts/reqfile.py" scripts/
 cp "$REPO/.claude/settings.json" .claude/
 cp "$REPO/.gitignore" "$REPO/.gitattributes" "$REPO/.env.example" .
 cp "$REPO/.github/workflows/verify.yml" .github/workflows/

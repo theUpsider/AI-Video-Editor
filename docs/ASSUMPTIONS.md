@@ -201,8 +201,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-012 — A requirement's Description is compared with the baseline as a whole section
 - **Date:** 2026-10-03
 - **Assumption:** The baseline check compares the whole `## Description` section of an imported requirement with the
-  baseline statement, fenced blocks included, ignoring trailing whitespace on each line and blank lines around the
-  section; a difference needs a Status-log line `Description changed: <reason>`.
+  baseline statement, fenced blocks included, exactly, apart from blank lines around the section; a difference
+  needs a Status-log line that opens with `Description changed [<mark>]: <reason>` (the mark is a digest of the
+  new text; revised 2026-10-06).
 - **Reason:** Text added in a fenced block changes the statement as much as plain text does.
 - **Impact:** Every visible edit of an imported Description needs its logged reason.
 - **Status:** open
