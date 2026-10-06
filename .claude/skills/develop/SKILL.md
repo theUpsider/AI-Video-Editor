@@ -102,6 +102,8 @@ Commit: <no | yes, after ./scripts/verify.sh passes, message "AVE-REQ-NNN: <impe
 Return the implement-requirement report.
 ```
 
+A writer that a workflow run places in a worktree the lead created gets the same `Worktree: yes — base commit <full hash>` line; a later stage that continues in that worktree confirms that `git rev-parse HEAD` equals the commit the previous stage handed over. A branch name confirms nothing about the base.
+
 When the report returns, persist it first as the task's handback, `docs/briefs/handbacks/<brief-slug>.md` (`<brief-slug>.part-<n>.md` for a task run in parts), unless the task wrote that file itself because its brief's handback schema names it; it is committed with the work it reports. Then:
 1. `COMPLETE`: inspect the diff yourself (`git diff`, or `git diff HEAD...<branch>` for a worktree branch); apply the "Shared-document updates for the lead" you agree with (proposed assumptions and follow-up requirements go through section 10); run `./scripts/verify.sh`. The status stays `in-progress` until section 6 step 2.
 2. `PARTIAL` or `BLOCKED`: classify the cause (section 7), resolve it (decide the ambiguity, consult the architect, remove the blocker), then re-delegate with the resolution as a constraint or finish directly.
@@ -143,6 +145,7 @@ At most two writing agents (implementer, tester, architect, writing workflow age
 1. Run `./scripts/verify.sh --tier release`; it must pass (Definition of Done item 4: the release tier runs every tagged test). Repair failures through section 7.
 2. Record the transition `in-progress → verification` (TRACEABILITY.md Implementation and Tests from the requirement's Implementation evidence).
 3. Invoke the `verify-requirement` skill with argument `AVE-REQ-NNN` (Skill tool, or `/verify-requirement AVE-REQ-NNN`). It forks the `reviewer` with clean context and returns the verdict report. Add no briefing: the requirement and the repository are its inputs.
+   - As a workflow run (several requirements, reviewers in private clones, a skeptic stage): the run is a delegated task and starts from a brief (section 4) that names the requirements and their criteria, the commit, the clone rule as its allowed paths, the commands and the report schema; its script is copied to `docs/workflows/`. Each reviewer follows `.claude/skills/verify-requirement/SKILL.md` from the repository. A skeptic, given the same brief and the reviewer's report, tries to refute each PASS with evidence from a run or a file; a refuted PASS counts as FAIL. Reviewer and skeptic reports persist as the brief's handback parts.
    - Without subagents (the sequential fallback of `CLAUDE.md` § Delegation): the requirement stays `verification` and the lead continues other work. The review runs in a fresh session, or a context holding nothing of the implementation work, that follows `.claude/skills/verify-requirement/SKILL.md` from the repository alone (the requirement file, its brief, `git diff`). Its verdict is recorded with the note `sequential review in a fresh session` in the Status-log line; until then the requirement stays `verification`.
 4. Read the verdict. It counts as PASS only when the first line is `VERDICT: PASS`, every AC row is PASS with evidence, and § Blocking says "None."; treat everything else as FAIL.
 5. PASS → section 8. FAIL → section 7.

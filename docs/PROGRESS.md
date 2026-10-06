@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: every red-team and review finding is fixed; the final review round of the five M0 requirements is launched._
+_Last updated: 2026-10-06 — M0 open: the final review round returned FAIL for the five M0 requirements; the fix round is briefed._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -17,52 +17,42 @@ Host: Windows 11 ARM64; every check runs in the development container (`scripts/
 
 ## Current objective
 
-Finish M0: re-verify AVE-REQ-093/094/096/097/098 on release-tier evidence (order 093 → 094 → 096/097/098), record
-their Test evidence, move them to `done`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization
-from the drafts.
+Finish M0: close the findings of the final review round on AVE-REQ-093/094/096/097/098, review again (brief
+first, status `verification` first), move the five to `done` in the order 093 → 094 → 096/097/098, run the M0
+milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## In progress
 
-- Final review round of M0, launched 2026-10-06 as workflow `wf_7d9d015c-906`
-  ([script](workflows/verify-m0-final-wf_7d9d015c-906.js)): `verify-requirement` with a skeptic for AVE-REQ-093,
-  AVE-REQ-097, AVE-REQ-096 and AVE-REQ-098 at `2df637f` and for AVE-REQ-094 at `d4147d8` (branch
-  `ave-req-094-probe-evidence`, pushed, status `verification` there). Verdicts not recorded; on resume without a
-  recorded verdict, re-run the Workflow tool with that script and
-  `{commit: '2df637f', commit094: 'd4147d8'}` (`only: ['AVE-REQ-NNN', …]` limits the run).
-- What the round judges: the red-team pass ([brief](briefs/2026-10-03-m0-gates-red-team.md)) returned 55 lens
-  findings and 14 critic findings for AVE-REQ-093 and AVE-REQ-097, all fixed with their dispositions in handback
-  parts [1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md),
-  [2](briefs/handbacks/2026-10-03-m0-gates-red-team.part-2.md),
-  [3](briefs/handbacks/2026-10-03-m0-gates-red-team.part-3.md) and
-  [4](briefs/handbacks/2026-10-03-m0-gates-red-team.part-4.md) (160 mutants of the new rules, each caught by a
-  named case); AVE-REQ-094's accelerator verdict counts GPU devices only after the FAIL of `wf_db16f332-fdf`
-  ([handback part 5](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-5.md)); AVE-REQ-096 and
-  AVE-REQ-098 are verified again because the fixes changed files both rely on.
+- Final review round `wf_7d9d015c-906` (2026-10-06, `2df637f`; AVE-REQ-094 at `d4147d8`): FAIL for all five, 13
+  blocking findings, each a remaining gap or a false statement; the reports are handback parts 5 to 8 of the
+  gates brief and part 6 of the probe brief (`docs/briefs/handbacks/`, linked from the fix brief).
+- Fix round, [brief](briefs/2026-10-06-m0-final-review-fixes.md): track A (baseline gate), track B1 (run
+  environment, fingerprint by content, hooks), track B2 (evidence tool, suite runner, plugin, checker), one
+  writer each in a worktree from the commit that adds the brief, two at a time. Not launched when this file was
+  written; a launch is recorded here with its run ID and re-run command.
+- The lead's part: AVE-REQ-094 on branch `ave-req-094-probe-evidence` (pushed; only character devices named
+  `nvidia<N>` or `renderD<N>` that open count), and the rule corrections of
+  [WF-008](WORKFLOW_LOG.md) (review runs take a brief; every worktree writer confirms its base commit).
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
 
-- 2026-10-03 — Test tags converted: 112 backend tests carry `@pytest.mark.req(...)`; the AT-02 export test and the
-  sync media tests carry `scenario` markers; AVE-REQ-103 and AVE-REQ-104 proposed from the reviews.
-- 2026-10-03 — M0 process fixes integrated (`c084f7c`, parts `fb61875`…`529deda`): baseline pinned by its manifest
-  hash, tooling evidence per suite result with validated tags, permissions and models measured, checker, hooks and
-  probe hardened, persisted briefs and handbacks, one heavy media job enforced by a lock; release tier PASS.
-- 2026-10-03 — Media-core follow-ups integrated (`31e22f7`, commits `9be8ef5`, `b6a3e98`, `b832b01`): oracle
-  tightening, gap and jitter boundary tests, BT.709 background coding; two review lenses PASS (`wf_df2de811-039`).
-- 2026-10-02 — Development container for Windows and macOS hosts (ADR-009): `verify.sh` re-executes inside it on
-  Windows; the frame oracle decodes with the exact color conversion, so measurements agree on arm64 and x86_64.
-- 2026-10-02 — Media-core review fixes rounds 1–3 merged (`548c8ca`, `90a1f2e`, `dc89da2`): exact container
-  start, 10 ms audio jitter tolerance, keyframe-index seeking, sync chance and rival gates; round-3 review PASS.
+- 2026-10-06 — Red-team pass and critics on the AVE-REQ-093/097 gates: 69 findings fixed (`4413e4a`…`863c7c2`).
+- 2026-10-03 — Test tags converted to markers; AVE-REQ-103 and AVE-REQ-104 proposed from the reviews.
+- 2026-10-03 — M0 process fixes integrated (`c084f7c`): pinned baseline, suite results, briefs, heavy-media lock.
+- 2026-10-03 — Media-core follow-ups integrated (`31e22f7`); two review lenses PASS (`wf_df2de811-039`).
+- 2026-10-02 — Development container for Windows and macOS hosts (ADR-009).
 
 ## Next recommended work
 
-1. Record the pending verdicts (§ In progress names each re-run command); on every upheld PASS tick the ACs,
-   fill § Test evidence, set `done` in the order 093 → 094 → 096/097/098, update TRACEABILITY.md, commit, push;
-   then `git push origin <commit>:main` after green CI.
-2. `milestone-review` M0; record the result in ROADMAP.md.
-3. Launch [M1 backend core](briefs/drafts/2026-10-02-m1-backend-core.md) ‖
-   [M2 synchronization](briefs/drafts/2026-10-02-m2-synchronization.md) in isolated worktrees from the commit that
-   closes M0 (each draft becomes a brief with that hash first).
+1. Launch the fix round from its brief, integrate each track (merge without committing, release tier, handback
+   part), repair AVE-REQ-094 on its branch.
+2. Record `verification` for the five requirements, write the review brief, launch the review run with a
+   skeptic per PASS; on every upheld PASS tick the ACs, fill § Test evidence, set `done`, update
+   TRACEABILITY.md, commit, push; then `git push origin <commit>:main` after green CI.
+3. `milestone-review` M0; record the result in ROADMAP.md.
+4. Launch M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` in isolated worktrees from the commit
+   that closes M0 (each draft becomes a brief with that hash first).
 
 ## Blockers
 
@@ -87,6 +77,8 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS at `d4147d8` on the AVE-REQ-094 task branch, which holds the working
-branch merged in (development container, arm64; 13 of 13 steps). CI (x86_64) release tier green at `2df637f` on this branch, the newest commit CI had verified when this file was written; GitHub holds the state of later pushes. The fast tier (11 steps) passes on every
-commit of this branch (Stop gate).
+`./scripts/verify.sh --tier release` PASS at `d4147d8` on the AVE-REQ-094 task branch and in four reviewer
+clones at `2df637f` (development container, arm64; 13 of 13 steps). CI (x86_64) release tier green at `2df637f`,
+the newest commit CI had verified when this file was written; GitHub holds the state of later pushes. The fast
+tier (11 steps) passes on the working tree at every stop (Stop gate); the committed tree of `56e5864` failed it
+([WF-006](WORKFLOW_LOG.md)).
