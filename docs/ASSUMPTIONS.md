@@ -245,15 +245,16 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 
 ### ASM-015 — The probe counts accelerators by device nodes and nvidia-smi
 - **Date:** 2026-10-03
-- **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from GPU device nodes under
-  `/dev` (per-GPU nodes `nvidia<N>`, render nodes `dri/renderD<N>`) and from a GPU row with a memory figure that
-  `nvidia-smi` prints; FFmpeg's built-in hardware encoders, driver control nodes, display-only nodes and
-  directories never count.
+- **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from a character device
+  under `/dev` whose whole name is `nvidia<N>` or `dri/renderD<N>` and that this user can open, and from a GPU
+  row with a memory figure that `nvidia-smi` prints; FFmpeg's built-in hardware encoders and every other entry
+  of `/dev` never count.
 - **Reason:** AVE-REQ-094 edge case: a compiled-in encoder says nothing about a device.
 - **Impact:** A host with a render node, a software or virtual DRM driver included, reports `present` before any
   hardware encode is tested; AVE-REQ-076 still needs a test encode.
 - **Status:** open — 2026-10-06 — narrowed to GPU nodes and rows with a memory figure after the review of
-  AVE-REQ-094 at `eb73896` (handback part 5)
+  AVE-REQ-094 at `eb73896` (handback part 5), and to character devices with the whole name that open after the
+  review at `d4147d8` (handback part 6)
 - **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
 
 ### ASM-016 — .env.example lists the product's variables only

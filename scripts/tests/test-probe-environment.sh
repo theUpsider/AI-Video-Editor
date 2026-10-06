@@ -225,7 +225,10 @@ cd "$T" || exit 2
 unset PLAYWRIGHT_BROWSERS_PATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
 BARE_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome)"
 mkdir -p "$T/dev-none" "$T/dev-gpu" "$T/bin"
-: > "$T/dev-gpu/nvidia0"
+# A device node of the fixtures is a symbolic link to /dev/null: a character device that every user
+# can open and that needs no privilege to create.
+node() { ln -s /dev/null "$1"; }
+node "$T/dev-gpu/nvidia0"
 printf '#!/bin/sh\nprintf "9.9.9 (Claude Code)\\n"\n' > "$T/bin/claude"; chmod +x "$T/bin/claude"
 
 # Memory oracle: MemTotal (kB) to GiB with one decimal by integer arithmetic, half up; an exact tie
@@ -329,12 +332,12 @@ check "nvidia-smi fails while a device node exists: accelerator: present names t
 # entry of /dev are listed or ignored and never make an accelerator.
 mkdir -p "$T/dev-plain/shm" "$T/dev-ctl/nvidia-caps" "$T/dev-render/dri" "$T/dev-both/dri" \
   "$T/dev-card/dri/by-path" "$T/nvidia-empty" "$T/dev-file" "$T/dev-dirnode/nvidia0" "$T/dev-dirnode/dri/renderD128"
-: > "$T/dev-plain/null"; : > "$T/dev-plain/sda"
-: > "$T/dev-ctl/nvidiactl"; : > "$T/dev-ctl/nvidia-uvm"; : > "$T/dev-ctl/nvidia-uvm-tools"; : > "$T/dev-ctl/nvidia-modeset"
-: > "$T/dev-render/dri/renderD128"
-: > "$T/dev-both/nvidia0"; : > "$T/dev-both/dri/renderD128"; : > "$T/dev-both/dri/card0"
-: > "$T/dev-card/dri/card0"
-: > "$T/dev-file/nvidia-readme.txt"
+node "$T/dev-plain/null"; node "$T/dev-plain/sda"
+node "$T/dev-ctl/nvidiactl"; node "$T/dev-ctl/nvidia-uvm"; node "$T/dev-ctl/nvidia-uvm-tools"; node "$T/dev-ctl/nvidia-modeset"
+node "$T/dev-render/dri/renderD128"
+node "$T/dev-both/nvidia0"; node "$T/dev-both/dri/renderD128"; node "$T/dev-both/dri/card0"
+node "$T/dev-card/dri/card0"
+node "$T/dev-file/nvidia-readme.txt"
 NONE='accelerator: none (no device)'
 verdict() { printf '%s\n' "$OUT" | quiet -xF "$1" && [ "$(printf '%s\n' "$OUT" | grep -c '^accelerator:')" = 1 ]; }
 dev_run() { OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$1" "$PROBE" --offline 2>&1)"; CODE=$?; }
@@ -356,12 +359,66 @@ dev_run "$T/dev-file"
 check "a file named nvidia-readme.txt is no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
 dev_run "$T/dev-dirnode"
 check "directories named nvidia0 and dri/renderD128 are no devices: accelerator: none (no device)" 'verdict "$NONE"'
+# The whole name decides: a character device whose name only starts like a GPU node counts for nothing.
+for NAME in nvidia0.txt nvidia0-readme.txt nvidia3d-vision.conf nvidia dri/renderD128.bak dri/renderD1-notes dri/renderD; do
+  D="$T/dev-name-$(printf '%s' "$NAME" | tr '/.' '--')"
+  mkdir -p "$D/dri"; node "$D/$NAME"
+  dev_run "$D"
+  check "a character device named $NAME is no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
+done
+# The kind decides: only a character device counts under the exact name.
+mkdir -p "$T/dev-regular/dri" "$T/dev-fifo" "$T/dev-dangling/dri" "$T/dev-dirlink"
+: > "$T/dev-regular/nvidia0"; : > "$T/dev-regular/dri/renderD128"
+mkfifo "$T/dev-fifo/nvidia0"
+ln -s "$T/no-such-node" "$T/dev-dangling/nvidia0"; ln -s "$T/no-such-node" "$T/dev-dangling/dri/renderD128"
+ln -s "$T/dev-none" "$T/dev-dirlink/nvidia0"
+for KIND in regular fifo dangling dirlink; do
+  dev_run "$T/dev-$KIND"
+  check "nvidia0 as a $KIND entry is no device: accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE"'
+done
+# Every number counts: a host that is given one GPU of several holds another node than nvidia0.
+for NAME in nvidia1 nvidia10 dri/renderD129; do
+  D="$T/dev-number-$(printf '%s' "$NAME" | tr '/' '-')"
+  mkdir -p "$D/dri"; node "$D/$NAME"
+  dev_run "$D"
+  check "the node $NAME alone: accelerator: present names it" 'verdict "accelerator: present ($D/$NAME)"'
+done
+# Access decides: a node this user cannot open is reported as such. /dev/tty is a character device
+# whose open fails for a process without a controlling terminal, which setsid provides.
+mkdir -p "$T/dev-closed/dri" "$T/dev-half/dri"
+ln -s /dev/tty "$T/dev-closed/nvidia0"
+ln -s /dev/tty "$T/dev-half/nvidia0"; node "$T/dev-half/dri/renderD128"
+OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-closed" setsid -w "$PROBE" --offline 2>&1 </dev/null)"; CODE=$?
+check "a GPU node that cannot be opened: accelerator: none names the node without access" '[ "$CODE" = 0 ] && verdict "accelerator: none (no access to $T/dev-closed/nvidia0)"'
+OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-half" setsid -w "$PROBE" --offline 2>&1 </dev/null)"; CODE=$?
+check "one node without access beside one that opens: accelerator: present names the open one" 'verdict "accelerator: present ($T/dev-half/dri/renderD128)"'
 for ANSWER in "Sorry, no GPU is attached to this machine" "name, memory.total [MiB]" "[N/A], [N/A]"; do
   smi_run comma 0 "$T/dev-none" "$ANSWER"
   check "nvidia-smi exits 0 with '$ANSWER' (a comma, no memory figure): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
 done
 smi_run commaname 0 "$T/dev-none" "Acme GPU, Model X, 8192 MiB"
 check "a GPU name that holds a comma: the row is reported and counts" 'has_line nvidia-smi "Acme GPU, Model X, 8192 MiB" && verdict "accelerator: present (Acme GPU, Model X, 8192 MiB)"'
+smi_run errors 0 "$T/dev-none" "GPU 0 failed, 3 errors"
+check "nvidia-smi exits 0 with 'GPU 0 failed, 3 errors' (a figure without the unit): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
+smi_run later 0 "$T/dev-none" "Warning: persistence mode is off" "$GPU_ROW"
+check "a line that is no row before a GPU row: the row is reported and counts" 'has_line nvidia-smi "$GPU_ROW" && verdict "accelerator: present ($GPU_ROW)"'
+mkdir -p "$T/smi-stderr" "$T/smi-limit" "$T/smi-nolimit"
+printf '#!/bin/sh\necho "%s" >&2\nexit 0\n' "$GPU_ROW" > "$T/smi-stderr/nvidia-smi"; chmod +x "$T/smi-stderr/nvidia-smi"
+OUT="$(PATH="$T/smi-stderr:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" --offline 2>&1)"; CODE=$?
+check "a GPU row on the error stream alone: accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
+# The default time limit: a fake timeout first on PATH records its arguments and runs the command.
+printf '#!/bin/sh\necho "%s"\n' "$GPU_ROW" > "$T/smi-limit/nvidia-smi"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "%s"\nwhile [ "$#" -gt 0 ] && [ "$1" != nvidia-smi ]; do shift; done\nexec "$@"\n' "$T/smi-limit/arguments" > "$T/smi-limit/timeout"
+chmod +x "$T/smi-limit/nvidia-smi" "$T/smi-limit/timeout"
+OUT="$(PATH="$T/smi-limit:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" --offline 2>&1)"; CODE=$?
+check "the nvidia-smi query runs under a 10 s limit with a kill after 2 s more" 'has_line nvidia-smi "$GPU_ROW" && sed -n 1p "$T/smi-limit/arguments" | quiet -x -- "-k 2 10 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"'
+OUT="$(PATH="$T/smi-limit:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_SMI_TIMEOUT=7 "$PROBE" --offline 2>&1)"; CODE=$?
+check "AVE_PROBE_SMI_TIMEOUT replaces the limit of the query" 'has_line nvidia-smi "$GPU_ROW" && sed -n 1p "$T/smi-limit/arguments" | quiet -x -- "-k 2 7 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"'
+# Without a timeout command the query is left out: it could block the probe.
+printf '#!/bin/sh\necho "%s"\n' "$GPU_ROW" > "$T/smi-nolimit/nvidia-smi"; chmod +x "$T/smi-nolimit/nvidia-smi"
+NO_TIMEOUT_PATH="$(PATH="$BARE_PATH" path_without timeout)"
+OUT="$(PATH="$T/smi-nolimit:$NO_TIMEOUT_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" --offline 2>&1)"; CODE=$?
+check "nvidia-smi without a timeout command: the query is left out and reports no GPU" '[ "$CODE" = 0 ] && ! (PATH="$NO_TIMEOUT_PATH"; command -v timeout >/dev/null 2>&1) && has_line nvidia-smi "no GPU reported (timeout unavailable)" && verdict "$NONE"'
 mkdir -p "$T/smi-hang"
 printf '#!/bin/sh\nexec sleep 30\n' > "$T/smi-hang/nvidia-smi"; chmod +x "$T/smi-hang/nvidia-smi"
 STARTED=$SECONDS

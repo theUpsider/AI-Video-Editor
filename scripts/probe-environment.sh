@@ -12,7 +12,7 @@
 # Test inputs: AVE_PROBE_DEV_DIR replaces /dev (device nodes), AVE_PROBE_PROC_DIR replaces /proc
 # (meminfo, cpuinfo), AVE_PROBE_ROOT replaces the repository root that the disk, Git and
 # writability lines measure, and AVE_PROBE_SMI_TIMEOUT replaces the 10 s limit of the nvidia-smi
-# query.
+# query. The accelerator verdict opens each counted device node once and sends it nothing.
 # Not part of verify.sh: network results depend on the environment's policy.
 set -uo pipefail
 
@@ -50,41 +50,55 @@ item "disk (repository)" "$(df -h "$ROOT" 2>/dev/null | awk 'NR == 2 { print $4 
 
 section "Accelerators"
 gpu=""
-# smi_query — the GPU list of nvidia-smi, cut off after the time limit: a driver query that hangs
-# counts as a failure.
+# smi_query — the GPU list of nvidia-smi under a time limit: a driver query that hangs is ended
+# (killed 2 s after the limit when it ignores the signal) and counts as a failure.
 smi_query() {
-  if have timeout; then
-    timeout "${AVE_PROBE_SMI_TIMEOUT:-10}" nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-  else
-    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-  fi
+  timeout -k 2 "${AVE_PROBE_SMI_TIMEOUT:-10}" nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 }
-if have nvidia-smi; then
-  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory> MiB": without a
-  # driver or a device it prints a diagnostic and fails, and a line without a memory figure is a
-  # diagnostic or a header, no device.
+if ! have nvidia-smi; then
+  item "nvidia-smi" "not installed"
+elif ! have timeout; then
+  # Without a time limit the query could block the probe: it is left out and reports no GPU.
+  item "nvidia-smi" "no GPU reported (timeout unavailable)"
+else
+  # nvidia-smi counts only when it exits 0 and lists a GPU as "<name>, <memory> MiB" on its
+  # standard output: without a driver or a device it prints a diagnostic and fails, and a line
+  # without a memory figure is a diagnostic or a header, no device.
   if smi="$(smi_query 2>/dev/null)"; then
     gpu="$(printf '%s\n' "$smi" | grep -m1 -E '^.*[^,[:space:]].*,[[:space:]]*[0-9]+ MiB$')"
   fi
   item "nvidia-smi" "${gpu:-no GPU reported}"
-else
-  item "nvidia-smi" "not installed"
 fi
-# Listed: every entry named nvidia* and every entry of dri. Counted: the per-GPU nodes only,
-# nvidia<N> and dri/renderD<N>. Driver control nodes (nvidiactl, nvidia-uvm, nvidia-modeset,
-# nvidia-caps), display-only nodes (dri/card<N>) and directories (dri/by-path) exist on hosts
+# Listed: every entry named nvidia* and every entry of dri. Counted: a per-GPU node only, which is
+# a character device whose whole name is nvidia<N> or dri/renderD<N> and which this user can open.
+# Driver control nodes (nvidiactl, nvidia-uvm, nvidia-modeset, nvidia-caps), display-only nodes
+# (dri/card<N>), directories (dri/by-path), regular files and names with a suffix exist on hosts
 # without a GPU this environment can compute on.
 nvidia_nodes="$(find "$DEV_DIR" -mindepth 1 -maxdepth 1 -name 'nvidia*' 2>/dev/null | sort | tr '\n' ' ')"
 dri_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 2>/dev/null | sort | tr '\n' ' ')"
-gpu_nodes="$(find "$DEV_DIR" -mindepth 1 -maxdepth 1 ! -type d -name 'nvidia[0-9]*' 2>/dev/null | sort | tr '\n' ' ')"
-render_nodes="$(find "$DEV_DIR/dri" -mindepth 1 -maxdepth 1 ! -type d -name 'renderD[0-9]*' 2>/dev/null | sort | tr '\n' ' ')"
 item "/dev/nvidia* devices" "${nvidia_nodes:-none}"
 item "/dev/dri devices" "${dri_nodes:-none}"
-# The verdict counts GPU devices only (a GPU row of nvidia-smi, per-GPU device nodes): FFmpeg's
-# built-in hardware encoders (Media tools) need one.
-evidence="$(printf '%s' "${gpu:+$gpu }$gpu_nodes$render_nodes" | sed 's/ *$//')"
+# device_nodes <directory> <whole-name pattern> — the character devices of the directory with such a
+# name, one per line, sorted (a symbolic link counts as the device it points to).
+device_nodes() {
+  find -L "$1" -mindepth 1 -maxdepth 1 -type c 2>/dev/null | grep -E "/$2\$" | sort
+}
+# node_opens <path> — this user can open the node for reading and writing.
+node_opens() { (exec 3<>"$1") 2>/dev/null; }
+open_nodes="" closed_nodes=""
+while IFS= read -r node; do
+  [ -n "$node" ] || continue
+  if node_opens "$node"; then open_nodes="$open_nodes$node "; else closed_nodes="$closed_nodes$node "; fi
+done <<NODES
+$(device_nodes "$DEV_DIR" 'nvidia[0-9]+'; device_nodes "$DEV_DIR/dri" 'renderD[0-9]+')
+NODES
+# The verdict counts GPU devices only (a GPU row of nvidia-smi, per-GPU device nodes that open):
+# FFmpeg's built-in hardware encoders (Media tools) need one.
+evidence="$(printf '%s' "${gpu:+$gpu }$open_nodes" | sed 's/ *$//')"
 if [ -n "$evidence" ]; then
   printf 'accelerator: present (%s)\n' "$evidence"
+elif [ -n "$closed_nodes" ]; then
+  printf 'accelerator: none (no access to %s)\n' "${closed_nodes% }"
 else
   printf 'accelerator: none (no device)\n'
 fi
