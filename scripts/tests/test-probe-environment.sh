@@ -340,6 +340,22 @@ check "meminfo fixture with MemTotal 2883584 kB: memory 2.8 GiB" 'has_line memor
 check "cpuinfo fixture: cpu model is its model name" 'has_line "cpu model" "Probe Fixture CPU @ 9.99GHz"'
 check "fake id answers probeuser and 4242: os user probeuser (uid 4242)" 'has_line "os user" "probeuser (uid 4242)"'
 check "writable fixture root: repository writable yes with that root" 'has_line "repository writable" "yes ($FIX/root-writable)"'
+# A cpuinfo without a model name (arm64): the CPU model follows lscpu, and "-" or no answer reads unknown.
+mkdir -p "$FIX/proc-arm" "$FIX/lscpu-named" "$FIX/lscpu-dash"
+printf 'processor	: 0
+BogoMIPS	: 38.40
+' > "$FIX/proc-arm/cpuinfo"; cp "$FIX/proc/meminfo" "$FIX/proc-arm/meminfo"
+printf '#!/bin/sh
+printf "%%s\n" "Architecture:   aarch64" "Model name:     Probe Fixture Arm Core" "Model:          1"
+' > "$FIX/lscpu-named/lscpu"
+printf '#!/bin/sh
+printf "%%s\n" "Architecture:   aarch64" "Model name:     -" "Model:          1"
+' > "$FIX/lscpu-dash/lscpu"
+chmod +x "$FIX/lscpu-named/lscpu" "$FIX/lscpu-dash/lscpu"
+OUT="$(PATH="$FIX/lscpu-named:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_PROC_DIR="$FIX/proc-arm" "$PROBE" --offline 2>&1)"
+check "cpuinfo without a model name: cpu model follows lscpu" 'has_line "cpu model" "Probe Fixture Arm Core"'
+OUT="$(PATH="$FIX/lscpu-dash:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_PROC_DIR="$FIX/proc-arm" "$PROBE" --offline 2>&1)"
+check "cpuinfo without a model name and lscpu answering '-': cpu model unknown" 'has_line "cpu model" unknown'
 OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_ROOT="$FIX/root-missing" "$PROBE" --offline 2>&1)"; CODE=$?
 check "missing fixture root: repository writable no with that root" '[ "$CODE" = 0 ] && [ ! -e "$FIX/root-missing" ] && has_line "repository writable" "no ($FIX/root-missing)"'
 

@@ -38,9 +38,10 @@ section "Platform and resources"
 item "kernel" "$(uname -srm)"
 [ -r /etc/os-release ] && item "os" "$(. /etc/os-release && printf '%s' "$PRETTY_NAME")"
 item "cpus" "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
-# arm64 kernels list no "model name" in cpuinfo: lscpu names the model there.
+# arm64 kernels list no "model name" in cpuinfo: lscpu names the model there, or prints "-".
 cpu_model="$(grep -m1 'model name' "$PROC_DIR/cpuinfo" 2>/dev/null | cut -d: -f2- | sed 's/^ //')"
 [ -n "$cpu_model" ] || cpu_model="$(lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -n 1)"
+[ "$cpu_model" != "-" ] || cpu_model=""
 item "cpu model" "${cpu_model:-unknown}"
 item "memory" "$(awk '/MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' "$PROC_DIR/meminfo" 2>/dev/null)"
 # The disk and Git lines measure the repository, whichever directory the probe starts in.

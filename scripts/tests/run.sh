@@ -5,8 +5,9 @@
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
 #   test-verify-tiers.sh    tier selection, exit codes and heavy-media lock of scripts/verify.sh
-#   test-probe-environment.sh  scripts/probe-environment.sh (offline: measured resources, accelerator
-#                           verdict, Claude Code version, OS user, writability; never prints secrets)
+#   test-probe-environment.sh  scripts/probe-environment.sh (measured resources, media tools, toolchains,
+#                           browsers and Git; accelerator verdict; Claude Code version, OS user,
+#                           writability; network lines through a fake curl; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through
 # `scripts/evidence.py unittest`.)
 # Inside verify.sh (AVE_EVIDENCE_DIR set) each suite's result (file, exit status, number of checks,
