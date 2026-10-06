@@ -83,6 +83,7 @@ scripts/check_baseline.py
 scripts/reqfile.py
 scripts/requirements/import_baseline.py
 scripts/lib/verify-state.sh
+scripts/lib/media-tier-only.sh
 '
 
 # Check 7: docs/PROGRESS.md headings (exact lines).

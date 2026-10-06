@@ -129,6 +129,26 @@ def test_forbid_skips_fails_a_session_whose_selected_tests_never_ran(
     assert "not-run" in {test["outcome"] for test in data["tests"]}
 
 
+@pytest.mark.parametrize(
+    "selection",
+    [("--deselect", "test_generated.py::test_tagged_fail"), ("-k", "not tagged_fail")],
+    ids=["deselect", "keyword"],
+)
+def test_a_verification_session_selects_by_marker_expression_only(
+    pytester: pytest.Pytester, selection: tuple[str, str]
+) -> None:
+    """Under --forbid-skips a test left out by --deselect or -k (an option an installed file or the
+    environment can inject) stops the session before any test runs."""
+    pytester.makepyfile(test_generated=MODULE)
+    result = pytester.runpytest_inprocess(
+        "-p", "tests.evidence_plugin", "-p", "no:cacheprovider", "--forbid-skips", *selection
+    )
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "selects its tests by marker expression only" in "\n".join(
+        result.errlines + result.outlines
+    )
+
+
 def test_the_recorder_cannot_be_blocked(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(test_generated="def test_passes():\n    pass\n")
     result = pytester.runpytest_inprocess(

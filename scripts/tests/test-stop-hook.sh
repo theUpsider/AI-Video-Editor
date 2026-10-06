@@ -67,7 +67,7 @@ check "attempts reset to 0" '[ "$(state attempts)" = 0 ]'
 check "last.log holds verify output" 'grep -q "verify.sh: PASS" "$R/.git/claude-verify/last.log"'
 check "verify.sh ran the working-tree step, then recorded the evidence manifest" '[ "$(grep "^==> " "$R/.git/claude-verify/last.log" | tail -2 | tr "\n" "|")" = "==> Working tree unchanged by verification|==> Evidence manifest|" ] && grep -q "PASS: Working tree unchanged by verification" "$R/.git/claude-verify/last.log" && grep -q "PASS: Evidence manifest" "$R/.git/claude-verify/last.log"'
 # AVE-REQ-097 AC-2
-check "the run left a manifest tied to the tree fingerprint" 'm="$(ls "$R"/var/verify/runs/*/manifest.json | tail -1)" && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d[\"result\"]==\"PASS\" and len(d[\"fingerprint\"])==40" "$m"'
+check "the run left a manifest tied to the tree fingerprint" 'm="$(ls "$R"/var/verify/runs/*/manifest.json | tail -1)" && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d[\"result\"]==\"PASS\" and d[\"fingerprint\"]==sys.argv[2], d[\"fingerprint\"]" "$m" "$(fp)"'
 check "state dir is ignored by git status" '[ -z "$(cd "$R" && git status --porcelain)" ]'
 
 echo "## cached path"
@@ -156,6 +156,15 @@ check "stderr tail capped (<= 44 lines)" '[ "$(printf "%s\n" "$ERR" | wc -l)" -l
 check "attempts = 1" '[ "$(state attempts)" = 1 ]'
 check "last-result FAIL" 'state last-result | quiet "^FAIL "'
 check "last-pass kept from the previous pass" '[ -n "$(state last-pass)" ] && [ "$(state last-pass)" != "$(fp)" ]'
+# A last-pass that names this tree (written by hand, or left by a pass that a later run of the same
+# tree contradicted) never overrules the recorded failure: the gate runs again.
+kept_pass="$(state last-pass)"; kept_attempts="$(state attempts)"; kept_result="$(state last-result)"
+fp > "$R/.git/claude-verify/last-pass"; logrm
+hook "$J_FALSE"
+check "a cached pass never overrules the recorded failure of the same tree" '[ "$CODE" = 2 ] && logexists && state last-result | quiet "^FAIL .* $(fp)\$" && printf "%s" "$ERR" | quiet "broken link to .no-such-file.md."'
+printf '%s\n' "$kept_pass" > "$R/.git/claude-verify/last-pass"
+printf '%s\n' "$kept_attempts" > "$R/.git/claude-verify/attempts"
+printf '%s\n' "$kept_result" > "$R/.git/claude-verify/last-result"
 
 # AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: the gate is bounded; it releases after its attempt limit.
 echo "## escalation and release"

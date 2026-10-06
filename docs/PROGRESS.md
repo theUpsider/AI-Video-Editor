@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-06 — M0 open: red-team findings of AVE-REQ-093/097 fixed; critics' findings and the AVE-REQ-094 accelerator verdict next; then five reviews._
+_Last updated: 2026-10-06 — M0 open: red-team and critic findings of AVE-REQ-093/097 fixed; the AVE-REQ-094 accelerator verdict next; then five reviews._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -27,10 +27,10 @@ from the drafts.
   runs `wf_98f469f7-ec5` and `wf_44376763-43f`) is complete: 55 findings from six lenses, all fixed on this branch
   with the disposition of each in [handback part 1](briefs/handbacks/2026-10-03-m0-gates-red-team.part-1.md)
   (AVE-REQ-093) and [part 2](briefs/handbacks/2026-10-03-m0-gates-red-team.part-2.md) (AVE-REQ-097), and a
-  mutation check of the new rules (126 mutants, each caught by a named case). The critic of AVE-REQ-093
-  returned four findings, fixed here ([part 3](briefs/handbacks/2026-10-03-m0-gates-red-team.part-3.md)); the
-  critic of AVE-REQ-097 returned ten, whose fixes and handback part 4 come next, then one review each with a
-  skeptic.
+  mutation check of the new rules (160 mutants, each caught by a named case). The critics returned four
+  findings for AVE-REQ-093 ([part 3](briefs/handbacks/2026-10-03-m0-gates-red-team.part-3.md)) and ten for
+  AVE-REQ-097 ([part 4](briefs/handbacks/2026-10-03-m0-gates-red-team.part-4.md)), all fixed here. Next: one
+  review each with a skeptic at the final commit.
 - AVE-REQ-094 `in-progress` here and `verification` on branch `ave-req-094-probe-evidence` (pushed, `eb73896`):
   the review `wf_db16f332-fdf` returned FAIL for AC-1
   ([handback part 5](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-5.md)): the accelerator verdict
@@ -90,5 +90,5 @@ None.
 `./scripts/verify.sh --tier release` PASS at `eb73896` on the AVE-REQ-094 task branch (development container,
 arm64; 12 of 12 steps); CI (x86_64) release tier green at `f894bbf` on this branch, the newest commit CI had
 verified when this file was written, and red for the one commit `56e5864` ([WF-006](WORKFLOW_LOG.md)). GitHub
-holds the state of later pushes. The fast tier (10 steps since the done step joined it) passes on every commit
+holds the state of later pushes. The fast tier (11 steps since the ignored-file step joined it) passes on every commit
 of this branch (Stop gate).

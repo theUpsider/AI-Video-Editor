@@ -17,6 +17,7 @@ matches the recorded SHA-256. Each entry holds the media file and ``manifest.jso
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import math
@@ -50,6 +51,7 @@ __all__ = [
     "VideoSpec",
     "chirp",
     "ensure_fixture",
+    "generator_digest",
     "synthesize_audio",
     "vfr_frame_ticks",
 ]
@@ -65,6 +67,20 @@ VFR_TICK_RATE = 120
 """Time base (ticks per second) of variable-frame-rate fixtures."""
 
 _TIMEOUT_S = 900.0
+
+
+@functools.cache
+def generator_digest() -> str:
+    """Digest of the generator's own source files.
+
+    It is part of every cache key, so an edited generator writes new files and a test never passes
+    on the files an earlier generator left in the cache.
+    """
+    package = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for name in ("barcode.py", "generate.py", "standard.py"):
+        digest.update((package / name).read_bytes())
+    return digest.hexdigest()[:16]
 
 
 class _Frozen(BaseModel):
@@ -131,11 +147,12 @@ class FixtureSpec(_Frozen):
         return self
 
     def cache_key(self) -> str:
-        """Hash of the specification, generator version and FFmpeg version."""
+        """Hash of the specification, the generator (version and sources) and the FFmpeg version."""
         payload = json.dumps(
             {
                 "spec": self.model_dump(mode="json"),
                 "generator": GENERATOR_VERSION,
+                "sources": generator_digest(),
                 "ffmpeg": ffmpeg_version(),
             },
             sort_keys=True,

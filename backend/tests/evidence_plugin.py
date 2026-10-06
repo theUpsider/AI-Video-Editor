@@ -18,7 +18,8 @@
   was skipped, xfailed or xpassed (skip marks, ``unittest.skip``, a module-level
   ``pytest.skip(allow_module_level=True)``, ``pytest.importorskip``) or when a selected test
   never ran (``pytest.exit``, ``--collect-only``): a test that did not run proves nothing, so
-  verification never lets one through as green.
+  verification never lets one through as green. Such a session selects by marker expression
+  only: ``--deselect`` and ``-k`` are usage errors there, wherever the option came from.
 * The recorder cannot be switched off: blocking it (``-p no:ave-evidence-recorder``) is a usage
   error.
 """
@@ -96,6 +97,20 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "contract: replaces an external provider with a fake; proves the interface only"
     )
+    if config.getoption("--forbid-skips"):
+        narrowed = [
+            option
+            for option, value in (
+                ("--deselect", config.getoption("deselect", None)),
+                ("-k", config.getoption("keyword", "")),
+            )
+            if value
+        ]
+        if narrowed:
+            raise pytest.UsageError(
+                f"{' and '.join(narrowed)} with --forbid-skips: a verification session selects its"
+                " tests by marker expression only"
+            )
     if config.pluginmanager.is_blocked(RECORDER):
         raise pytest.UsageError(
             f"the evidence recorder is blocked (-p no:{RECORDER}); every session records its tests"

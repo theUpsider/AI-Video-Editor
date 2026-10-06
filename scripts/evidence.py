@@ -68,15 +68,21 @@ Python standard library only; writes only into the run directory it is given and
 
 from __future__ import annotations
 
+import os
+import sys
+
+if __name__ == "__main__" and not sys.flags.safe_path:
+    # AVE-REQ-097 AC-4: the script's directory stays out of the module path, so no file beside this
+    # script (a module, a bytecode file that Git ignores) stands in for a standard-library module.
+    os.execv(sys.executable, [sys.executable, "-P", "-B", os.path.abspath(__file__), *sys.argv[1:]])
+
 import argparse
 import functools
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import types
 import unittest
@@ -736,8 +742,10 @@ def cmd_show(args: argparse.Namespace) -> int:
         else "Freshness: FRESH — the tree and the toolchain are unchanged since this run"
     )
     known = requirements()
-    shown_ids = args.ids or sorted({tag.split(" ")[0] for tag in manifest["criteria"]})
-    unknown = [name for name in shown_ids if name not in known]
+    recorded_ids = sorted({tag.split(" ")[0] for tag in manifest["criteria"]})
+    shown_ids = args.ids or recorded_ids
+    # A manifest that names a requirement without a working file is refused in both forms.
+    unknown = sorted({name for name in [*shown_ids, *recorded_ids] if name not in known})
     if unknown:
         raise EvidenceError(
             f"unknown requirement IDs: {', '.join(unknown)} (no file in docs/requirements/)"

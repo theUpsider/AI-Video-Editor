@@ -28,7 +28,9 @@
 #
 # Environment (AVE-REQ-097 AC-2, AC-4): the run clears the variables of its caller that redirect
 # Git (GIT_DIR and its relatives), change what Python and pytest load or select (PYTHONPATH,
-# PYTEST_ADDOPTS and their relatives) or make a child shell run a startup file, reads no bytecode
+# PYTEST_ADDOPTS and their relatives) or make a child shell run a startup file, keeps the directory
+# of a script out of every Python process's module path (PYTHONSAFEPATH), fails when Git ignores a
+# file inside the source, test, script or hook directories, reads no bytecode
 # and no type-checker cache from the tree (PYTHONPYCACHEPREFIX and AVE_RUN_SCRATCH point into a
 # scratch directory that the run creates outside the tree and removes at its end) and loads no
 # pytest plugin by itself (PYTEST_DISABLE_PLUGIN_AUTOLOAD). The interpreter, the shell and the tools
@@ -189,6 +191,27 @@ clean_environment() {
     GIT_COMMON_DIR GIT_NAMESPACE PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONOPTIMIZE PYTHONWARNINGS \
     PYTHONINSPECT PYTEST_ADDOPTS PYTEST_PLUGINS BASH_ENV ENV CDPATH
   export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+  # No Python process of a step takes a module from the directory of the script it runs.
+  export PYTHONSAFEPATH=1
+}
+
+# check_no_ignored_sources — a file Git ignores inside the directories whose files the steps load
+# (sources, tests, scripts, hooks) would take part in a run and appear in no status, diff or
+# fingerprint: a conftest.py in an ignored directory, a module or a bytecode file beside a script.
+# Bytecode directories are exempt (no step reads them, header § Environment), and so are the
+# folder files an operating system leaves behind.
+check_no_ignored_sources() {
+  local listed
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'Skipped: outside a Git work tree.\n'
+    return 0
+  fi
+  listed="$(git ls-files --others --ignored --exclude-standard -- backend/src backend/tests scripts .claude/hooks 2>/dev/null |
+    awk '!/(^|\/)(__pycache__\/|\.DS_Store$|Thumbs\.db$)/')"
+  [ -z "$listed" ] && return 0
+  printf 'Files that Git ignores inside the source, test, script and hook directories:\n%s\n' "$listed"
+  printf 'Remove or track them: a run loads only files of the tree its fingerprint names.\n'
+  return 1
 }
 
 # step_files — the component step files, as scripts/check-project-control.sh registers them.
@@ -217,6 +240,7 @@ main() {
   export PYTHONPYCACHEPREFIX="$AVE_RUN_SCRATCH/pycache"
 
   run_step "Project control files" ./scripts/check-project-control.sh
+  run_step "No ignored file among sources, tests and scripts" check_no_ignored_sources
   for step_file in $(step_files); do
     # shellcheck source=/dev/null
     . "./$step_file" || run_step "Load $step_file" false

@@ -177,8 +177,13 @@ main() {
 
   fingerprint="$(vstate_fingerprint)" || fingerprint=""
   if [ -n "$fingerprint" ] && [ "$fingerprint" = "$(vstate_get last-pass)" ]; then
-    restore_pass_records "$fingerprint"
-    exit 0
+    case "$(vstate_get last-result)" in
+      "FAIL "*" $fingerprint") ;; # the newest run failed on this very tree: no cached pass overrules it
+      *)
+        restore_pass_records "$fingerprint"
+        exit 0
+        ;;
+    esac
   fi
 
   if [ "$stop_active" = "false" ]; then vstate_set attempts 0 || true; fi

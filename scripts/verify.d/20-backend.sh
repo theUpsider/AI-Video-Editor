@@ -26,5 +26,12 @@ backend_pytest() {
 fast_step "Backend format check" backend_uv ruff format --check .
 fast_step "Backend lint" backend_uv ruff check .
 fast_step "Backend type check" backend_uv mypy --cache-dir="$AVE_RUN_SCRATCH/mypy-cache"
-fast_step "Backend unit tests" backend_pytest unit -m "not media and not slow"
+# The fast tier renders nothing (AVE-REQ-097 AC-3): its tests see media tools that refuse to run,
+# so a test that calls FFmpeg without the `media` marker fails here.
+fast_pytest() {
+  AVE_FFMPEG="$PWD/scripts/lib/media-tier-only.sh" AVE_FFPROBE="$PWD/scripts/lib/media-tier-only.sh" \
+    backend_pytest unit -m "not media and not slow"
+}
+
+fast_step "Backend unit tests" fast_pytest
 media_step "Backend media and population tests" backend_pytest media -m "media or slow"

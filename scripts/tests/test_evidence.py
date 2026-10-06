@@ -10,10 +10,12 @@ tags of its own cases.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
 import os
+import py_compile
 import re
 import shutil
 import subprocess
@@ -703,12 +705,12 @@ class EvidenceTests(unittest.TestCase):
         with mock.patch.object(evidence, "VERIFY_DIR", self.tmp):
             evidence.record(self.run_dir.path, "fast", "")
             with self._known(_requirement(12, "in-progress", 1)):
-                for args in ([], [_id(999)]):
+                # In every form: without IDs, for the unknown ID and for a known one.
+                for args in ([], [_id(999)], [_id(12)]):
                     stderr = io.StringIO()
                     with contextlib.redirect_stderr(stderr):
                         self.assertEqual(self._show(*args), 2, args)
                     self.assertIn(f"unknown requirement IDs: {_id(999)}", stderr.getvalue())
-                self.assertEqual(self._show(_id(12)), 0)
 
     # AVE-REQ-097 AC-2
     def test_stale_evidence_is_reported_and_refused_when_freshness_is_required(self) -> None:
@@ -768,6 +770,209 @@ class EvidenceTests(unittest.TestCase):
             with contextlib.redirect_stdout(shown):
                 evidence.main(["show", _id(12)])
             self.assertIn("tier media, FAIL", shown.getvalue())
+
+    # AVE-REQ-097 AC-4
+    def test_require_complete_refuses_a_missing_and_a_contract_only_criterion(self) -> None:
+        """A passing fresh run certifies a requirement complete only when each of its criteria has
+        passing evidence from a test that replaces no provider."""
+        self.run_dir.report(
+            "unit",
+            [
+                _test("t::a", "passed", [_tag(12, 1)]),
+                _test("t::c", "passed", [_tag(13, 1)], contract=True),
+            ],
+        )
+        self.run_dir.steps(("Backend unit tests", "PASS"))
+        known = [_requirement(number, "verification", 1) for number in (12, 13, 14)]
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(*known),
+            mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40),
+        ):
+            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            for number, expected in ((12, 0), (13, 1), (14, 1)):
+                with self.subTest(_id(number)):
+                    self.assertEqual(self._show(_id(number), "--require-fresh"), 0)
+                    flags = (_id(number), "--require-fresh", "--require-complete")
+                    self.assertEqual(self._show(*flags), expected)
+
+    # AVE-REQ-097 AC-4
+    def test_a_run_without_a_step_log_is_recorded_as_failed(self) -> None:
+        """No step ran, so nothing passed: the manifest of such a run reads FAIL."""
+        self.run_dir.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(_requirement(12, "in-progress", 1)),
+        ):
+            manifest = evidence.record(self.run_dir.path, "fast", "a" * 40)
+        self.assertEqual((manifest["steps"], manifest["result"]), ([], "FAIL"))
+
+    # AVE-REQ-097 AC-2
+    def test_without_a_fresh_run_show_reports_the_newest_recorded_one(self) -> None:
+        later = RunDirectory(self.tmp, "20261002T000001Z-1")
+        runs = (
+            (self.run_dir, "media", "2026-10-02T00:00:00Z"),
+            (later, "fast", "2026-10-02T00:00:05Z"),
+        )
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(),
+            mock.patch.object(evidence, "current_fingerprint", return_value="b" * 40),
+        ):
+            for run, tier, moment in runs:
+                run.steps(("Project control files", "PASS"))
+                with mock.patch.object(evidence, "_now", return_value=moment):
+                    evidence.record(run.path, tier, "a" * 40)
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                self.assertEqual(evidence.main(["show"]), 0)
+        self.assertIn("tier fast, PASS", shown.getvalue())
+        self.assertIn("Freshness: STALE", shown.getvalue())
+
+    def _repository(self) -> tuple[Path, Any]:
+        """A Git repository with one commit that holds the files a manifest describes, and a
+        function that runs Git in it."""
+        project = self.tmp / "repository"
+        (project / "scripts" / "lib").mkdir(parents=True)
+        shutil.copy(ROOT / "scripts" / "lib" / "verify-state.sh", project / "scripts" / "lib")
+        (project / "scripts" / "verify.sh").write_bytes(b"#!/usr/bin/env bash\n")
+
+        def git(*arguments: str) -> str:
+            command = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+            completed = subprocess.run(
+                [*command, *arguments], check=True, capture_output=True, text=True
+            )
+            return completed.stdout.strip()
+
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-qm", "one")
+        return project, git
+
+    # AVE-REQ-097 AC-2
+    def test_the_manifest_names_the_commit_the_file_hashes_and_uncommitted_changes(self) -> None:
+        project, git = self._repository()
+        tools = {"python3": "0", "ffmpeg": "ffmpeg version 0.0-stub"}
+        verify = project / "scripts" / "verify.sh"
+        with (
+            mock.patch.object(evidence, "ROOT", project),
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            mock.patch.object(evidence, "toolchain", return_value=tools),
+            self._known(),
+        ):
+            self.run_dir.steps(("Project control files", "PASS"))
+            clean = evidence.record(self.run_dir.path, "fast", "f" * 40)
+            verify.write_bytes(b"#!/usr/bin/env bash\n# edited\n")
+            second = RunDirectory(self.tmp, "20261002T000001Z-1")
+            second.steps(("Project control files", "PASS"))
+            edited = evidence.record(second.path, "fast", "e" * 40)
+        self.assertEqual(clean["commit"], git("rev-parse", "HEAD"))
+        self.assertEqual(clean["toolchain"], tools)
+        self.assertEqual(
+            clean["configuration"],
+            {
+                "scripts/verify.sh": hashlib.sha256(b"#!/usr/bin/env bash\n").hexdigest(),
+                "backend/pyproject.toml": "missing",
+                "backend/uv.lock": "missing",
+            },
+        )
+        self.assertFalse(clean["uncommitted_changes"])
+        self.assertEqual(edited["commit"], clean["commit"])
+        self.assertTrue(edited["uncommitted_changes"])
+        self.assertEqual(
+            edited["configuration"]["scripts/verify.sh"],
+            hashlib.sha256(b"#!/usr/bin/env bash\n# edited\n").hexdigest(),
+        )
+
+    # AVE-REQ-097 AC-2
+    def test_an_uncommitted_edit_makes_the_recorded_run_stale(self) -> None:
+        """Freshness follows the working tree: the fingerprint is the Stop gate's, which changes
+        with an edit that no commit holds, while the commit stays the same."""
+        project, git = self._repository()
+        quiet_git = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        with (
+            mock.patch.object(evidence, "ROOT", project),
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            mock.patch.object(evidence, "toolchain", return_value={"python3": "0"}),
+            mock.patch.dict(os.environ, quiet_git),
+            self._known(),
+        ):
+            head = git("rev-parse", "HEAD")
+            before = evidence.current_fingerprint()
+            self.assertRegex(before, r"^[0-9a-f]{40}$")
+            self.assertNotEqual(before, head)
+            self.run_dir.steps(("Project control files", "PASS"))
+            evidence.record(self.run_dir.path, "fast", before)
+            self.assertEqual(self._show("--require-fresh"), 0)
+            (project / "scripts" / "verify.sh").write_bytes(b"#!/usr/bin/env bash\nexit 1\n")
+            self.assertEqual(git("rev-parse", "HEAD"), head)
+            self.assertNotEqual(evidence.current_fingerprint(), before)
+            self.assertEqual(self._show("--require-fresh"), 1)
+
+    # AVE-REQ-097 AC-4
+    def test_no_file_beside_the_script_stands_in_for_a_standard_module(self) -> None:
+        """A bytecode file beside evidence.py that carries the name of a standard-library module
+        (Git ignores ``*.pyc``, so no status or diff shows it) is never imported: the script keeps
+        its own directory out of the module path, whatever environment starts it."""
+        scripts = self.tmp / "copy" / "scripts"
+        tests = scripts / "tests"
+        tests.mkdir(parents=True)
+        for name in ("evidence.py", "reqfile.py"):
+            shutil.copy(ROOT / "scripts" / name, scripts / name)
+        shadow = self.tmp / "shadow.py"
+        shadow.write_text(
+            "import os\nprint('shadow module imported', flush=True)\nos._exit(0)\n", encoding="utf-8"
+        )
+        py_compile.compile(str(shadow), cfile=str(scripts / "unittest.pyc"), doraise=True)
+        failing = _unit_module(_tag(97, 4), "    def test_other(self):\n        self.assertEqual(1, 2)\n")
+        (tests / "test_fixture.py").write_text(failing, encoding="utf-8")
+        dropped = ("AVE_EVIDENCE_DIR", "PYTHONSAFEPATH")
+        environment = {k: v for k, v in os.environ.items() if k not in dropped}
+        completed = subprocess.run(
+            [sys.executable, "-B", str(scripts / "evidence.py"), "unittest", str(tests)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = completed.stdout + completed.stderr
+        self.assertNotIn("shadow module imported", output)
+        self.assertEqual(completed.returncode, 1, output)
+        self.assertIn("failed: test_fixture.Case.test_other", output)
+
+    # AVE-REQ-097 AC-4
+    def test_the_suite_runner_fails_when_a_suite_result_cannot_be_recorded(self) -> None:
+        """Inside verify.sh a suite counts through its recorded result: when the result cannot be
+        written, run.sh fails although every suite passed."""
+        project = self.tmp / "unrecorded"
+        tests = project / "scripts" / "tests"
+        tests.mkdir(parents=True)
+        for name in ("evidence.py", "reqfile.py"):
+            shutil.copy(ROOT / "scripts" / name, project / "scripts" / name)
+        shutil.copy(ROOT / "scripts" / "tests" / "run.sh", tests / "run.sh")
+        listed = re.findall(
+            r"^run_suite (\S+)", (tests / "run.sh").read_text(encoding="utf-8"), flags=re.M
+        )
+        self.assertGreater(len(listed), 3)
+        for name in listed:
+            stub = tests / name
+            stub.write_text(
+                "#!/usr/bin/env bash\nprintf 'STUB TOTAL: pass=1 fail=0\\n'\n", encoding="utf-8"
+            )
+            stub.chmod(0o755)
+        outcomes = {}
+        for label, directory in (("recorded", self.run_dir.path), ("lost", self.tmp / "no-run")):
+            completed = subprocess.run(
+                ["bash", str(tests / "run.sh")],
+                env={**os.environ, "AVE_EVIDENCE_DIR": str(directory)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            outcomes[label] = (completed.returncode, completed.stdout)
+        self.assertEqual(outcomes["recorded"][0], 0, outcomes["recorded"][1])
+        self.assertEqual(outcomes["lost"][0], 1, outcomes["lost"][1])
+        self.assertIn(f"<== FAIL: {listed[0]} (result not recorded in ", outcomes["lost"][1])
 
     # AVE-REQ-097 AC-4
     def test_a_run_that_left_a_tagged_test_out_certifies_no_requirement_complete(self) -> None:

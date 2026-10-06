@@ -282,16 +282,18 @@ In effect since bootstrap
 1. **Single entry point.** [scripts/verify.sh](../scripts/verify.sh) is the one command
    humans, Claude, the Stop hook and CI run. It runs every step of its tier, prints a summary, and exits
    1 when any step fails (2 on a usage error).
-2. **Tiers.** `--tier fast` (default): project control files, requirements baseline integrity, evidence
-   tooling tests, backend format/lint/types, unit tests. `--tier media` adds the real-media and population
-   tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
+2. **Tiers.** `--tier fast` (default): project control files, no ignored file among sources, tests,
+   scripts and hooks, requirements baseline integrity, evidence tooling tests, backend format/lint/types,
+   unit tests (their media tools are a stand-in that exits 1, so the fast tier renders nothing).
+   `--tier media` adds the real-media and population tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
    every installed awk). Every tier ends its checks with the step "Done requirements evidenced by this run":
    a `done` requirement with failed, contract-only or missing evidence fails it, and in the release tier,
    which runs every test, a tagged test that did not run fails it too. Component steps live in
    [scripts/verify.d/](../scripts/verify.d/); each is a required file, verify.sh sources exactly the required
    ones, a step file that cannot be loaded fails the run, and the checker fails on any other entry there.
-   A run clears the caller's Git, Python and pytest variables, loads no pytest plugin by itself and keeps
-   bytecode and the type checker's cache in a scratch directory outside the tree
+   A run clears the caller's Git, Python and pytest variables, loads no pytest plugin by itself, keeps
+   bytecode and the type checker's cache in a scratch directory outside the tree, keeps the directory of a
+   script out of every Python module path and selects tests by marker expression only
    ([ASM-023](ASSUMPTIONS.md) names what stays trusted).
    The media and release tiers hold the heavy-media lock for their whole run (§ Testing strategy item 6); in the
    development container the lock file lives on the shared state volume (`AVE_HEAVY_LOCK`).
