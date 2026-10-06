@@ -112,7 +112,10 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   and contract-tested here and reported as externally unverified with exact prerequisites.
 - **Reason:** Measured network policy and device checks.
 - **Impact:** If the environment gains access, rerun the corresponding live tests and update the matrix.
-- **Status:** confirmed — 2026-10-01 — measured
+- **Status:** confirmed — 2026-10-01 — measured — 2026-10-06 — the development container on the laptop host
+  reaches huggingface.co anonymously (HTTP 200, [ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md)
+  § Network policy); model downloads stay behind the model registry with consent, and `verify.sh` and CI use
+  no model download
 - **Links:** [ADR-007](decisions/ADR-007-ai-integration-boundaries.md), [ADR-008](decisions/ADR-008-local-speech-recognition.md)
 
 ### ASM-007 — Audio sync accepts an offset only when chance and rival alignments are ruled out

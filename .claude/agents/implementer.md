@@ -44,7 +44,7 @@ Read the requirement files yourself. When the task names no requirement, or a na
 
 ## Worktrees
 
-When the lead spawns you with worktree isolation, you work in a linked worktree on its own branch (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`).
+When the lead spawns you with worktree isolation, or a workflow run places you in a worktree the lead created, you work in a linked worktree on its own branch (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`).
 - Before changing anything, confirm that `git rev-parse HEAD` prints exactly the base commit the prompt names; otherwise return `## Result: BLOCKED` with both hashes.
 - A fresh worktree may lack installed dependencies or generated files; run the setup documented in `docs/ARCHITECTURE.md` before verifying.
 - When told to commit: after `./scripts/verify.sh` passes and you have inspected the diff, commit on the worktree branch with the message `AVE-REQ-NNN: <imperative summary>`. Report the branch name and commit hash.

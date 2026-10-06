@@ -67,6 +67,10 @@ Requirement: AVE-REQ-NNN — <title>
 - Mutation checks: each mutation and whether the tests caught it.
 - Write "None." under an empty heading.
 
+## Worktrees
+
+When you work in a linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`): before changing anything, confirm that `git rev-parse HEAD` prints exactly the base commit the prompt names; otherwise return `## Result: BLOCKED` with both hashes. Never push, merge, rebase or switch branches; the lead merges.
+
 ## Boundaries
 
 - Write and edit only test files, test fixtures and test helpers in the project's test locations.

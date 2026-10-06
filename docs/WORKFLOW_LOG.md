@@ -222,3 +222,28 @@ Not an improvement entry: the measured starting point that later entries compare
   missing criterion, and the release tier also fails on a tagged test that did not run.
 - Keep or revert, with reason: keep; the step adds seconds to the fast tier and removes the one path on which a
   requirement could reach `done` without a run that judged it.
+
+### WF-008 — 2026-10-06 — Review runs started without a brief; worktree writers confirmed a branch name
+- Observed failure and evidence: the review of AVE-REQ-096 at `2df637f`
+  ([handback part 7](briefs/handbacks/2026-10-03-m0-gates-red-team.part-7.md)) found seven review workflow runs
+  since the brief rule of `a5c81d3` that started without a brief (`wf_ed1f5104-63a`, `wf_e3b34e48-f7e`,
+  `wf_eabbb2f5-6a0`, `wf_b5fa6671-c21`, `wf_7d239bd1-b31`, `wf_db16f332-fdf`, `wf_7d9d015c-906`), although
+  `CLAUDE.md` § Delegation names review workflows; no rule defined their skeptic stage, and the reports of
+  `wf_ed1f5104-63a` persist only as summaries. The same review found that the three runs with writers in
+  worktrees the lead created (`wf_164de68e-23b`, `wf_df2de811-039`, `wf_d57d9cab-829`) had the task confirm
+  the branch name, where the rule asks for equality with the base commit.
+- Root-cause hypothesis: the lead read the exemption of the skills that fork their own agent as covering a
+  review run scripted as a workflow, and `develop` § 4 stated the base check for worktrees of the runtime only.
+- One proposed workflow/skill/context change: `develop` § 6 defines the review run as a delegated task (brief,
+  reviewers following `verify-requirement`, skeptic stage, reports as handback parts); `develop` § 4 and the
+  implementer and tester definitions apply the equality check to every linked worktree.
+- Expected metric and fixed evaluation set (plus held-out cases): review runs without a brief, and writer
+  prompts without the equality line; evaluation set: the fix run and the review run that follow this entry
+  (their rows in `docs/workflows/README.md` link a brief; their scripts hold `git rev-parse HEAD` against a
+  hash). Held-out: the runs of M1.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, 7 of 7 review runs without a brief and 3 of 3 worktree-writer runs with
+  a branch-name check; no task started from a wrong base (the first commit of each of the six task branches has
+  the briefed commit as its parent). After: measured on the two runs of the evaluation set once recorded.
+- Keep or revert, with reason: keep; a brief gives every review report a named home, and the equality check is
+  the one that fails for a worktree made from another commit.

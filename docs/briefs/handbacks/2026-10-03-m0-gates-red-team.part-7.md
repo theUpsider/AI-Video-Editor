@@ -1,0 +1,114 @@
+# Handback — M0 gates red-team, part 7: review of AVE-REQ-096 after the fixes
+
+Run `wf_7d9d015c-906` ([script](../../workflows/verify-m0-final-wf_7d9d015c-906.js)), the final review round of M0 launched 2026-10-06: `verify-requirement` for AVE-REQ-096 at `2df637f` by an independent reviewer in a private clone. The report is the reviewer's, unedited apart from local paths. The run had no brief of its own ([WF-008](../../WORKFLOW_LOG.md)); the report is filed with the brief whose work it reviews. The fixes follow in [the fix brief](../2026-10-06-m0-final-review-fixes.md).
+
+## Review
+
+Verdict: **FAIL** — AVE-REQ-096 — Isolated bounded tasks and independent review (reviewed at 2df637f in a private clone; repository root C:/dev/AI-Video-Editor)
+
+### AC-1 — PASS
+
+```text
+The criterion as written is met and evidenced. Tests: scripts/tests/test-checker.sh cases tagged AVE-REQ-096 AC-1 (lines 208-242: 34 cases, executed on four awks in my release run, 136 ok lines, CHECKER TOTAL pass=822 fail=0; evidence.py show: AC-1 passed). 11 mutants of check 11 each failed named cases. Own probes of check 11 in a scratch clone (about 60 constructions) matched the documented rule. Inspection: all nine briefs in docs/briefs/ hold the seven sections with requirement IDs and criteria in scope, allowed and forbidden paths, constraints, a commit, test commands and a handback schema; none was edited after the commit that added it; briefed workflow prompts pass the brief path; all five agent definitions read the brief first; CLAUDE.md § Delegation and develop § 3-5 require the committed brief. Blocking finding 2 concerns the Edge-case and Implementation-evidence statements about tasks without a brief, not the content of briefs.
+```
+
+### AC-2 — FAIL
+
+```text
+Partly met; see blocking finding 1. Verified: .claude/settings.json sets worktree.baseRef "head" (smoke test recorded in docs/ENVIRONMENT_CAPABILITIES.md); check 11 requires a commit under Input revision (test-checker.sh:225-235, evidence.py show: AC-2 passed; mutants C1, C2, C3a, C3b, C10 each caught); every task branch started at its briefed commit (parents: 548c8ca^=24499a6, 90a1f2e^=548c8ca, dc89da2^=90a1f2e, fb61875^=6736401, 9be8ef5^=6736401, 49ecb21^=4e607de). Not verified, and contradicted by the records: the strategy statement that every implementer prompt has the task confirm that git rev-parse HEAD equals the base commit. No recorded writer prompt does; all three recorded worktree-writer runs confirm the branch name only, including the run launched after the equality rule was integrated, and that check accepts a worktree made from another commit (demonstrated).
+```
+
+### AC-3 — PASS
+
+```text
+Inspection (the strategy gives the reason no repository test can execute it). .claude/skills/verify-requirement/SKILL.md and .claude/agents/reviewer.md start the reviewer from the requirement and its own location of the change and treat every claim as unverified. Recorded review prompts (docs/workflows/verify-m0-process-requirements-2-wf_ed1f5104-63a.js, review-media-core-round3-wf_1a23bf0d-2a0.js, ave-req-094-probe-evidence-wf_d57d9cab-829.js) put each reviewer in a private clone or scratch copy at the commit, label briefs and handbacks as claims, and the round-3 media prompt names git diff 90a1f2e dc89da2 and own constructions. This review's own prompt labelled the lead's statements as claims. Media-critical tests decode real renders (backend/tests/media/*.py through ave.render.validate decode_video_frames and decode_audio); 84 media and population tests passed in my release run (457 s). docs/WORKFLOW_LOG.md WF-001 and the round briefs quote the real-media reproductions of the FAIL rounds.
+```
+
+### AC-4 — PASS
+
+```text
+Tests: scripts/tests/test-verify-tiers.sh § one heavy media job at a time (12 cases, VERIFY TIERS TOTAL pass=48 fail=0 in my release run; evidence.py show: AC-4 passed); 11 mutants of the lock in scripts/verify.sh each failed named cases. Own probes with a fixture that holds the real verify.sh, my own step file and a private lock: two media runs started together gave one waiting line and disjoint step intervals (0-4.0 s, 4.63-8.63 s); three runs gave two waiting lines and no overlap; AVE_HEAVY_LOCK_HELD=1 with a free lock exited 1 with 0 steps and no run directory (media and release); a fast run under a held lock ran 5 of 5 steps with no waiting line. Live: my release run printed exactly one waiting line while another reviewer's run held /state/ave-heavy-media.lock and started its steps after it; my real fast-tier run passed 11 of 11 steps while that lock was held. Inspection: develop § 4 Concurrency limits, WORKFLOW_LOG baseline and WF-005, ENVIRONMENT_CAPABILITIES § Limits; recorded runs since the rule hold at most two writers, each in its own worktree; no agent definition lists an agent-spawning tool and this reviewer session has none; usage-limit stops are recorded as stops and resumed from briefs. Non-blocking finding 1 describes a residual of the lock confirmation.
+```
+
+### Verification runs
+
+```text
+- ./scripts/verify.sh --tier release (clone at 2df637f, git status --porcelain empty before and after): PASS, exit 0, 13 of 13 steps. It waited for the shared heavy-media lock with exactly one waiting line. 124 unit tests passed; 84 media and population tests passed in 457 s; tooling suites: test-checker.sh 822 checks on mawk, gawk, original-awk and busybox, test-check-baseline.sh 213, test-stop-hook.sh 98, test-session-start.sh 31, test-verify-tiers.sh 48, test-probe-environment.sh 28. Log: <session scratchpad>/release-096.log
+- ./scripts/dev-container.sh python3 -B scripts/evidence.py show AVE-REQ-096 --require-fresh --tier release: exit 0; latest-release.json, PASS, commit 2df637fbc30b, FRESH; AC-1 passed (scripts/tests/test-checker.sh), AC-2 passed (scripts/tests/test-checker.sh), AC-3 missing (inspection only, no Test evidence line yet), AC-4 passed (scripts/tests/test-verify-tiers.sh)
+- ./scripts/verify.sh (fast tier) while another run held /state/ave-heavy-media.lock (flock -n probe before and after: held): exit 0, 11 of 11 steps, 0 waiting lines, 123 s
+- ./scripts/dev-container.sh ./scripts/check-project-control.sh: OK, exit 0 (51 required files, 134 requirement files, 0 warnings)
+- Tagged suites alone, in a scratch copy under the container's /tmp: bash scripts/tests/test-checker.sh -> CHECKER TOTAL pass=211 fail=0; bash scripts/tests/test-verify-tiers.sh -> VERIFY TIERS TOTAL pass=48 fail=0
+- Lock probes (fixture from scripts/tests/make-fixture.sh, verify.sh byte-identical to the tree, own step file that logs start and end around a 4 s sleep, private AVE_HEAVY_LOCK): two media runs together -> one run prints one waiting line, intervals 0-4.0 s and 4.63-8.63 s, both exit 0; three runs (two media, one release) -> two waiting lines, three disjoint intervals; AVE_HEAVY_LOCK_HELD=1 with a free lock -> exit 1, 0 steps, no run directory, for media and release, also with a lock file that did not exist yet; the variable with a caller that holds the lock -> exit 0, no waiting line; fast run under a held lock -> exit 0, 5 of 5 steps, step sees the variable unset. Residual: the variable plus a lock path in a missing directory -> exit 0, 6 of 6 steps; the variable plus no flock on PATH -> exit 0, 6 of 6 steps (without the variable both exit 1 before any step)
+- Check 11 probes in a scratch clone (about 60 constructions): every rule the README and the strategy state held (missing, empty, H3, indented, fenced, repeated and reordered headings; no ID, two-digit and lowercase IDs; branch ccr-af7078da-q8r8mf, uppercase hash, abc1234_wip, self-reference with ./, to <brief>.bak and with %H; handback part-0, part-01, part-x, .txt, a subdirectory, a brief moved to drafts/). Accepted while naming no commit: `feature/abcdef1`, `fix.1234567`, a branch named deadbeef, the word effaced, 20261006, a 7-digit number, 0000000. Also accepted: a section holding only an HTML comment, an ID only inside an HTML comment, AVE-REQ-999; unchecked: docs/briefs/extra/*.md, *.markdown, a hidden file in handbacks/
+- Mutation runs in scratch copies under the container's /tmp. scripts/check-project-control.sh, 11 mutants against test-checker.sh, all caught: any Input revision text counts (5 cases fail), no delimiters (2), six digits (1), 41 digits (1), handbacks unchecked (4), order unchecked (2), empty sections accepted (7), no ID required (2), missing headings accepted (8), an ID in any section (1), self-reference to any brief (1), briefs unchecked (24). scripts/verify.sh, 11 mutants against test-verify-tiers.sh, all caught: inherited variable not confirmed (1), confirmation inverted (2), no lock (13), variable not exported (9), steps inherit descriptor 9 (1), waiting line twice (1), busy lock not waited for (2), media tier proceeds without flock (1), lock released before the steps (9), fast tier takes the lock (2), default lock file ignores TMPDIR (1)
+- Git inspection: git log and git diff per brief (each brief has one adding commit and no later change); parents of the first commit of every task branch (six of six equal the briefed commit); git log -S dating the equality rule, the brief rule for review workflows and the Edge cases to a5c81d3 (2026-10-03 10:37, integrated by c084f7c at 12:58); grep of docs/workflows/*.js for rev-parse (three hits, all `git rev-parse --abbrev-ref HEAD`)
+- Worktree probe in a scratch clone: git worktree add -b task-x <dir> HEAD~3, then git rev-parse --abbrev-ref HEAD prints task-x (the recorded prompt check passes) while git rev-parse HEAD prints f894bbf instead of 2df637f (the equality check of develop § 4 would return BLOCKED)
+- Cleanup: ./scripts/dev-container.sh --stop exit 0; clone .claude/worktrees/verify-ave-req-096 removed; main checkout git status --porcelain empty; no commit, no push
+```
+
+### Blocking findings (2)
+
+1.
+
+```text
+location: docs/requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md:60 (§ Verification strategy AC-2) and :45 (§ Edge cases); docs/workflows/ave-req-094-probe-evidence-wf_d57d9cab-829.js:23; docs/workflows/m0-fix-tracks-wf_164de68e-23b.js:29; docs/workflows/m0-fix-tracks-continue-wf_df2de811-039.js:108; .claude/agents/implementer.md:47-48; .claude/agents/tester.md
+defect: The strategy states that every implementer prompt has the task confirm that `git rev-parse HEAD` equals the base commit before changing anything, and the Edge case states that a worktree created from another commit is detected by that check. No recorded writer prompt carries it. All three recorded runs with writers in worktrees tell the task to confirm the branch name (`git rev-parse --abbrev-ref HEAD` prints <branch>). One of them, wf_d57d9cab-829 (tester and implementer of AVE-REQ-094), was launched from 4e607de on 2026-10-03 13:47, after the equality rule of a5c81d3 reached the working branch (c084f7c, 12:58). The tester definition holds no base check, and the implementer's applies only when the lead spawns it with worktree isolation, while these worktrees were created by the lead. In the delegation path actually in use the task assumes its base, so the Edge case mapped to AC-2 is unhandled and the strategy statement is false for the records.
+evidence: grep rev-parse over docs/workflows/*.js gives three hits, each `First confirm that git rev-parse --abbrev-ref HEAD in the worktree prints <branch>; otherwise return BLOCKED`; no prompt holds `git rev-parse HEAD` against a hash. grep of .claude/agents/tester.md for worktree, rev-parse or base finds nothing. Demonstration in a scratch clone: a worktree added with -b task-x from HEAD~3 passes the branch-name check and prints f894bbf for git rev-parse HEAD, where the equality check would return BLOCKED. No wrong base occurred: the first commit of every task branch has the briefed commit as its parent (six of six), so the gap is the missing safeguard and the false statement, not a mis-based task.
+fix: 1. develop § 4: state that a writer placed in a lead-created worktree by a workflow run gets the same prompt line (base commit <full hash>; confirm that git rev-parse HEAD prints exactly that hash, else BLOCKED), and that a later stage in the same worktree confirms equality with the commit the previous stage handed over. 2. implementer.md § Worktrees: apply the check to any linked worktree; add the same section to tester.md. 3. Carry the equality line in the next workflow scripts (the M1 and M2 drafts already hold a `git log --oneline -1` equality check). 4. Correct § Verification strategy AC-2 and § Edge cases to what the records show: the prompts of wf_164de68e-23b, wf_df2de811-039 and wf_d57d9cab-829 confirmed the branch name, and the base of each task branch is confirmed from Git (name the six parents); add the Status-log line for the change.
+```
+
+2.
+
+```text
+location: docs/requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md:38 (§ Edge cases) and :67 (§ Implementation evidence, "every delegated task starts from a brief"); CLAUDE.md:111; docs/briefs/README.md:3-9; .claude/agents/reviewer.md:16; docs/workflows/README.md:6-8 and rows wf_ed1f5104-63a, wf_e3b34e48-f7e, wf_eabbb2f5-6a0, wf_b5fa6671-c21, wf_7d239bd1-b31, wf_db16f332-fdf; docs/workflows/verify-m0-process-requirements-2-wf_ed1f5104-63a.js:73 and :96
+defect: The requirement states that a delegated task without a brief is never launched and that every delegated task starts from a brief. The rules name workflow runs with "review workflows included" and exempt only the skills that fork their own agent. The records hold delegated review tasks launched since that rule (a5c81d3) without a brief: the workflow-log reviewer of wf_ed1f5104-63a (an ad hoc review of WORKFLOW_LOG.md, no skill), the skeptic stage of four review runs (wf_ed1f5104-63a, wf_e3b34e48-f7e, wf_eabbb2f5-6a0, wf_b5fa6671-c21; no rule or skill defines a skeptic), and, by the plain text of the rule, the six review workflow runs themselves. This review round follows the same pattern: its prompt names no brief for its task, while reviewer.md:16 says a review-workflow prompt names it. docs/workflows/README.md:6-8 says every run since 2026-10-02 starts from a committed brief and its row links both; six rows link none. Without a brief no handback can be named, so the reports of wf_ed1f5104-63a (five reviews, four skeptics, the log review) persist only as summaries in Status logs and README rows.
+evidence: git log -S dates "review workflows included" (CLAUDE.md, docs/briefs/README.md), the reviewer.md ad hoc rule, the Edge case "never launched" and the README sentence to a5c81d3, integrated at c084f7c (2026-10-03 12:58). wf_ed1f5104-63a ran at d4d3883 (13:01) and the other five runs later. The recorded script holds `challengePrompt` (line 73) and `wfLogPrompt` (line 96) with no brief path. grep of CLAUDE.md, the skills, the agent definitions and docs/briefs/README.md for skeptic or challenge finds no rule for that stage. The three runs that are no reviews (probe evidence, red team) each have a brief committed before their script, so the rule is followed where the lead reads it as applying.
+fix: Decide one reading and make the requirement and the four documents agree. Either (a) write one brief per review workflow run (requirement IDs and criteria, the commit, the clone rule as allowed paths, constraints, commands, the report schema) and persist reviewer and skeptic reports as its handbacks; or (b) state in CLAUDE.md § Delegation, docs/briefs/README.md, develop § 6, reviewer.md:16 and the Edge case that a review workflow whose agents run verify-requirement, its skeptic stage included, takes no brief, that its script persisted in docs/workflows/ before the launch is its task record, and where its reports persist; correct docs/workflows/README.md:6-8; record the workflow-log review of wf_ed1f5104-63a as the deviation. Reword line 67 so that it carries the exemptions the rule has.
+```
+
+### Non-blocking findings (3)
+
+1.
+
+```text
+location: scripts/verify.sh:112-120 (hold_heavy_lock); header lines 49-51; docs/ARCHITECTURE.md:264-266
+defect: The confirmation of an inherited AVE_HEAVY_LOCK_HELD=1 fails open. When flock is missing, or the lock file cannot be opened, the run treats the lock as held and runs the media or release tier with no lock. ARCHITECTURE item 6 and the header say the run confirms that the lock is held and fails before any step when nobody holds it. The path needs a false variable plus a missing tool or an unusable lock path, which neither the development container nor CI has; under the red-team scope rule (an environment change that lets the limit be bypassed) it would count as blocking, so fix it in the same round.
+evidence: Fixture with the real verify.sh: AVE_HEAVY_LOCK=<dir that does not exist>/x.lock AVE_HEAVY_LOCK_HELD=1 ./scripts/verify.sh --tier media -> exit 0, 6 of 6 steps, PASS; PATH without flock plus AVE_HEAVY_LOCK_HELD=1 -> exit 0, 6 of 6 steps, PASS. Without the variable both exit 1 before any step ("cannot open the heavy-media lock", "needs flock"). No suite case covers the two combinations.
+fix: In the AVE_HEAVY_LOCK_HELD=1 branch: fail when flock is missing; open the lock file on a descriptor and fail when that fails; fail when `flock -n` on it succeeds (release it first); otherwise close the descriptor and return 0. Add two cases to test-verify-tiers.sh: the variable without flock on PATH, and the variable with an unopenable lock path, each exit 1 with no `==> ` line.
+```
+
+2.
+
+```text
+location: docs/requirements/AVE-REQ-096-isolated-bounded-tasks-and-independent-review.md:5, :48, :62, :78-85
+defect: Document consistency. Frontmatter status is in-progress during this review and the Status log holds no verification transition (verify-requirement § 9, develop § 6 step 2). The PASS at d4d3883 with its upheld challenge has no Status-log line of its own. § Verification strategy AC-4 does not list the new suite case (an inherited AVE_HEAVY_LOCK_HELD=1 without a held lock fails before any step). The Edge case speaks of "the measured limit" while the limit of two writers is the baseline rule and ENVIRONMENT_CAPABILITIES § Limits records that no measurement exists. The dependency AVE-REQ-094 is in-progress (FAIL at eb73896), so this requirement cannot move to done before it.
+evidence: Requirement file read at 2df637f; docs/TRACEABILITY.md:209 matches the frontmatter (in-progress); docs/workflows/README.md row wf_ed1f5104-63a holds the only record of the PASS and the upheld challenge; test-verify-tiers.sh:209-210 holds the new case.
+fix: Record the verification transition before the next review; add the Status-log line for the PASS at d4d3883 (workflow wf_ed1f5104-63a, challenge upheld); add the new case to the AC-4 strategy line; write "the limit of two writers" in the Edge case; keep the order 094 before 096 for the done transition.
+```
+
+3.
+
+```text
+location: scripts/check-project-control.sh:380-437, :996-1031; docs/ASSUMPTIONS.md (ASM-018); docs/briefs/README.md:18-23
+defect: Check 11 accepts more than ASM-018 names. Under Input revision a hex token delimited by a slash or a dot inside a branch name, a branch named in pure hex, a compact date, any number of 7 or more digits and 0000000 count as a commit. A section that holds only an HTML comment counts as filled, and an ID inside an HTML comment counts as the requirement ID; AVE-REQ-999 is accepted. Briefs in a subdirectory other than drafts/ or with another extension, and hidden files in handbacks/, are not looked at. These are limits of a syntactic rule that the brief's reader covers; none contradicts the rule as documented.
+evidence: Scratch-clone probes: `feature/abcdef1`, `fix.1234567`, deadbeef, effaced, 20261006, 1234567, 0000000 -> exit 0; `<!-- later -->` as the only line of Allowed paths -> exit 0; `<!-- AVE-REQ-096 -->` as the only Requirements line -> exit 0; docs/briefs/extra/x.md and x.markdown without sections -> exit 0; handbacks/.part-1.md -> exit 0.
+fix: Extend ASM-018 and the README sentence to name these cases, or tighten the rule: strip HTML comments before judging a section, require the hash inside a code span, and reject files in docs/briefs/ that are neither a *.md brief, README.md, drafts/ nor handbacks/.
+```
+
+### Test quality
+
+```text
+AC-1 and AC-2 (scripts/tests/test-checker.sh:208-242): each case builds a fresh fixture, applies one mutation and asserts the exit code plus the specific ERROR line (or OK: for positives), so assertions are specific and independent of the checker's own output. The cases executed in the release run on four awk implementations (136 ok lines, no FAIL) and count through the suite result (exit 0, 822 checks, 0 failed). Fails without the behavior: 11 mutants of check 11, each caught by the cases named for it; no mutant survived. Tagged with comment lines, the convention for shell suites. Coverage gap: none against the documented rule; the acceptance limits in non-blocking finding 3 are untested because they are outside the rule. No test can show that a launch had a brief or that a prompt carried the base check; those rest on inspection, which is where both blocking findings lie.
+
+AC-3: inspection only, with a stated reason in § Verification strategy. No tagged test, as expected; evidence.py reports it as missing until a Test evidence inspection line exists. The inspection shows the criterion: skill, agent definition and recorded prompts agree, and the media tests decode real renders and ran.
+
+AC-4 (scripts/tests/test-verify-tiers.sh:207-245): the lock state is judged by an independent probe in a child process (`AVE_HEAVY_LOCK_HELD=1` in the environment and `! flock -n <lock> true`), not by verify.sh's own report. The waiting case reads the first output line through a FIFO, requires 2 s of silence with the process alive, and requires no further waiting line after the release, so exactly one line is asserted. The 2 s silence is timing-based in the conservative direction: a run that started steps prints at once. Executed in the release run (12 cases ok). Fails without the behavior: 11 mutants of scripts/verify.sh each caught, including the new confirmation removed (1 case) and inverted (2 cases). Own constructions (private lock, own steps with logged intervals, two and three concurrent runs) and the live wait on the shared lock agree with the suite. Coverage gap: the variable set while flock is missing or the lock file cannot be opened (non-blocking finding 1).
+
+Scenarios AT-29 and AT-30: nothing in the tree contradicts them. Evidence is tied to the current tree (FRESH), FAIL verdicts are recorded as failures, and handbacks exist as task handoffs. For AT-30's task handoffs, note that reports of the review workflows without a brief have no handback (blocking finding 2).
+```
+
+### Evidence for the requirement file
+
+```text
+None — verdict FAIL.
+```

@@ -60,14 +60,21 @@ worktree branch when verification passes; never push, merge or rebase.
   criterion; the plugin rejects unknown tags); scenario tests also `@pytest.mark.scenario("AT-NN")`. Persistence
   across restart is tested with a new process or a fresh connection on the same data root.
 - One heavy media job at a time; this task needs few media runs.
+- Host and gates: on this Windows host `./scripts/verify.sh` enters the Linux development container by itself
+  (ADR-009); every other check or test command takes the prefix `./scripts/dev-container.sh`. The fast tier
+  resolves FFmpeg and FFprobe to a stand-in that exits 1, so every test that calls a media tool carries
+  `@pytest.mark.media` (populations `slow`). A run fails on a file Git ignores inside `backend/src` or
+  `backend/tests` (bytecode directories excepted), on a skipped, expected-to-fail or deselected test, and on a
+  tag that names no criterion.
 
 ## Test commands
 - `./scripts/verify.sh --tier media` must pass (it runs pytest with `--forbid-skips`).
-- `python3 scripts/evidence.py show AVE-REQ-001 AVE-REQ-002 AVE-REQ-003 AVE-REQ-009 AVE-REQ-015 AVE-REQ-048`
-  after that run: report the per-criterion states in the handback.
+- `./scripts/dev-container.sh python3 -B scripts/evidence.py show AVE-REQ-001 AVE-REQ-002 AVE-REQ-003 AVE-REQ-009
+  AVE-REQ-015 AVE-REQ-048 --tier media` after that run: report the per-criterion states in the handback.
 
 ## Handback schema
 `## Result: COMPLETE | PARTIAL | BLOCKED`, then: branch and commit hash; per requirement and AC: status
 (implemented / partial / not started), the tests (node IDs) and what they prove; commands run with results;
 decisions taken (proposed ASSUMPTIONS entries); deviations and proposed follow-up requirements; documentation
-updates for the lead (ARCHITECTURE sections, Implementation evidence lines).
+updates for the lead (ARCHITECTURE sections, Implementation evidence lines). The lead writes the returned report
+to `docs/briefs/handbacks/` (the task changes no file under `docs/`).
