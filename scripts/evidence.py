@@ -16,10 +16,11 @@ Commands:
       latest-<tier>.json (var/verify/ is created when absent; exit 2 when it cannot be).
   show [AVE-REQ-NNN ...] [--tier TIER] [--require-fresh] [--require-complete]
       Per-criterion evidence from the heaviest manifest that is fresh (same tree fingerprint and
-      toolchain as now), or from the newest one when none is. --require-fresh exits 1 when the
-      tree or the toolchain changed since that run; --require-complete exits 1 when the run, or
-      a fresh run of any tier, failed, or a named requirement has a criterion without passing,
-      non-contract evidence or with a tagged test that did not run.
+      toolchain as now), or from the newest one when none is. --tier selects the run that is
+      shown. --require-fresh exits 1 when the tree or the toolchain changed since that run;
+      --require-complete exits 1 when the run, or a fresh run of any tier (with or without
+      --tier), failed, or a named requirement has a criterion without passing, non-contract
+      evidence or with a tagged test that did not run.
   check-done --dir DIR [--tier TIER]
       Exit 1 when a requirement with status `done` has a criterion that this run's results do
       not evidence. Every tier fails on failed, contract-only and missing evidence; the release
@@ -64,7 +65,10 @@ Evidence rules (docs/requirements/README.md, Definition of Done):
     result of the run) is recorded as ``not-run``: it evidences nothing, and a run that left a
     tagged test out certifies no requirement complete;
   * an inspection line counts for a criterion whose ## Verification strategy line names
-    inspection (``- AC-n — inspection — <why>``);
+    inspection (``- AC-n — inspection — <why>``); where that line names a test level beside
+    inspection (``- AC-n — integration and inspection — …``) the inspection line counts only
+    beside a tagged test that passed in the run, so it never stands in for the test the
+    strategy names;
   * a run is recorded once, and a suite result counts when it belongs to a tooling test file of
     this tree and carries that file's tags. ``var/verify/`` is local, unauthenticated data: the
     run that certifies a requirement is the one the reviewer or CI starts.
@@ -170,6 +174,9 @@ class Requirement:
     inspected: frozenset[str]
     problems: tuple[str, ...] = ()
     """Why the file is outside the canonical form (empty for a file check_baseline.py accepts)."""
+    beside_test: frozenset[str] = frozenset()
+    """Criteria whose strategy line names a test level beside inspection: their inspection line
+    counts only beside a tagged test that passed."""
 
 
 def read_requirement(path: Path) -> Requirement:
@@ -177,19 +184,33 @@ def read_requirement(path: Path) -> Requirement:
     check_baseline.py uses: the status and the criteria of the done gate are the ones the baseline
     gate checked (AVE-REQ-097 AC-4)."""
     item = reqfile.read(path)
-    # An inspection line counts for a criterion whose strategy line names inspection.
+    # An inspection line counts for a criterion whose strategy line names inspection. The level
+    # field of that line is the one word "inspection", or it names a test level too ("integration
+    # and inspection"): every other level field of the criterion, on the same line or on a line of
+    # its own, makes it a criterion with a test level.
+    levels: dict[str, list[str]] = {}
+    for line in item.sections.get("Verification strategy", []):
+        if match := _STRATEGY_LINE.match(line):
+            levels.setdefault(match.group(1), []).append(match.group(2).strip())
     by_inspection = {
-        match.group(1)
-        for line in item.sections.get("Verification strategy", [])
-        if (match := _STRATEGY_LINE.match(line)) and "inspection" in match.group(2)
+        name for name, fields in levels.items() if any("inspection" in level for level in fields)
     }
     inspected = frozenset(
         match.group(1)
         for line in item.sections.get("Test evidence", [])
         if (match := _INSPECTION_LINE.match(line)) and match.group(1) in by_inspection
     )
+    beside_test = frozenset(
+        name for name in by_inspection if any(level != "inspection" for level in levels[name])
+    )
     return Requirement(
-        item.id, path, item.get("status"), tuple(item.criteria()), inspected, tuple(item.problems)
+        item.id,
+        path,
+        item.get("status"),
+        tuple(item.criteria()),
+        inspected,
+        tuple(item.problems),
+        beside_test,
     )
 
 
@@ -634,15 +655,19 @@ def run_unit_tests(directory: Path, run_dir: Path | None) -> int:
     return 0
 
 
-def criterion_state(items: list[dict[str, Any]], inspected: bool) -> str:
+def criterion_state(
+    items: list[dict[str, Any]], inspected: bool, beside_test: bool = False
+) -> str:
     """``passed``, ``inspected``, ``contract-only``, ``failed``, ``not-run`` (every tagged test
-    exists and none ran) or ``missing`` (no test carries the tag)."""
+    exists and none ran) or ``missing`` (no test carries the tag). ``inspected``: an inspection
+    line counts for the criterion; with ``beside_test`` (its strategy names a test level too) the
+    line counts only beside a tagged test that passed in the run."""
     ran = [item for item in items if item["outcome"] != NOT_RUN]
     if any(item["outcome"] != "passed" for item in ran):
         return "failed"
     if any(not item["contract"] for item in ran):
         return "passed"
-    if inspected:
+    if inspected and (ran or not beside_test):
         return "inspected"
     if ran:
         return "contract-only"
@@ -852,14 +877,22 @@ def cmd_show(args: argparse.Namespace) -> int:
             print(f"  form   NOT CANONICAL  {requirement.problems[0]}")
         for criterion in requirement.criteria:
             items = manifest["criteria"].get(f"{requirement_id} {criterion}", [])
-            state = criterion_state(items, criterion in requirement.inspected)
+            state = criterion_state(
+                items, criterion in requirement.inspected, criterion in requirement.beside_test
+            )
             left = unrun(items)
             incomplete |= state not in ("passed", "inspected") or left > 0
             note = f" — {left} tagged test(s) did not run" if left and state != NOT_RUN else ""
             print(f"  {criterion:<6} {state:<14} {_test_summary(items)}{note}")
-    failed_runs = sorted(
-        {manifest["tier"]} if manifest["result"] != "PASS" else set()
-    ) + sorted(m["tier"] for _path, m in fresh_ones if m["result"] != "PASS" and m is not manifest)
+    # A failed fresh run of any tier counts, also when --tier selects the run that is shown.
+    every_tier = found if args.tier is None else manifests(None)
+    failed_runs = sorted({manifest["tier"]} if manifest["result"] != "PASS" else set()) + sorted(
+        m["tier"]
+        for _path, m in every_tier
+        if m["tier"] != manifest["tier"]
+        and m["result"] != "PASS"
+        and not staleness(m, fingerprint, tools)
+    )
     if args.require_complete and failed_runs:
         print(
             f"Completeness: the run of tier {', '.join(failed_runs)} FAILED; a failed run"
@@ -892,7 +925,9 @@ def done_problems(
             continue
         for criterion in requirement.criteria:
             items = evidence.criteria.get(f"{requirement.id} {criterion}", [])
-            state = criterion_state(items, criterion in requirement.inspected)
+            state = criterion_state(
+                items, criterion in requirement.inspected, criterion in requirement.beside_test
+            )
             left = unrun(items)
             if state in ("failed", "contract-only", "missing"):
                 problems.append(f"{requirement.id} {criterion}: {state} in this run")

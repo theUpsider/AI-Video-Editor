@@ -31,9 +31,10 @@ ss() {  # ss <project dir> <json>
 json() { printf '{"session_id":"t","hook_event_name":"SessionStart","source":"%s","model":"x"}' "$1"; }
 START="$(json startup)"
 COMPACT="$(json compact)"
-# Claude Code starts the hook at startup, on resume and after compaction: every content check of the
-# state block runs once per source (AVE-REQ-098 AC-2).
-SOURCES="startup resume compact"
+# Claude Code starts the hook at startup, on resume, after /clear and after compaction, the four
+# sources check 12 requires the registration to cover: every content check of the state block runs
+# once per source (AVE-REQ-098 AC-2).
+SOURCES="startup resume clear compact"
 # every <name> <check> — the check holds for the output of a session start from each source.
 every() {
   local source
@@ -46,9 +47,10 @@ every() {
 R="$T/ss repo"; "$W/make-fixture.sh" "$R" >/dev/null
 (cd "$R" && git init -q -b main && git config user.email t@t && git config user.name t && git add -A && git commit -qm "chore: first" && for i in 2 3 4 5 6 7 8 9 10; do git commit -q --allow-empty -m "chore: commit $i"; done) 2>/dev/null
 
-# AVE-REQ-098 AC-2: every session start, resume and compaction injects the state reconstructed
-# from the repository (branch, commits, uncommitted paths, last verification, PROGRESS.md).
-echo "## repo with commits, no verification yet: startup, resume and compact"
+# AVE-REQ-098 AC-2: every session start, resume, /clear and compaction injects the state
+# reconstructed from the repository (branch, commits, uncommitted paths, last verification,
+# PROGRESS.md).
+echo "## repo with commits, no verification yet: startup, resume, clear and compact"
 every "exit 0" '[ "$CODE" = 0 ] && [ -z "$ERR" ]'
 every "header names the source" 'printf "%s\n" "$OUT" | sed -n 1p | quiet -x "## Project state (injected by .claude/hooks/session-start.sh — source: $source)"'
 every "branch, HEAD and change count line" 'printf "%s\n" "$OUT" | quiet -E "^- Branch: main \| HEAD: [0-9a-f]{7,} \| Uncommitted paths: 0$"'
@@ -62,6 +64,8 @@ check "compact output (<= 40 lines here)" '[ "$(printf "%s\n" "$OUT" | wc -l)" -
 echo "     ($(printf "%s\n" "$OUT" | wc -l) lines)"
 ss "$R" "$(json resume)"
 check "resume: the last line is the resume-project instruction" 'printf "%s\n" "$OUT" | tail -1 | quiet "^Follow the \`resume-project\` skill"'
+ss "$R" "$(json clear)"
+check "clear: the last line is the resume-project instruction" 'printf "%s\n" "$OUT" | tail -1 | quiet "^Follow the \`resume-project\` skill"'
 ss "$R" "$COMPACT"
 check "compact: the last line asks to re-anchor on the repository state" 'printf "%s\n" "$OUT" | tail -1 | quiet "^Context was compacted: re-anchor on the repository state before continuing"'
 
@@ -77,6 +81,14 @@ printf '\nchanged\n' >> "$R/docs/ARCHITECTURE.md"
 every "uncommitted list names the modified and the untracked file" 'printf "%s\n" "$OUT" | quiet -x -- "- Uncommitted (git status --short):" && printf "%s\n" "$OUT" | quiet -x "   M docs/ARCHITECTURE.md" && printf "%s\n" "$OUT" | quiet -x "  ?? untracked.txt"'
 for i in $(seq 1 24); do : > "$R/extra-$i.txt"; done
 every "uncommitted list capped at 20 lines with the remainder counted" '[ "$(printf "%s\n" "$OUT" | grep -c "^  ?? extra-\|^   M \|^  ?? untracked")" = 20 ] && printf "%s\n" "$OUT" | quiet -x "  \[6 more; run git status --short\]" && printf "%s\n" "$OUT" | quiet "Uncommitted paths: 26$"'
+rm -f "$R"/extra-*.txt
+# The boundary of the list: exactly 20 paths are listed whole with no remainder line, and with 21
+# paths 20 are listed and one is counted as the remainder.
+LISTED='printf "%s\n" "$OUT" | grep -c "^  ?? extra-\|^   M \|^  ?? untracked"'
+for i in $(seq 1 18); do : > "$R/extra-$i.txt"; done
+every "exactly 20 uncommitted paths: all listed, no remainder line" '[ "$(eval "$LISTED")" = 20 ] && ! printf "%s\n" "$OUT" | quiet "more; run git status --short" && printf "%s\n" "$OUT" | quiet "Uncommitted paths: 20$"'
+: > "$R/extra-19.txt"
+every "21 uncommitted paths: 20 listed, one counted as the remainder" '[ "$(eval "$LISTED")" = 20 ] && printf "%s\n" "$OUT" | quiet -x "  \[1 more; run git status --short\]" && printf "%s\n" "$OUT" | quiet "Uncommitted paths: 21$"'
 rm -f "$R"/extra-*.txt
 (cd "$R" && git checkout -q -- docs/ARCHITECTURE.md)
 mkdir -p "$R/vendor/sub" && (cd "$R/vendor/sub" && git init -q && git config user.email t@t && git config user.name t && printf 'v\n' > f && git add f && git commit -qm s)

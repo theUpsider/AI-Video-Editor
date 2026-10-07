@@ -18,6 +18,13 @@ case "${1:-}" in
   --all-awks) ALL_AWKS=1 ;;
   *) printf 'Usage: %s [--all-awks]\n' "$0" >&2; exit 2 ;;
 esac
+# AVE-REQ-097 AC-4: the JSON validator cases need jq and node. Without one of them the suite stops
+# here, before any case and without a TOTAL line, so a host that lacks the tool reports no passing
+# suite (the case that starts this file without the tool stands under "the suite's own guards").
+for tool in jq node; do
+  command -v "$tool" >/dev/null 2>&1 ||
+    { printf 'test-checker.sh: %s is not installed: the %s validator cases cannot run\n' "$tool" "$tool" >&2; exit 2; }
+done
 T="$(mktemp -d "${TMPDIR:-/tmp}/checker-tests.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
 # The fixtures are Git repositories of their own: with a temp dir inside a work tree their Git commands
@@ -42,12 +49,20 @@ assert old in s, (p, old)
 open(p, 'w', newline='').write(s.replace(old, new, 1))
 PY
 }
-# jedit <python statement> — edits .claude/settings.json, parsed as d, and writes it back.
+# jedit <python statement> — edits .claude/settings.json, parsed as d, and writes it back. A file it
+# cannot edit (no JSON, a top-level value that is no object, a statement that fails) is reported by
+# one line that names this helper, and the case then counts as a setup failure: the cases on such
+# files write the file themselves and assert the checker's own error line.
 jedit() { python3 - "$1" <<'PY'
 import json, sys
 p = '.claude/settings.json'
-d = json.load(open(p, encoding='utf-8'))
-exec(sys.argv[1])
+try:
+    d = json.load(open(p, encoding='utf-8'))
+    if not isinstance(d, dict):
+        raise TypeError(f'the top-level value is a {type(d).__name__}; this helper edits a JSON object')
+    exec(sys.argv[1])
+except Exception as error:
+    sys.exit(f'jedit: {p} not edited by {sys.argv[1]!r}: {type(error).__name__}: {error}')
 open(p, 'w', encoding='utf-8').write(json.dumps(d, indent=2) + '\n')
 PY
 }
@@ -140,6 +155,13 @@ for h in "# Current project state" "## Current milestone" "## Current objective"
   expect "PROGRESS without '$h'" 1 "ERROR: docs/PROGRESS.md: missing heading '$h'" "grep -vx '$h' docs/PROGRESS.md > p.tmp && mv p.tmp docs/PROGRESS.md"
 done
 expect "PROGRESS heading with CRLF"        0 "OK:" "sed 's/\$/\r/' docs/PROGRESS.md > p.tmp && mv p.tmp docs/PROGRESS.md"
+# A heading that stands only inside a fenced block or an HTML comment is absent for the reader of
+# the rendered file, and for the rule.
+expect "PROGRESS heading only inside a fence" 1 "ERROR: docs/PROGRESS.md: missing heading '## Blockers'" "fence_line docs/PROGRESS.md '## Blockers'"
+expect "PROGRESS heading only inside an HTML comment" 1 "ERROR: docs/PROGRESS.md: missing heading '## Blockers'" "sub docs/PROGRESS.md '## Blockers' '<!--
+## Blockers
+-->'"
+expect "PROGRESS heading beside an HTML comment counts" 0 "OK:" "sub docs/PROGRESS.md '## Blockers' '## Blockers <!-- two open -->'"
 expect "missing required file"             1 "ERROR: docs/ROADMAP.md: required file is missing" "rm docs/ROADMAP.md"
 expect "non-executable hook"               1 "ERROR: .claude/hooks/stop-verify.sh: not executable" "chmod -x .claude/hooks/stop-verify.sh"
 expect "non-executable script"             1 "ERROR: scripts/verify.sh: not executable" "chmod -x scripts/verify.sh"
@@ -156,6 +178,55 @@ expect "agent without description"         1 "frontmatter description is missing
 expect "agent without frontmatter"         1 "ERROR: .claude/agents/reviewer.md: missing frontmatter" "printf 'You are the reviewer.\n' > .claude/agents/reviewer.md"
 expect "skill name mismatch"               1 "ERROR: .claude/skills/milestone-review/SKILL.md: frontmatter name 'milestone' must equal 'milestone-review'" "sub .claude/skills/milestone-review/SKILL.md 'name: milestone-review' 'name: milestone'"
 expect "skill dir without SKILL.md"        1 "ERROR: .claude/skills/orphan: skill directory has no SKILL.md" "mkdir .claude/skills/orphan"
+# AVE-REQ-098 AC-4: agent and skill frontmatter holds the keys of a written list. A permission mode, a
+# hook block or any other key fails, and so does a line the checker's reader takes no key from.
+A_KEYS="(name, description, tools, model, color, skills)"
+S_KEYS="(name, description, when_to_use, argument-hint, context, agent, background)"
+HOOK_BLOCK='hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: scripts/loop-forever.sh'
+expect "agent frontmatter with a permission mode" 1 "ERROR: .claude/agents/implementer.md: frontmatter key 'permissionMode' (line 6) is outside the keys of agent frontmatter $A_KEYS" "sub .claude/agents/implementer.md 'model: inherit' 'model: inherit
+permissionMode: bypassPermissions'"
+expect "agent frontmatter with a hook block" 1 "ERROR: .claude/agents/tester.md: frontmatter key 'hooks' (line 3) is outside the keys of agent frontmatter $A_KEYS" "sub .claude/agents/tester.md 'name: tester' 'name: tester
+$HOOK_BLOCK'"
+expect "skill frontmatter with a hook block" 1 "ERROR: .claude/skills/develop/SKILL.md: frontmatter key 'hooks' (line 3) is outside the keys of skill frontmatter $S_KEYS" "sub .claude/skills/develop/SKILL.md 'name: develop' 'name: develop
+$HOOK_BLOCK'"
+expect "skill frontmatter with a permission mode" 1 "ERROR: .claude/skills/resume-project/SKILL.md: frontmatter key 'permissionMode' (line 3) is outside the keys of skill frontmatter $S_KEYS" "sub .claude/skills/resume-project/SKILL.md 'name: resume-project' 'name: resume-project
+permissionMode: dontAsk'"
+expect "skill frontmatter with a key of the agent list" 1 "ERROR: .claude/skills/milestone-review/SKILL.md: frontmatter key 'tools' (line 3) is outside the keys of skill frontmatter $S_KEYS" "sub .claude/skills/milestone-review/SKILL.md 'name: milestone-review' 'name: milestone-review
+tools: Read, Bash'"
+expect "agent frontmatter with a key of the skill list" 1 "ERROR: .claude/agents/architect.md: frontmatter key 'context' (line 3) is outside the keys of agent frontmatter $A_KEYS" "sub .claude/agents/architect.md 'name: architect' 'name: architect
+context: fork'"
+expect "agent frontmatter with every listed key accepted" 0 "OK:" "sub .claude/agents/implementer.md 'model: inherit' 'model: inherit
+color: blue
+skills: [implement-requirement]'"
+expect "skill frontmatter with every listed key accepted" 0 "OK:" "sub .claude/skills/verify-requirement/SKILL.md 'name: verify-requirement' 'name: verify-requirement
+when_to_use: Before a requirement moves to done.
+context: fork
+agent: reviewer
+background: false'"
+NO_KEY_LINE="is no 'key: value' line at column 0, no indented continuation of the key above it and no blank line"
+expect "frontmatter with a quoted key"     1 "ERROR: .claude/skills/develop/SKILL.md: frontmatter line 3 $NO_KEY_LINE" "sub .claude/skills/develop/SKILL.md 'name: develop' 'name: develop
+\"hooks\": {}'"
+expect "frontmatter key with a space before the colon" 1 "ERROR: .claude/agents/reviewer.md: frontmatter line 3 $NO_KEY_LINE" "sub .claude/agents/reviewer.md 'name: reviewer' 'name: reviewer
+permissionMode : bypassPermissions'"
+expect "frontmatter that opens with an indented line" 1 "ERROR: .claude/agents/researcher.md: frontmatter line 2 $NO_KEY_LINE" "sub .claude/agents/researcher.md '---
+name: researcher' '---
+  hooks: {}
+name: researcher'"
+expect "frontmatter with a folded value and a blank line accepted" 0 "OK:" "sub .claude/skills/develop/SKILL.md '  folded.' '  folded.
+
+argument-hint: x'"
+expect "README.md among the agent files"   1 "ERROR: .claude/agents/README.md: is read by Claude Code as an agent definition and by check 4 as none" "printf -- '---\nname: notes\ndescription: Notes.\npermissionMode: bypassPermissions\n---\n' > .claude/agents/README.md"
+expect "frontmatter with an indented closing line" 1 "ERROR: .claude/agents/tester.md: frontmatter line 4 is an indented '---' line" "sub .claude/agents/tester.md 'description: Stub tester agent.' 'description: Stub tester agent.
+  ---
+permissionMode: bypassPermissions'"
+# An agent file or a skill directory whose name opens with a dot is read like every other one.
+expect "agent file whose name opens with a dot" 1 "ERROR: .claude/agents/.extra.md: frontmatter key 'permissionMode' (line 4) is outside the keys of agent frontmatter $A_KEYS" "printf -- '---\nname: .extra\ndescription: Hidden.\npermissionMode: bypassPermissions\n---\n' > .claude/agents/.extra.md"
+expect "skill directory whose name opens with a dot" 1 "ERROR: .claude/skills/.extra/SKILL.md: frontmatter key 'hooks' (line 4) is outside the keys of skill frontmatter $S_KEYS" "mkdir .claude/skills/.extra && printf -- '---\nname: .extra\ndescription: Hidden.\nhooks: {}\n---\n' > .claude/skills/.extra/SKILL.md"
+expect "skill directory whose name opens with a dot, without SKILL.md" 1 "ERROR: .claude/skills/.orphan: skill directory has no SKILL.md" "mkdir .claude/skills/.orphan"
 expect "invalid ADR status"                1 "invalid status line 'Approved — 2026-10-01'" "sub docs/decisions/ADR-001-specification-driven-development-workflow.md 'Accepted — 2026-10-01' 'Approved — 2026-10-01'"
 expect "ADR status with hyphen"            1 "invalid status line 'Accepted - 2026-10-01'" "sub docs/decisions/ADR-001-specification-driven-development-workflow.md 'Accepted — 2026-10-01' 'Accepted - 2026-10-01'"
 expect "superseded ADR missing target"     1 "superseded by ADR-007, which has no file in docs/decisions/" "sub docs/decisions/ADR-001-specification-driven-development-workflow.md 'Accepted — 2026-10-01' 'Superseded by ADR-007 — 2026-11-02'"
@@ -236,7 +307,17 @@ expect "brief headings out of order"       1 "ERROR: $B: heading '## Allowed pat
 expect "brief with a repeated heading"     1 "ERROR: $B: heading '## Requirements' follows '## Handback schema'" "printf '${BRIEF}\n## Requirements\nAVE-REQ-002 AC-1\n' > $B"
 expect "brief requirements without an ID"  1 "ERROR: $B: section '## Requirements' names no requirement ID (AVE-REQ-NNN)" "printf '$BRIEF' | sed 's/^AVE-REQ-001 AC-1\$/Fix the findings./' > $B"
 expect "brief ID outside Requirements"     1 "section '## Requirements' names no requirement ID" "printf '$BRIEF' | sed -e 's/^AVE-REQ-001 AC-1\$/Fix the findings./' -e 's/^None\\.\$/After AVE-REQ-002./' > $B"
+expect "brief with a heading repeated directly" 1 "ERROR: $B: heading '## Allowed paths' follows '## Allowed paths'" "printf '$BRIEF' > $B && sub $B 'src/' 'src/
+
+## Allowed paths
+lib/'"
 expect "brief with an extra section after the template" 0 "OK:" "printf '${BRIEF}\n## Notes\nFree text.\n' > $B"
+# An H1 or an H2 outside the template ends the section above it: text below such a heading fills no
+# template section.
+expect "brief section emptied by a foreign H2" 1 "ERROR: $B: section '## Allowed paths' is empty" "printf '$BRIEF' > $B && sub $B 'src/' '## Notes
+src/'"
+expect "brief section emptied by an H1"    1 "ERROR: $B: section '## Allowed paths' is empty" "printf '$BRIEF' > $B && sub $B 'src/' '# Notes
+src/'"
 # AVE-REQ-096 AC-1: HTML comments are removed before a section is judged: text, a requirement ID or a
 # heading inside a comment is absent for the reader of the rendered brief, and for the rule.
 expect "brief section holding only an HTML comment" 1 "ERROR: $B: section '## Allowed paths' is empty" "printf '$BRIEF' | sed 's|^src/\$|<!-- later -->|' > $B"
@@ -274,9 +355,21 @@ expect "input revision: abbreviated hash accepted" 0 "OK:" "printf '$BRIEF' | se
 expect "input revision: full hash accepted" 0 "OK:" "printf '$BRIEF' | sed 's/^abc1234\$/a62e197b41ebd83adb000349347ca9fd0209b7eb, main working tree./' > $B"
 expect "input revision: self-reference accepted" 0 "OK:" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` at the commit that adds this brief (\`git log -1 --format=%h -- $B\`).|' > $B"
 expect "input revision: self-reference to another brief" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` (\`git log -1 --format=%h -- docs/briefs/2026-10-01-other.md\`).|' > $B"
+# The self-reference ends at the brief's path: a path that goes on (a suffix, a longer name, a path
+# below it) names another file. A hex token counts with a delimiter on both sides, and only under
+# Input revision.
+for suffix in .bak -old /x x; do
+  expect "input revision: self-reference followed by $suffix" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's|^abc1234\$|Branch \`ccr-af7078da-q8r8mf\` (\`git log -1 --format=%h -- $B$suffix\`).|' > $B"
+done
+expect "input revision: branch name that ends in hex" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/Branch \`worktree-agent-ace5eb07e8aecbfbf\` only./' > $B"
+expect "input revision: hash with a suffix" 1 "$NO_COMMIT" "printf '$BRIEF' | sed 's/^abc1234\$/\`abc1234_wip\` on the working branch./' > $B"
+expect "input revision: commit named under Requirements only" 1 "$NO_COMMIT" "printf '$BRIEF' | sed -e 's/^AVE-REQ-001 AC-1\$/AVE-REQ-001 AC-1 at abc1234/' -e 's/^abc1234\$/The prompt names it./' > $B"
 # AVE-REQ-096 AC-1: a handback persists in docs/briefs/handbacks/, named after the brief it answers.
 HB=docs/briefs/handbacks
-expect "handback and part handback of a brief accepted" 0 "OK:" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.md && printf '# Handback, part 2\n' > $HB/2026-10-02-stub.part-2.md"
+expect "handback and part handbacks of a brief accepted" 0 "OK:" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.md && printf '# Handback, part 2\n' > $HB/2026-10-02-stub.part-2.md && printf '# Handback, part 10\n' > $HB/2026-10-02-stub.part-10.md"
+for part in 0 01; do
+  expect "handback part $part"             1 "ERROR: $HB/2026-10-02-stub.part-$part.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md (n = 1, 2, …)" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.part-$part.md"
+done
 expect "handback without its brief"        1 "ERROR: $HB/2026-10-02-other.md: names no brief: docs/briefs/2026-10-02-other.md is missing" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-other.md"
 expect "handback part without a number"    1 "ERROR: $HB/2026-10-02-stub.part-x.md: a handback is named <brief-slug>.md or <brief-slug>.part-<n>.md" "printf '$BRIEF' > $B && mkdir -p $HB && printf '# Handback\n' > $HB/2026-10-02-stub.part-x.md"
 expect "handback that is no Markdown file" 1 "ERROR: $HB/2026-10-02-stub.txt: a handback is named" "printf '$BRIEF' > $B && mkdir -p $HB && printf 'x\n' > $HB/2026-10-02-stub.txt"
@@ -293,10 +386,62 @@ for claim in 'Running: the release tier of the merge.' '- Implementer in flight 
   '- Implementer in-flight on branch x.' '- Media-tier run underway.' '- The review is still RUNNING.' \
   '- Media-tier run under way.' '- Media-tier run under-way since noon.' '- The review is still executing.' \
   '- Ongoing: the release tier of the merge.' '- The on-going review of AVE-REQ-001.' \
-  '- The release tier runs now.'; do
+  '- The release tier runs now.' '- The review is still-executing.' '- The release tier runs-now.'; do
   expect "PROGRESS claim: $claim" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
 $claim'"
 done
+for claim in 'Media-tier run under\tway.' 'Implementer in\tflight on branch x.' 'The review is still\texecuting.' \
+  'The release tier runs\tnow.'; do
+  expect "PROGRESS claim with a tab between the words: $claim" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' \"\$(printf '## In progress\\n- $claim')\""
+done
+# AVE-REQ-098 AC-3: a wording that a line wrap splits is the same claim. Check 7 joins consecutive
+# lines, up to a blank line or a fenced block, before it matches, so a wrapped paragraph or list item
+# is read whole; the error names the line on which the wording begins.
+for claim in 'The review of AVE-REQ-001 is still|executing in the workflow.' 'Media-tier run under|way since noon.' \
+  'Implementer in|flight on branch x.' 'The release tier runs|now.'; do
+  expect "PROGRESS claim split by a line wrap: ${claim%%|*} / ${claim#*|}" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- ${claim%%|*}
+  ${claim#*|}'"
+done
+expect "PROGRESS claim split by a line wrap in a paragraph" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+The review of AVE-REQ-001 is still
+executing in the workflow.'"
+expect "PROGRESS claim split by a line wrap in a quote" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+> The review of AVE-REQ-001 is still
+> executing in the workflow.'"
+expect "PROGRESS claim split by a hard line break" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- The review of AVE-REQ-001 is still\\
+  executing in the workflow.'"
+expect "PROGRESS claim split by a hyphen at the line end" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- The review of AVE-REQ-001 is still-
+  executing in the workflow.'"
+expect "PROGRESS claim: the error names the line on which the wording begins" 1 "ERROR: $P: line 8: claims ongoing execution" "sub $P '## In progress' '## In progress
+- Review of AVE-REQ-001: launched 2026-10-02.
+  It is still
+  executing in the workflow.'"
+expect "PROGRESS claim: one error for each line on which a wording begins" 1 "FAILED: 2 error(s)" "sub $P '## In progress' '## In progress
+- The review is underway and the media tier is running.
+  The release tier is ongoing.'"
+expect "PROGRESS: a code span that a line wrap splits is read as text" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- The words \`still
+  executing\` stand in a code span that a wrap splits.'"
+expect "PROGRESS: negations in capitals accepted" 0 "OK:" "sub $P '## In progress' '## In progress
+- Nothing is running; the old job is Not Running and NO LONGER RUNNING.'"
+expect "PROGRESS: negations split by a line wrap accepted" 0 "OK:" "sub $P '## In progress' \"\$(printf '## In progress\\n- The old job is not  \\n  running, nothing is\\n  running and the first run is no longer\\n  running.')\""
+expect "PROGRESS claim split over two list items" 1 "ERROR: $P: line 7: claims ongoing execution" "sub $P '## In progress' '## In progress
+- The review of AVE-REQ-001 is still
+- executing in the workflow.'"
+expect "PROGRESS: a blank line and a fenced block end the joined text" 0 "OK:" "sub $P '## In progress' '## In progress
+- The suite runs
+
+  now and then.
+> The plan is still
+>
+> executing the plan is next; the way leads under
+\`\`\`text
+code
+\`\`\`
+way.'"
 expect "PROGRESS: stop-safe in-flight line accepted" 0 "OK:" "sub $P '## In progress' '## In progress
 - Review of AVE-REQ-001: launched 2026-10-02; verdict not recorded. On resume without a recorded verdict nothing is running: re-run \`/verify-requirement AVE-REQ-001\`.'"
 expect "PROGRESS: claim words in comments, fences and code spans accepted" 0 "OK:" "sub $P '## In progress' '## In progress
@@ -331,14 +476,24 @@ for cmd in 'while true; do scripts/note.sh; done' 'while :; do scripts/note.sh; 
   'while [ 1 ]; do scripts/note.sh; done' 'true; while [ -e x ]; do scripts/note.sh; done' \
   'until false; do scripts/note.sh; done' '(until scripts/note.sh; do :; done)' \
   'for ((;;)); do scripts/note.sh; done' 'for (( i = 0; ; i++ )); do scripts/note.sh; done' \
+  'for((;;)); do scripts/note.sh; done' 'scripts/sleep-check.sh' \
   'sleep 600' 'scripts/note.sh &' 'claude -p go --dangerously-skip-permissions' \
-  'claude -p go --permission-mode bypassPermissions' 'claude -p go --permission-mode=acceptEdits'; do
+  'claude -p go --allow-dangerously-skip-permissions' \
+  'claude -p go --permission-mode bypassPermissions' 'claude -p go --permission-mode=acceptEdits' \
+  'scripts/note.sh --mode=until' 'cat scripts/a+while+b.sh' 'scripts/note.sh --run:while'; do
   expect "tool hook command: $cmd" 1 "ERROR: .claude/settings.json: hooks.PreToolUse[0] command '$cmd' starts a loop, a sleep, a background job or a permission bypass" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': '$cmd'}]}]\""
 done
 expect "hook command with redirects and && accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/note.sh 2>&1 && true'}]}]\""
+# An "&" inside "&&", "|&", ">&", "<&" or "&>" starts no background job, and "sleep" inside a longer
+# word (a letter, a digit or "_" beside it) is another word.
+expect "hook command with every & form that starts no background job accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/note.sh 2>&1 <&0 && true |& cat &>note.log'}]}]\""
+expect "hook command with sleep inside longer words accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/asleep.sh usleep sleep_ms 9sleep'}]}]\""
 expect "hook command with a list loop and loop words inside names accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'for f in a b; do scripts/wait-until-ready.sh --meanwhile || true; done'}]}]\""
+# A loop word with a letter, a digit, "_", ".", "/" or "-" directly before or after it is no shell
+# word: one token for each of the six characters on each side.
+expect "hook command with each character that makes a loop word part of a name accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/run ./until x.while --until 9while _until awhile while.sh until/x while-x untilx while9 until_'}]}]\""
 expect "hook entry with async true"        1 "ERROR: .claude/settings.json: hooks.Stop[0] runs a hook asynchronously (\"async\": true), which escapes its timeout" "jedit \"d['hooks']['Stop'][0]['hooks'][0]['async'] = True\""
-expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['hooks'][0]['async'] = False\""
+expect "hook entry with async false accepted" 0 "OK:" "jedit \"d['hooks']['PreToolUse'] = [{'hooks': [{'type': 'command', 'command': 'scripts/note.sh', 'async': False}]}]\""
 # AVE-REQ-097 AC-3: the Stop gate is registered once; nothing in the settings file switches it off,
 # loosens it or runs a heavier tier at every stop.
 expect "Stop hook removed"                 1 "ERROR: .claude/settings.json: hooks.Stop holds 0 command(s); it holds exactly one, the Stop gate .claude/hooks/stop-verify.sh" "jedit \"del d['hooks']['Stop']\""
@@ -367,15 +522,63 @@ expect "settings env with other variables accepted" 0 "OK:" "jedit \"d['env'] = 
 # AVE-REQ-097 AC-4: scripts/verify.d holds the registered step files only.
 expect "unregistered step file"            1 "ERROR: scripts/verify.d/99-local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/99-local.sh"
 expect "unregistered hidden step file"     1 "ERROR: scripts/verify.d/.local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/.local.sh"
-# AVE-REQ-098 AC-2: the SessionStart hook runs at startup, after resume and after compaction.
-expect "SessionStart matcher startup only" 1 "ERROR: .claude/settings.json: the SessionStart hook .claude/hooks/session-start.sh does not run on resume, compact" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup'\""
-expect "SessionStart matcher without compact" 1 "does not run on compact: its matcher excludes them" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup|resume|clear'\""
-expect "SessionStart regex matcher without resume" 1 "does not run on resume" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '^(startup|compact)\$'\""
-expect "SessionStart comma list is a regex matching nothing" 1 "does not run on startup, resume, compact" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup, resume, compact'\""
-expect "SessionStart pipe list accepted"    0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = 'startup|resume|compact'\""
-expect "SessionStart regex matcher accepted" 0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '^(startup|resume|compact)\$'\""
-expect "SessionStart matcher * accepted"   0 "OK:" "jedit \"d['hooks']['SessionStart'][0]['matcher'] = '*'\""
-expect "SessionStart hook removed"         1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"del d['hooks']['SessionStart']\""
+expect "unregistered step file whose name opens with two dots" 1 "ERROR: scripts/verify.d/..local.sh: is no registered component step file" "printf '# x\\n' > scripts/verify.d/..local.sh"
+expect "unregistered directory among the step files" 1 "ERROR: scripts/verify.d/extra: is no registered component step file" "mkdir scripts/verify.d/extra"
+# AVE-REQ-098 AC-2: the SessionStart hook runs at startup, after resume, after /clear and after
+# compaction.
+SS="d['hooks']['SessionStart']"
+NOT_ON="ERROR: .claude/settings.json: the SessionStart hook .claude/hooks/session-start.sh does not run on"
+expect "SessionStart matcher startup only" 1 "$NOT_ON resume, clear, compact: its matcher excludes them" "jedit \"${SS}[0]['matcher'] = 'startup'\""
+expect "SessionStart matcher without compact" 1 "$NOT_ON compact: its matcher excludes them" "jedit \"${SS}[0]['matcher'] = 'startup|resume|clear'\""
+expect "SessionStart matcher without clear" 1 "$NOT_ON clear: its matcher excludes them" "jedit \"${SS}[0]['matcher'] = 'startup|resume|compact'\""
+expect "SessionStart matcher without startup" 1 "$NOT_ON startup: its matcher excludes them" "jedit \"${SS}[0]['matcher'] = 'resume|clear|compact'\""
+expect "SessionStart regex matcher without resume" 1 "$NOT_ON resume: its matcher excludes them" "jedit \"${SS}[0]['matcher'] = '^(startup|clear|compact)\$'\""
+expect "SessionStart comma list is a regex matching nothing" 1 "$NOT_ON startup, resume, clear, compact" "jedit \"${SS}[0]['matcher'] = 'startup, resume, clear, compact'\""
+expect "SessionStart pipe list accepted"    0 "OK:" "jedit \"${SS}[0]['matcher'] = 'startup|resume|clear|compact'\""
+expect "SessionStart regex matcher accepted" 0 "OK:" "jedit \"${SS}[0]['matcher'] = '^(startup|resume|clear|compact)\$'\""
+expect "SessionStart matcher * accepted"   0 "OK:" "jedit \"${SS}[0]['matcher'] = '*'\""
+expect "SessionStart groups that cover the four sources together accepted" 0 "OK:" "jedit \"${SS} = [{'matcher': 'startup|resume', 'hooks': ${SS}[0]['hooks']}, {'matcher': 'clear|compact', 'hooks': ${SS}[0]['hooks']}]\""
+expect "SessionStart hook removed"         1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"del ${SS}\""
+expect "SessionStart without a group"      1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"${SS} = []\""
+expect "settings without the hooks object" 1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"del d['hooks']\""
+expect "settings whose hooks value is a list" 1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"d['hooks'] = [d['hooks']]\""
+# AVE-REQ-098 AC-2: the SessionStart command is exactly the registered one. A command that names the
+# hook script and never starts it, or that discards what the script prints, injects no state.
+SS_COMMAND="${SS}[0]['hooks'][0]['command']"
+SS_EXACT='must run the SessionStart hook .claude/hooks/session-start.sh and nothing else: it reads exactly "$CLAUDE_PROJECT_DIR"/.claude/hooks/session-start.sh, with nothing before or after it'
+expect "SessionStart command with its output discarded" 1 "$SS_EXACT" "jedit \"$SS_COMMAND += ' >/dev/null'\""
+expect "SessionStart command piped into head" 1 "$SS_EXACT" "jedit \"$SS_COMMAND += ' | head -n 1'\""
+expect "SessionStart command behind false &&" 1 "$SS_EXACT" "jedit \"$SS_COMMAND = 'false && ' + $SS_COMMAND\""
+expect "SessionStart command that names the hook in a comment" 1 "$SS_EXACT" "jedit \"$SS_COMMAND = 'true # .claude/hooks/session-start.sh'\""
+expect "SessionStart command that prints the hook's path" 1 "$SS_EXACT" "jedit \"$SS_COMMAND = 'echo .claude/hooks/session-start.sh'\""
+expect "SessionStart command without the project directory" 1 "$SS_EXACT" "jedit \"$SS_COMMAND = '.claude/hooks/session-start.sh'\""
+expect "a command that names the hook registers no SessionStart hook" 1 "ERROR: .claude/settings.json: no SessionStart hook runs .claude/hooks/session-start.sh" "jedit \"$SS_COMMAND = 'true # .claude/hooks/session-start.sh'\""
+expect "SessionStart handler of type prompt" 1 'ERROR: .claude/settings.json: hooks.SessionStart handler has type "prompt"; the SessionStart hook is a handler of type "command"' "jedit \"${SS}[0]['hooks'][0]['type'] = 'prompt'\""
+expect "second SessionStart command"       1 "hooks.SessionStart command 'scripts/note.sh' must run the SessionStart hook .claude/hooks/session-start.sh and nothing else" "jedit \"${SS}.append({'hooks': [{'type': 'command', 'command': 'scripts/note.sh'}]})\""
+# AVE-REQ-098 AC-2, AVE-REQ-097 AC-3: the two registrations hold the keys of the written form only: a
+# group "hooks" (SessionStart also "matcher"), a handler "type", "command" and optionally "timeout".
+ST="d['hooks']['Stop']"
+expect "SessionStart group with a foreign key" 1 'ERROR: .claude/settings.json: hooks.SessionStart[0] holds the key "if"; a group of hooks.SessionStart holds "hooks", "matcher" only (AVE-REQ-098 AC-2)' "jedit \"${SS}[0]['if'] = 'false'\""
+expect "SessionStart handler with a foreign key" 1 'ERROR: .claude/settings.json: hooks.SessionStart[0] handler holds the key "once"; a handler of hooks.SessionStart holds "type", "command", "timeout" only (AVE-REQ-098 AC-2)' "jedit \"${SS}[0]['hooks'][0]['once'] = True\""
+expect "SessionStart handler with async false" 1 'hooks.SessionStart[0] handler holds the key "async"' "jedit \"${SS}[0]['hooks'][0]['async'] = False\""
+expect "Stop group with a foreign key"     1 'ERROR: .claude/settings.json: hooks.Stop[0] holds the key "matcher"; a group of hooks.Stop holds "hooks" only (AVE-REQ-097 AC-3)' "jedit \"${ST}[0]['matcher'] = ''\""
+expect "Stop handler with a foreign key"   1 'ERROR: .claude/settings.json: hooks.Stop[0] handler holds the key "shell"; a handler of hooks.Stop holds "type", "command", "timeout" only (AVE-REQ-097 AC-3)' "jedit \"${ST}[0]['hooks'][0]['shell'] = 'powershell'\""
+expect "SessionStart handler with a timeout accepted" 0 "OK:" "jedit \"${SS}[0]['hooks'][0]['timeout'] = 60\""
+expect "SessionStart group that is no object" 1 "ERROR: .claude/settings.json: hooks.SessionStart[1] is no group object" "jedit \"${SS}.append('x')\""
+expect "Stop group that is no object"      1 "ERROR: .claude/settings.json: hooks.Stop[1] is no group object" "jedit \"${ST}.append([])\""
+expect "SessionStart group whose handlers are no list" 1 'ERROR: .claude/settings.json: hooks.SessionStart[1] holds no list of handlers under "hooks"' "jedit \"${SS}.append({'hooks': {}})\""
+expect "Stop handler that is no object"    1 "ERROR: .claude/settings.json: hooks.Stop[0] holds a handler that is no object" "jedit \"${ST}[0]['hooks'].append('x')\""
+expect "SessionStart handler that is no object" 1 "ERROR: .claude/settings.json: hooks.SessionStart[0] holds a handler that is no object" "jedit \"${SS}[0]['hooks'].append(['x'])\""
+# AVE-REQ-098 AC-2, AVE-REQ-097 AC-3: the settings file is one JSON object. A list, null, a string, a
+# number or a boolean is valid JSON and registers no hook.
+NO_OBJECT="ERROR: .claude/settings.json: the top-level value is"
+ONE_OBJECT="the settings file is one JSON object, and any other value registers no SessionStart hook and no Stop gate"
+expect "settings: top-level list"          1 "$NO_OBJECT a list; $ONE_OBJECT" "printf '[]\\n' > .claude/settings.json"
+expect "settings: top-level null"          1 "$NO_OBJECT null; $ONE_OBJECT" "printf 'null\\n' > .claude/settings.json"
+expect "settings: top-level string"        1 "$NO_OBJECT a string; $ONE_OBJECT" "printf '\"hooks\"\\n' > .claude/settings.json"
+expect "settings: a list that holds the settings object" 1 "$NO_OBJECT a list; $ONE_OBJECT" "{ printf '[' && cat .claude/settings.json && printf ']\\n'; } > s.tmp && mv s.tmp .claude/settings.json"
+expect "settings: top-level number"        1 "$NO_OBJECT a number; $ONE_OBJECT" "printf '7\\n' > .claude/settings.json"
+expect "settings: top-level boolean"       1 "$NO_OBJECT a boolean; $ONE_OBJECT" "printf 'true\\n' > .claude/settings.json"
 # AVE-REQ-098 AC-3: .env.example documents the product variables an unblock action names.
 expect "missing .env.example"              1 "ERROR: .env.example: required file is missing" "rm .env.example"
 expect "deferred epic and feature accepted" 0 "OK:" "sub $R/AVE-EPIC-01-stub-epic.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-EPIC-01-stub-epic.md && sub $R/AVE-FEAT-001-stub-feature.md 'status: in-progress' 'status: deferred' && printf -- '- 2026-10-03 — deferred — future scope\\n' >> $R/AVE-FEAT-001-stub-feature.md"
@@ -418,6 +621,17 @@ else
   echo "### awk = system ($(command -v awk))"
   run_suite
 fi
+# The edit helper names itself when it cannot edit the settings file and leaves the file as it was,
+# so a setup failure of a settings case is told apart from a verdict of the checker.
+echo "### edit helper"
+mkdir -p "$T/helper/.claude" && printf '[]\n' > "$T/helper/.claude/settings.json"
+HELPER_OUT="$(cd "$T/helper" && jedit "d['hooks'] = {}" 2>&1)"; HELPER_CODE=$?
+if [ "$HELPER_CODE" != 0 ] && printf '%s\n' "$HELPER_OUT" | quiet -F "jedit: .claude/settings.json not edited by" &&
+  [ "$(cat "$T/helper/.claude/settings.json")" = "[]" ]; then
+  PASS=$((PASS+1)); echo "  ok   the edit helper reports a file it cannot edit by its own line"
+else
+  FAIL=$((FAIL+1)); printf '  FAIL the edit helper reports a file it cannot edit by its own line (exit=%s)\n%s\n' "$HELPER_CODE" "$HELPER_OUT"
+fi
 # S8: the other JSON validators, each alone on PATH (run once; system awk)
 make_path() {  # make_path <dir> [extra tools...]
   local d="$T/$1" t
@@ -426,24 +640,29 @@ make_path() {  # make_path <dir> [extra tools...]
   for t in awk bash cat dirname env find grep head sed sort tail tr "$@"; do ln -s "$(command -v "$t")" "$d/$t"; done
 }
 SHIM=""
+# AVE-REQ-097 AC-4: the suite's own guards. Started without jq or without node on PATH, this file
+# stops with status 2 before any case and names the missing tool.
+echo "### the suite's own guards"
+for tool in jq node; do
+  if [ "$tool" = jq ]; then make_path "path-no-$tool" node; else make_path "path-no-$tool" jq; fi
+  GUARD_OUT="$(PATH="$T/path-no-$tool" bash "$W/test-checker.sh" 2>&1)"; GUARD_CODE=$?
+  if [ "$GUARD_CODE" = 2 ] && [ "$GUARD_OUT" = "test-checker.sh: $tool is not installed: the $tool validator cases cannot run" ]; then
+    PASS=$((PASS+1)); echo "  ok   the suite stops with status 2 when $tool is missing"
+  else
+    FAIL=$((FAIL+1)); printf '  FAIL the suite stops with status 2 when %s is missing (exit=%s)\n%s\n' "$tool" "$GUARD_CODE" "$GUARD_OUT" | head -n 12
+  fi
+done
+# jq and node are present here: the guard at the top of this file stops the suite without them.
 echo "### JSON validators"
-if command -v jq >/dev/null 2>&1; then
-  make_path path-jq jq
-  CHECK_PATH="$T/path-jq" expect "jq: valid settings"                0 "OK:" true
-  CHECK_PATH="$T/path-jq" expect "jq: two concatenated objects"      1 "expected one JSON value, found 2" "cat .claude/settings.json .claude/settings.json > s.tmp && mv s.tmp .claude/settings.json"
-  CHECK_PATH="$T/path-jq" expect "jq: empty file"                    1 "expected one JSON value, found 0" ": > .claude/settings.json"
-  CHECK_PATH="$T/path-jq" expect "jq: syntax error"                  1 "ERROR: .claude/settings.json: invalid JSON" "sub .claude/settings.json '\"Bash(git show *)\"' '\"Bash(git show *)\",'"
-else
-  FAIL=$((FAIL+1)); echo "  FAIL jq is not installed: the jq validator cases did not run"
-fi
-if command -v node >/dev/null 2>&1; then
-  make_path path-node node
-  CHECK_PATH="$T/path-node" expect "node: valid settings"            0 "OK:" true
-  CHECK_PATH="$T/path-node" expect "node: two concatenated objects"  1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" "cat .claude/settings.json .claude/settings.json > s.tmp && mv s.tmp .claude/settings.json"
-  CHECK_PATH="$T/path-node" expect "node: empty file"                1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" ": > .claude/settings.json"
-else
-  FAIL=$((FAIL+1)); echo "  FAIL node is not installed: the node validator cases did not run"
-fi
+make_path path-jq jq
+CHECK_PATH="$T/path-jq" expect "jq: valid settings"                0 "OK:" true
+CHECK_PATH="$T/path-jq" expect "jq: two concatenated objects"      1 "expected one JSON value, found 2" "cat .claude/settings.json .claude/settings.json > s.tmp && mv s.tmp .claude/settings.json"
+CHECK_PATH="$T/path-jq" expect "jq: empty file"                    1 "expected one JSON value, found 0" ": > .claude/settings.json"
+CHECK_PATH="$T/path-jq" expect "jq: syntax error"                  1 "ERROR: .claude/settings.json: invalid JSON" "sub .claude/settings.json '\"Bash(git show *)\"' '\"Bash(git show *)\",'"
+make_path path-node node
+CHECK_PATH="$T/path-node" expect "node: valid settings"            0 "OK:" true
+CHECK_PATH="$T/path-node" expect "node: two concatenated objects"  1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" "cat .claude/settings.json .claude/settings.json > s.tmp && mv s.tmp .claude/settings.json"
+CHECK_PATH="$T/path-node" expect "node: empty file"                1 "ERROR: .claude/settings.json: invalid JSON: SyntaxError" ": > .claude/settings.json"
 make_path path-none
 CHECK_PATH="$T/path-none" expect "no validator: warning only"      0 "WARN: .claude/settings.json: JSON not validated (install python3, node or jq)" true
 CHECK_PATH="$T/path-none" expect "no python3: settings policy warning" 0 "WARN: .claude/settings.json: settings policy not checked (install python3)" true
