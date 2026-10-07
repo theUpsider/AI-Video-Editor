@@ -53,8 +53,8 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
 
 1. File each report of the third review round as a handback part of its brief; on every upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
 2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
-3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (bring the drafts
-   up to the gates of this tree first).
+3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (the drafts name
+   the gates of this tree; each becomes a brief with the hash of the commit that closes M0).
 
 ## Blockers
 

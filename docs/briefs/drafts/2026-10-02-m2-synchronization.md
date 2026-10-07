@@ -69,9 +69,21 @@ scipy suffice; report any other dependency); `docs/**`, `scripts/**`, `.github/*
 - Host and gates: on this Windows host `./scripts/verify.sh` enters the Linux development container by itself
   (ADR-009); every other check or test command takes the prefix `./scripts/dev-container.sh`. The fast tier
   resolves FFmpeg and FFprobe to a stand-in that exits 1, so every test that calls a media tool carries
-  `@pytest.mark.media` (populations `slow`). A run fails on a file Git ignores inside `backend/src` or
-  `backend/tests` (bytecode directories excepted), on a skipped, expected-to-fail or deselected test, and on a
-  tag that names no criterion.
+  `@pytest.mark.media` (populations `slow`). A run fails on a skipped, expected-to-fail or deselected test, on
+  a tag that names no criterion, and on every file outside the fingerprint whose path the list in
+  `scripts/verify.sh` does not admit ([ASM-036](../../ASSUMPTIONS.md)): outputs, caches and scratch files go
+  below `var/` or into the container's `/tmp`, and the tree holds one `.gitignore`, at its root. ruff, mypy and
+  pytest read `backend/pyproject.toml` by name. A new `ave` module that the fixture generator imports joins the
+  generator digest, so the fixtures regenerate once.
+- Shared container: the worktrees of the main checkout use one development container. Stop a process only by
+  its process ID or by a working directory of your own; when your worktree already holds edits (the run started
+  the task again), read `git status` and `git diff` before changing anything
+  ([WF-012](../../WORKFLOW_LOG.md)).
+- Statement audit: before the handback, go through § Edge cases, § Verification strategy and § Implementation
+  evidence of each requirement file you propose text for. Every sentence that states what the code or a test
+  does names a test that fails without it (run the one-line mutant), or is reworded to what holds, or is worded
+  as a limit with its inspection; the handback holds the table and the mutation list in full
+  ([WF-010](../../WORKFLOW_LOG.md)).
 
 ## Test commands
 - `./scripts/verify.sh --tier media` must pass.
