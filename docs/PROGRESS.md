@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-07 — M0 open: the third review round returned FAIL for all five; its fix round is briefed, and the fourth round classifies by the skill alone._
+_Last updated: 2026-10-07 — M0 open: the third review round returned FAIL for all five; its fix round was launched, and the fourth round classifies by the skill alone._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -33,11 +33,12 @@ by `verify-requirement` § 10 as written ([WF-013](WORKFLOW_LOG.md)), move them 
   fix round closes all nine findings, by grammar or allow-list where a pattern stood; the fourth review round
   classes findings by `verify-requirement` § 10 as written, and hardening beyond the criteria goes to the
   proposed AVE-REQ-105 (M7).
-- Fix round briefed in [the fix brief](briefs/2026-10-07-m0-review-3-fixes.md): tracks A (AVE-REQ-093),
-  C (AVE-REQ-094), B2a (evidence tool, session-start hook) and B2b (project checker). Not launched when this
-  file was written: create a worktree per track from the brief's commit
-  (`git worktree add .claude/worktrees/m0-r3-fixes-<track> -b m0-r3-fixes-<track> <commit>`), then run the
-  Workflow tool with `docs/workflows/m0-review-3-fixes.js` and the arguments its header names.
+- Fix round from [the fix brief](briefs/2026-10-07-m0-review-3-fixes.md) at `88a2d92`: tracks A (AVE-REQ-093),
+  C (AVE-REQ-094), B2a (evidence tool, session-start hook) and B2b (project checker) in worktrees on branches
+  `m0-r3-fixes-a`, `-c`, `-b2a`, `-b2b`. Launched 2026-10-07 as workflow `wf_e30692cb-6de`; results not
+  recorded; on resume without a recorded result, look for a commit on each branch and re-run the Workflow tool
+  with `docs/workflows/m0-review-3-fixes.js` and `{base: '88a2d9289878f87802bdea20638b7dbd2055ba88', only: [the
+  open tracks]}` plus the trailer and model arguments.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -50,7 +51,7 @@ by `verify-requirement` § 10 as written ([WF-013](WORKFLOW_LOG.md)), move them 
 
 ## Next recommended work
 
-1. Launch the fix round as § In progress states; merge its four branches here with `--no-commit`, apply the
+1. File the handbacks of the fix round; merge its four branches here with `--no-commit`, apply the
    proposed document text, pass `./scripts/verify.sh --tier release`, commit, push, wait for green CI.
 2. Fourth review round from a new brief (status `verification` first; two reviewer clones at most; findings
    classed by `verify-requirement` § 10); on every upheld PASS tick the ACs, fill § Test evidence, set `done`.
