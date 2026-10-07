@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-07 — M0 open: the fix round of the second review is merged on this branch; the third review round was launched._
+_Last updated: 2026-10-07 — M0 open: the third review round returned FAIL for all five; its fix round is briefed, and the fourth round classifies by the skill alone._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -17,28 +17,27 @@ Host: Windows 11 ARM64; every check runs in the development container (`scripts/
 
 ## Current objective
 
-Finish M0: review AVE-REQ-093/094/096/097/098 a third time on this branch (brief first, status `verification`
-first), move the five to `done` in the order 093 → 094 → 096/097/098, bring this branch into the working branch
-and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
+Finish M0: close the nine findings of the third review round on AVE-REQ-093/094/096/097/098
+([fix brief](briefs/2026-10-07-m0-review-3-fixes.md)), then verify the five a fourth time with findings classed
+by `verify-requirement` § 10 as written ([WF-013](WORKFLOW_LOG.md)), move them to `done` in the order
+093 → 094 → 096/097/098, bring this branch into the working branch and `main`, run the M0 milestone-review.
 
 ## In progress
 
-- Integration branch `m0-final-integration` (this file's branch): the working branch with both fix rounds merged
-  in; the working branch receives it after the reviews.
-- Second review round `wf_b18a5f3e-54e` at `f996c17`: three FAIL, two PASS refuted by the skeptic (handback parts
-  1 to 5 of [its brief](briefs/2026-10-06-m0-final-review-2b.md)).
-- Fix round `wf_6c06f19f-506` ([brief](briefs/2026-10-07-m0-review-2-fixes.md), handback parts 1 to 4): tracks A,
-  C, B1 and B2 COMPLETE and merged here with their proposed document text. Requirement files and the roadmap
-  follow written forms a Markdown renderer agrees with, every file outside the fingerprint fails unless a list
-  admits its path, the tools read their configuration by name, hook registrations and frontmatter follow written
-  forms, the probe judges device names as whole strings and creates nothing. Each track audited the statements of
-  its requirement file ([WF-010](WORKFLOW_LOG.md)); new assumptions ASM-032 to ASM-041.
-- AVE-REQ-093/094/096/097/098 `verification`. Third review round from
-  [its brief](briefs/2026-10-07-m0-final-review-3.md) at `d7d5604` (parent `9fc1579`, the merge): launched
-  2026-10-07 as workflow `wf_268ea4f6-bad` ([script](workflows/m0-final-review-3.js)); verdicts not recorded; on
-  resume without a recorded verdict, remove leftover clones `verify-*` and `challenge-*` under
-  `.claude/worktrees/`, then re-run the Workflow tool with that script and
-  `{commit: 'd7d56049c98254192201b85cdcfce323adff024f'}` plus the model arguments.
+- Integration branch `m0-final-integration` (this file's branch): the working branch with the two fix rounds
+  merged in (`9fc1579`); the working branch receives it after the reviews.
+- Third review round `wf_268ea4f6-bad` at `d7d5604`: FAIL for all five with nine blocking findings (handback
+  parts 1 to 5 of [its brief](briefs/2026-10-07-m0-final-review-3.md)); 14 of 20 criterion rows passed, and
+  every sampled row of the statement audits held. The five are `in-progress`.
+- Decision after three rounds without a downward trend (13, 8 and 9 findings, [WF-013](WORKFLOW_LOG.md)): the
+  fix round closes all nine findings, by grammar or allow-list where a pattern stood; the fourth review round
+  classes findings by `verify-requirement` § 10 as written, and hardening beyond the criteria goes to the
+  proposed AVE-REQ-105 (M7).
+- Fix round briefed in [the fix brief](briefs/2026-10-07-m0-review-3-fixes.md): tracks A (AVE-REQ-093),
+  C (AVE-REQ-094), B2a (evidence tool, session-start hook) and B2b (project checker). Not launched when this
+  file was written: create a worktree per track from the brief's commit
+  (`git worktree add .claude/worktrees/m0-r3-fixes-<track> -b m0-r3-fixes-<track> <commit>`), then run the
+  Workflow tool with `docs/workflows/m0-review-3-fixes.js` and the arguments its header names.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -51,10 +50,12 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
 
 ## Next recommended work
 
-1. File each report of the third review round as a handback part of its brief; on every upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
-2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
-3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (the drafts name
-   the gates of this tree; each becomes a brief with the hash of the commit that closes M0).
+1. Launch the fix round as § In progress states; merge its four branches here with `--no-commit`, apply the
+   proposed document text, pass `./scripts/verify.sh --tier release`, commit, push, wait for green CI.
+2. Fourth review round from a new brief (status `verification` first; two reviewer clones at most; findings
+   classed by `verify-requirement` § 10); on every upheld PASS tick the ACs, fill § Test evidence, set `done`.
+3. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
+4. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/`.
 
 ## Blockers
 
@@ -69,9 +70,9 @@ None.
 
 ## Important recent decisions
 
-- [ASM-041](ASSUMPTIONS.md) — gate hardening beyond the stated limits waits for a need.
+- [WF-013](WORKFLOW_LOG.md) — a review brief classes findings by `verify-requirement` § 10 and adds no blocking class.
+- [ASM-041](ASSUMPTIONS.md) — gate hardening beyond the criteria is collected in the proposed AVE-REQ-105.
 - [ASM-036](ASSUMPTIONS.md) — outside the fingerprint only listed paths pass; the step walks the tree.
-- [ASM-033](ASSUMPTIONS.md) — the roadmap is read by the letters a line opens with.
 - [WF-011](WORKFLOW_LOG.md) — reviewer clones and the lead's own code work count toward the concurrency limits.
 - [WF-010](WORKFLOW_LOG.md) — a fix track ends with a statement audit of its requirement file.
 

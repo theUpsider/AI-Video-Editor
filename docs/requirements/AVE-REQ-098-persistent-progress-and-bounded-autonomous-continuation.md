@@ -2,7 +2,7 @@
 id: AVE-REQ-098
 title: Persistent progress and bounded autonomous continuation
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -146,3 +146,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-07 — in-progress — verify-requirement PASS at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 5](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-5.md)) refuted by the skeptic: AC-2 — a SessionStart command that names the hook without running it, and a settings file whose top-level value is no object, pass check 12 and every tagged suite, so the evidence the strategy names stays green with the injection switched off; AC-1, AC-3 and AC-4 upheld. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track B2 (lead)
 - 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), handback parts [4](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-4.md) and [3](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-3.md)): a settings file that is no JSON object fails check 12, both hook registrations follow one written form with the exact commands and `clear` among the sources, check 7 joins wrapped lines, agent and skill frontmatter holds listed keys only, and the failed-attempt counter reads one or two decimal digits (lead)
 - 2026-10-07 — verification — fixes of the second review round merged at `9fc1579` (release tier PASS on that tree); independent verification with a skeptic requested from [the review brief](../briefs/2026-10-07-m0-final-review-3.md) (lead)
+- 2026-10-07 — in-progress — verify-requirement FAIL at `d7d5604` (workflow `wf_268ea4f6-bad`, briefed in [the review brief](../briefs/2026-10-07-m0-final-review-3.md); [handback part 5](../briefs/handbacks/2026-10-07-m0-final-review-3.part-5.md)): AC-2 — the session-start suite asserts one heading of the injected progress file, so a hook that injects headings only passes every tagged suite; and a wording split over two list items marked `*`, `+` or with a number passes check 7, against the Edge case; AC-1, AC-3 and AC-4 PASS. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-3-fixes.md), tracks B2a and B2b (lead)

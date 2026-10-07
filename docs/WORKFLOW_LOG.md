@@ -291,10 +291,11 @@ Not an improvement entry: the measured starting point that later entries compare
 
 ### WF-011 — 2026-10-07 — A recorded resource limit that three runs exceeded
 - Observed failure and evidence: `docs/ENVIRONMENT_CAPABILITIES.md` § Limits item 5 said since `d4147d8` that
-  reviewer clones go one at a time while drive `C:` is 98 % full. The three runs launched after it
-  (`wf_7d9d015c-906`, `wf_5cd13360-464`, `wf_b18a5f3e-54e`) worked two at a time, 31 backend environments had
+  reviewer clones go one at a time while drive `C:` is 98 % full. The runs launched after it worked two at a time: the review runs
+  `wf_7d9d015c-906` and `wf_b18a5f3e-54e` with two clones, the fix run `wf_5cd13360-464` with two worktrees; 31 backend environments had
   gathered on the state volume (744 MiB), and the lead repaired AVE-REQ-094 code (`b4f503f`) while two writers
-  of the fix round ran. The skeptic refuted the PASS of AVE-REQ-096 AC-4 with these records
+  of the fix round ran. The third review round found a second such overlap in the records: the lead changed
+  `scripts/dev-container.sh` (`a55605b`, 2026-10-02) while both writers of the first launch of `wf_164de68e-23b` worked. The skeptic refuted the PASS of AVE-REQ-096 AC-4 with these records
   ([handback part 3](briefs/handbacks/2026-10-06-m0-final-review-2b.part-3.md)).
 - Root-cause hypothesis: the limit was written from the free-space figure without a measurement of a clone's
   footprint, and `develop` § 4 counted launched writing agents only: neither clones nor the lead's own code
@@ -306,8 +307,8 @@ Not an improvement entry: the measured starting point that later entries compare
   evaluation set: the fix round from the brief of 2026-10-07 and the third review round. Held-out: the launches
   of M1 and M2.
 - Independent review result: pending (the next review of this log; the lead records it).
-- Measured before/after result: before, 3 of 3 runs above the stated clone limit and one overlap of three code
-  writers. After: measured on the two runs of the evaluation set.
+- Measured before/after result: before, 2 of 2 review runs above the stated clone limit (the fix run between
+  them used two worktrees) and two overlaps of three code writers (`a55605b`, `b4f503f`). After: measured on the two runs of the evaluation set.
 - Keep or revert, with reason: keep; the count is one line of the launch record, and the cleanup returned
   577 MiB of the state volume.
 
@@ -329,3 +330,31 @@ Not an improvement entry: the measured starting point that later entries compare
 - Measured before/after result: before, one lost mutation run and one restart in a worktree with inherited edits
   (read by the new writer). After: measured on the evaluation set.
 - Keep or revert, with reason: keep; both rules cost one sentence of a prompt.
+
+### WF-013 — 2026-10-07 — Three review rounds with an open hunt showed no downward trend
+- Observed failure and evidence: the final M0 review ran three rounds on the five requirements: 13 blocking
+  findings, then 6 with 2 refuted PASS verdicts, then 9 (`wf_7d9d015c-906`, `wf_b18a5f3e-54e`,
+  `wf_268ea4f6-bad`). Each round's findings were closed before the next. In round three the reviewers ran more
+  than a hundred mutants of the statement-audit tables again and every one failed its named case
+  ([WF-010](WORKFLOW_LOG.md) holds); all nine findings came from the step "look for the next path from a
+  direction no report names". Each fix round added rules, cases and Edge-case sentences (the baseline suite grew
+  from 305 to 424 cases), which the next round took as new ground.
+- Root-cause hypothesis: the review briefs asked for an open-ended hunt and counted every false sentence of a
+  requirement file as blocking, a class that `verify-requirement` § 10 does not hold (it classes documentation
+  fixes and edge cases beyond the criteria as non-blocking, with a follow-up requirement). A hunt without an end
+  condition finds a next form in gate code of this size every time, and the discovered hardening entered the
+  current requirements, against `CLAUDE.md` § Development principles 1.
+- One proposed workflow/skill/context change: `develop` § 6: a review brief classifies findings by
+  `verify-requirement` § 10 as written and adds no blocking class; an open-ended hunt runs as its own red-team
+  task, and what it finds beyond the criteria goes to a follow-up requirement
+  ([AVE-REQ-105](requirements/AVE-REQ-105-canonical-forms-for-the-remaining-control-documents.md)). The fix round
+  for round three closes all nine findings, by grammar or allow-list where a pattern stood; the fourth round
+  then verifies the criteria, repeats the findings of round three and classifies by § 10.
+- Expected metric and fixed evaluation set (plus held-out cases): review rounds until every criterion of a
+  requirement passes with no blocking finding; evaluation set: the fourth round of the five M0 requirements.
+  Held-out: the reviews of M1 and M2.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, three rounds, 13, 8 and 9 findings, no requirement done. After: measured
+  at the fourth round.
+- Keep or revert, with reason: keep; the first two rounds closed 21 findings and left the gates stricter, and in
+  round three 14 of the 20 criterion rows passed.

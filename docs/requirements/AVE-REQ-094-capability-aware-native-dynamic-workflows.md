@@ -2,7 +2,7 @@
 id: AVE-REQ-094
 title: Capability-aware native dynamic workflows
 type: constraint
-status: verification
+status: in-progress
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -145,3 +145,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 2](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-2.md)): AC-1 — the node rule judges names on lines of `find` output and opens with a form that creates a missing path, so a device name that holds a line feed reads as a GPU and the probe writes a file; the network clause of § Verification strategy claims both states for each of the seven hosts while two hosts answer in both scenarios; AC-2 to AC-4 PASS. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track C (lead)
 - 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), [handback part 2](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-2.md)): the probe judges each device name as one string in a single walk that builds both list lines and the verdict, opens without creating, prints the cgroup v2 limits and reads `unknown` where the open test is unavailable; in the suite each of the seven hosts answers once and fails once; 256 checks, 129 of 132 mutants fail the suite and the strategy names the inspection for the other three (lead)
 - 2026-10-07 — verification — fixes of the second review round merged at `9fc1579` (release tier PASS on that tree); independent verification with a skeptic requested from [the review brief](../briefs/2026-10-07-m0-final-review-3.md) (lead)
+- 2026-10-07 — in-progress — verify-requirement FAIL at `d7d5604` (workflow `wf_268ea4f6-bad`, briefed in [the review brief](../briefs/2026-10-07-m0-final-review-3.md); [handback part 2](../briefs/handbacks/2026-10-07-m0-final-review-3.part-2.md)): AC-1 — the set-or-unset test of the credential variables expands the value, so shell tracing (`SHELLOPTS=xtrace`, `bash -x`) writes it to the error stream, against the statement that the probe never prints a credential value; AC-2 to AC-4 PASS, the findings of the second round are closed. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-3-fixes.md), track C (lead)

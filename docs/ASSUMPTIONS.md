@@ -294,7 +294,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   commit; under Requirements an ID without a file (`AVE-REQ-999`) counts. HTML comments are removed first; other
   content that a renderer shows as nothing (raw HTML that is no comment, a link reference definition, an empty
   fenced block, a character that renders blank) counts as text, and fence lines follow the checker's own rule
-  (any indentation, the closing line at most three spaces deeper than the opening one). Also,
+  (any indentation, the closing line at most three spaces deeper than the opening one). A heading counts as a line at
+  column 0 with one or two hashes, one space and text, so other heading forms of Markdown are text for the rule; a code
+  span runs to the next backtick run of equal length on the same line, a backslash unseen. Also,
   `docs/briefs/` holds briefs, `README.md`, `drafts/` and `handbacks/` only (the folder files `.DS_Store` and
   `Thumbs.db` are passed over).
 - **Reason:** The rule stays mechanical and awk-portable.
@@ -579,7 +581,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-041 — Gate hardening beyond the stated limits waits for a need
 - **Date:** 2026-10-07
 - **Assumption:** The fix tracks of the second review round proposed further gate rules; each stands as a stated
-  limit in § Edge cases of its requirement and becomes a requirement when a failure or a milestone needs it: the
+  limit in § Edge cases of its requirement, and
+  [AVE-REQ-105](requirements/AVE-REQ-105-canonical-forms-for-the-remaining-control-documents.md) collects them as
+  proposed work for the hardening milestone: the
   cgroup limits of a parent cgroup; tracked backend files below directory names that ruff, mypy and pytest pass
   over; the entries of `.claude/` by allow-list; one canonical form for the comments, fences and code spans of
   `docs/PROGRESS.md`; an allow-list for the `env` block of `.claude/settings.json`; the baseline package directory

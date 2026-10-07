@@ -24,6 +24,7 @@ Baseline feature [AVE-FEAT-019 — Autonomous implementation workflow](../../ai-
 - [AVE-REQ-098 — Persistent progress and bounded autonomous continuation](AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
 - [AVE-REQ-099 — Honest completion and conditional verification](AVE-REQ-099-honest-completion-and-conditional-verification.md)
 - [AVE-REQ-100 — Milestone-level product validation](AVE-REQ-100-milestone-level-product-validation.md)
+- [AVE-REQ-105 — Canonical forms for the remaining control documents](AVE-REQ-105-canonical-forms-for-the-remaining-control-documents.md)
 
 ## Out of scope
 - Object and motion tracking and advanced continuous video understanding, deferred to a later version ([scope](../../ai-video-editor-requirements/spec/SCOPE_AND_ASSUMPTIONS.md)).
