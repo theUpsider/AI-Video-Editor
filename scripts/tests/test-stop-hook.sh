@@ -169,6 +169,37 @@ mkdir -p "$T/other" && (cd "$T/other" && git init -q && git config user.email t@
 hook "$J_FALSE"; logrm
 GIT_DIR="$T/other/.git" GIT_WORK_TREE="$T/other" hook "$J_FALSE"
 check "GIT_DIR and GIT_WORK_TREE of another repository do not redirect the gate (cache hit for this tree)" '[ "$CODE" = 0 ] && ! logexists && [ ! -e "$T/other/.git/claude-verify" ]'
+# The further variables that point Git at another index, object store, common directory or ref
+# namespace, one at a time: the gate reads this tree and finds its cached pass. Left to
+# GIT_INDEX_FILE, Git lists the index of the other repository and the cache misses. The other
+# four change no listing and no hash that Git 2.55 gives the fingerprint (measured by taking each
+# out of the list the library unsets), so the case after this loop is the one that holds them.
+REDIRECTS=("GIT_INDEX_FILE=$T/other/.git/index" "GIT_OBJECT_DIRECTORY=$T/no-such-objects"
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES=$T/no-such-objects" "GIT_COMMON_DIR=$T/no-such-common-dir" "GIT_NAMESPACE=other")
+for redirect in "${REDIRECTS[@]}"; do
+  hook "$J_FALSE"; logrm
+  export "${redirect?}"
+  hook "$J_FALSE"
+  unset "${redirect%%=*}"
+  check "${redirect%%=*} of the caller does not redirect the gate (cache hit for this tree)" '[ "$CODE" = 0 ] && ! logexists'
+done
+# No Git variable of the caller reaches the run that the gate starts: a stand-in for verify.sh
+# writes the Git variables it sees into the log, and the log holds none of the nine names that
+# the library unsets.
+CALLER_GIT=(GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  GIT_COMMON_DIR GIT_NAMESPACE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS)
+cp "$R/scripts/verify.sh" "$T/verify.sh.saved"
+printf '#!/usr/bin/env bash\necho "the stand-in for verify.sh ran"\nenv | grep "^GIT_"\nexit 0\n' > "$R/scripts/verify.sh"
+logrm
+for name in "${CALLER_GIT[@]}"; do export "$name=$T/other/.git"; done
+hook "$J_FALSE"
+unset "${CALLER_GIT[@]}"
+check "control: the stand-in ran and saw the Git variables of the suite itself" '[ "$CODE" = 0 ] && grep -qx "the stand-in for verify.sh ran" "$R/.git/claude-verify/last.log" && grep -q "^GIT_CEILING_DIRECTORIES=" "$R/.git/claude-verify/last.log"'
+for name in "${CALLER_GIT[@]}"; do
+  check "the run of the gate sees no $name of the caller" 'logexists && ! grep -q "^$name=" "$R/.git/claude-verify/last.log"'
+done
+cp "$T/verify.sh.saved" "$R/scripts/verify.sh"; rm -f "$T/verify.sh.saved"
+hook "$J_FALSE"; logrm
 # Configuration that the caller adds through the environment takes no part either: with
 # core.ignoreCase the rule /var/ of .gitignore would hide the untracked file VAR/note.txt.
 mkdir -p "$R/VAR" && printf 'note\n' > "$R/VAR/note.txt"
@@ -196,9 +227,28 @@ check "the executable bit restored gives the earlier fingerprint" '[ "$(fp)" = "
 check "another mode in the index changes the fingerprint" '[ -x "$R/scripts/check_baseline.py" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
 (cd "$R" && git update-index --chmod=+x scripts/check_baseline.py)
 check "the index mode restored gives the earlier fingerprint" '[ "$(fp)" = "$before" ]'
+# The index mode is a part of the entry itself: in a tree of one file the order of the entries,
+# which follows the modes, cannot stand in for it.
+# shellcheck source=/dev/null
+lone() { (cd "$T/other" && . "$R/scripts/lib/verify-state.sh" && vstate_fingerprint); }
+lone_before="$(lone)"
+(cd "$T/other" && git update-index --chmod=+x f)
+check "another index mode of the one file of a tree changes the fingerprint" '[ ! -x "$T/other/f" ] && [ -n "$lone_before" ] && [ -n "$(lone)" ] && [ "$(lone)" != "$lone_before" ]'
+(cd "$T/other" && git update-index --chmod=-x f)
 rm "$R/docs/ROADMAP.md"
 check "a deleted tracked file changes the fingerprint" '[ -n "$(fp)" ] && [ "$(fp)" != "$before" ]'
+deleted="$(fp)"
+mkdir "$R/docs/ROADMAP.md"
+check "a directory at the path of the deleted file changes the fingerprint again" '[ -n "$(fp)" ] && [ "$(fp)" != "$deleted" ] && [ "$(fp)" != "$before" ]'
+rmdir "$R/docs/ROADMAP.md"
 (cd "$R" && git checkout -q docs/ROADMAP.md)
+# Staging an untracked file changes its entry from `untracked` to its index mode.
+printf 'new\n' > "$R/docs/new-note.md"; untracked="$(fp)"
+(cd "$R" && git add docs/new-note.md)
+check "staging an untracked file changes the fingerprint" '[ -n "$untracked" ] && [ "$untracked" != "$before" ] && [ -n "$(fp)" ] && [ "$(fp)" != "$untracked" ]'
+(cd "$R" && git rm -q -f --cached docs/new-note.md)
+check "unstaged again, the file has its untracked entry" '[ "$(fp)" = "$untracked" ]'
+rm "$R/docs/new-note.md"
 ln -s ROADMAP.md "$R/docs/link.md"; linked="$(fp)"
 check "a symbolic link enters the fingerprint" '[ -n "$linked" ] && [ "$linked" != "$before" ]'
 ln -sfn PRODUCT.md "$R/docs/link.md"
@@ -219,6 +269,13 @@ check "the fingerprint is the whole tree's from a directory below the root" '[ "
 cp "$R/.git/index" "$T/index.saved"; printf 'no index\n' > "$R/.git/index"
 check "a repository whose index Git cannot read has no fingerprint" '(cd "$R" && git rev-parse --is-inside-work-tree >/dev/null 2>&1) && [ -z "$(fp)" ]'
 cp "$T/index.saved" "$R/.git/index"
+# A listed file that cannot be read: Git ends `hash-object --stdin-paths` with an error for it. The
+# suite runs as root, which reads every file, so a stand-in for git ends that one command the way
+# Git does for such a file.
+REAL_GIT="$(command -v git)"
+mkdir -p "$T/unreadable"
+printf '#!/bin/sh\ncase " $* " in *" --stdin-paths "*) cat >/dev/null; echo "fatal: could not open a listed file for reading" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$T/unreadable/git" && chmod +x "$T/unreadable/git"
+check "a listed file that cannot be hashed leaves the tree without a fingerprint" '[ "$(fp)" = "$before" ] && [ -z "$(PATH="$T/unreadable:$PATH" fp)" ]'
 # A Windows host keeps no executable bit and reports every file of the checkout as the container
 # reads it through its mount: executable. A stand-in for uname names such a host here.
 mkdir -p "$T/windows" && printf '#!/bin/sh\necho MINGW64_NT-10.0\n' > "$T/windows/uname" && chmod +x "$T/windows/uname"
@@ -307,14 +364,47 @@ check "a nested stop_hook_active key does not restart the count (attempt 3 relea
 hook '{"nested":{"stop_hook_active":true},"list":[{"stop_hook_active":true}],"stop_hook_active":false}'
 check "the outermost key decides: false after nested true is a fresh stop" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3"'
 
+# AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: a counter file that someone wrote by hand. A decimal number
+# of one or two digits counts, also with a leading zero; every other content counts as 0; the
+# counter stops at 99, the largest value the gate reads back as a number.
+echo "## a counter written by hand"
+counter() { printf '%s\n' "$1" > "$R/.git/claude-verify/attempts"; }
+counter 08
+CLAUDE_VERIFY_MAX_ATTEMPTS=10 hook "$J_TRUE"
+check "a counter of 08 reads as eight (attempt 9 of 10 blocks)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 9 of 10" && [ "$(state attempts)" = 9 ]'
+counter 09
+CLAUDE_VERIFY_MAX_ATTEMPTS=10 hook "$J_TRUE"
+check "a counter of 09 reads as nine (the tenth attempt releases)" '[ "$CODE" = 0 ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"after 10 consecutive failed attempts\")" >/dev/null && [ "$(state attempts)" = 10 ]'
+for content in 007 9223372036854775807 abc; do
+  counter "$content"
+  hook "$J_TRUE"
+  check "a counter of $content counts as 0 (attempt 1 of 3 blocks)" '[ "$CODE" = 2 ] && printf "%s" "$ERR" | quiet "attempt 1 of 3" && [ "$(state attempts)" = 1 ]'
+done
+counter 99
+codes=""
+for i in 1 2; do hook "$J_TRUE"; codes="$codes$CODE"; done
+check "a counter of 99 stays at 99, and every further continued stop releases ($codes)" '[ "$codes" = 00 ] && [ "$(state attempts)" = 99 ]'
+
 # AVE-REQ-097 AC-3, AVE-REQ-098 AC-4: the gate counts only what it can read back, so a counter that
-# is written and reads as another value still ends in a release.
-echo "## a counter that cannot be read back"
+# is written and reads as another value, or that cannot be stored at all, still ends in a release.
+# Two cases: with a directory at the counter's path the write succeeds (the file lands inside the
+# directory) and the read-back gives another value; with a stand-in for mv that fails for the
+# counter file the counter cannot be stored and keeps its earlier value. Both take the same
+# branch of the hook, because a counter that was not stored reads back as its earlier value.
+echo "## a counter that cannot be read back or stored"
 rm -f "$R/.git/claude-verify/attempts"; mkdir "$R/.git/claude-verify/attempts"
 codes=""
 for j in "$J_FALSE" "$J_TRUE" "$J_TRUE"; do hook "$j"; codes="$codes$CODE"; done
 check "the counter path is a directory: a fresh stop blocks once, a continued stop releases ($codes)" '[ "$codes" = 200 ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"still fails\")" >/dev/null'
 rm -rf "$R/.git/claude-verify/attempts"
+REAL_MV="$(command -v mv)"
+mkdir -p "$T/no-store"
+printf '#!/bin/sh\ncase "$*" in */claude-verify/attempts) exit 1 ;; esac\nexec "%s" "$@"\n' "$REAL_MV" > "$T/no-store/mv" && chmod +x "$T/no-store/mv"
+counter 0
+codes=""
+for j in "$J_FALSE" "$J_TRUE" "$J_TRUE"; do PATH="$T/no-store:$PATH" hook "$j"; codes="$codes$CODE"; done
+check "the counter cannot be stored: a fresh stop blocks once, a continued stop releases ($codes)" '[ "$codes" = 200 ] && [ "$(state attempts)" = 0 ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"still fails\")" >/dev/null'
+check "control: the stand-in for mv fails for the counter file alone" '! "$T/no-store/mv" -f "$T/x" "$R/.git/claude-verify/attempts" 2>/dev/null && printf x > "$T/mv-a" && "$T/no-store/mv" -f "$T/mv-a" "$T/mv-b" && [ -f "$T/mv-b" ]'
 
 echo "## gate off"
 logrm
@@ -363,11 +453,17 @@ open(p,'w').write(s.replace(anchor, '  run_step "Write a report" sh -c "date > r
 PY2
 OUT="$(cd "$R" && ./scripts/verify.sh 2>&1)"; CODE=$?
 check "a step that leaves an untracked file fails the last step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet "FAIL: Working tree unchanged by verification" && printf "%s\n" "$OUT" | quiet "A verification step changed the working tree" && printf "%s\n" "$OUT" | quiet "^?? report.txt$"'
+# An ignore rule for the file takes it out of the fingerprint and leaves it outside the list of
+# ignored paths: the same step fails on it. Output belongs below var/.
 rm -f "$R/report.txt"; printf 'report.txt\n' >> "$R/.gitignore"
 OUT="$(cd "$R" && ./scripts/verify.sh 2>&1)"; CODE=$?
-check "output to a .gitignore-d path passes" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | quiet "PASS: Working tree unchanged by verification"'
-cp "$T/verify.sh.saved" "$R/scripts/verify.sh"; rm -f "$T/verify.sh.saved" "$R/report.txt"
+check "a step that leaves a file under an ignore rule of its own fails the last step too" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet "PASS: No file outside the fingerprint and the listed paths" && printf "%s\n" "$OUT" | quiet "FAIL: Working tree unchanged by verification" && printf "%s\n" "$OUT" | quiet -x "report.txt" && ! printf "%s\n" "$OUT" | quiet "A verification step changed the working tree"'
+rm -f "$R/report.txt"
 (cd "$R" && git checkout -q -- .gitignore)
+sed -i 's|date > report.txt|date > var/report.txt|' "$R/scripts/verify.sh"
+OUT="$(cd "$R" && ./scripts/verify.sh 2>&1)"; CODE=$?
+check "output below var/ passes" '[ "$CODE" = 0 ] && printf "%s\n" "$OUT" | quiet "PASS: Working tree unchanged by verification" && [ -s "$R/var/report.txt" ]'
+cp "$T/verify.sh.saved" "$R/scripts/verify.sh"; rm -f "$T/verify.sh.saved" "$R/var/report.txt"
 logrm; hook "$J_FALSE"; logrm; hook "$J_FALSE"
 check "second Stop on an unchanged tree skips verify.sh" '[ "$CODE" = 0 ] && [ -z "$OUT" ] && ! logexists'
 

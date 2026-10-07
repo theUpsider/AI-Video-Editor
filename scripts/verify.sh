@@ -21,10 +21,11 @@
 # security scan, type checking, unit tests, integration tests, build, end-to-end / smoke tests of key
 # user journeys, other stack-specific validation. Every component file is a required file
 # (scripts/check-project-control.sh), so a missing component fails instead of skipping silently.
-# Rules: non-interactive, deterministic, read-only toward the working tree (outputs go only to
-# .gitignore-d paths; the last step enforces it, because the Stop-gate cache fingerprints untracked
-# files), identical locally and in CI. A missing tool fails its step. Never weaken, skip or suppress
-# a check to get green: fix the root cause. Package checks never certify product behavior.
+# Rules: non-interactive, deterministic, read-only toward the working tree (outputs go below var/,
+# a directory of the list of ignored paths; the step "Working tree unchanged by verification"
+# enforces it, because the Stop-gate cache fingerprints untracked files), identical locally and in
+# CI. A missing tool fails its step. Never weaken, skip or suppress a check to get green: fix the
+# root cause. Package checks never certify product behavior.
 #
 # Environment (AVE-REQ-097 AC-2, AC-4): the steps start from a named set of variables. Before this
 # file defines anything of its own, the run removes every shell function that exists (an exported
@@ -45,11 +46,26 @@
 # from a user site directory), PYTEST_DISABLE_PLUGIN_AUTOLOAD (pytest loads no plugin by itself),
 # PYTHONPYCACHEPREFIX and AVE_RUN_SCRATCH (bytecode and the type-checker cache of a run live in a
 # scratch directory that the run creates outside the tree and removes at its end) and
-# AVE_EVIDENCE_DIR (below). The run fails when Git ignores a file inside the source, test, script
-# or hook directories. Trusted, and outside this gate: the interpreter, the tools on PATH, the
+# AVE_EVIDENCE_DIR (below). Trusted, and outside this gate: the interpreter, the tools on PATH, the
 # files under HOME, and the shell with what acts before the first line of this file (SHELLOPTS,
 # BASHOPTS, BASH_ENV, a function exported under the name of a shell builtin). CI on a fresh
 # checkout is the run that admits a commit to main.
+#
+# Files outside the fingerprint (AVE-REQ-097 AC-2, AC-4): the fingerprint names every index entry
+# and every untracked file that no .gitignore file ignores. A file of the tree that it does not
+# name could take part in a step while no status, diff or fingerprint shows it. Such a file is
+# one that a .gitignore rule ignores (every path of
+# `git ls-files --others --ignored --exclude-per-directory=.gitignore`), one inside a directory
+# named .git below the root, or a special file such as a FIFO: Git lists the last two nowhere.
+# The step "No file outside the fingerprint and the listed paths" therefore walks the tree itself
+# (every entry that is no directory, outside the .git entry at the root) and fails on every path
+# that the listing of the fingerprint does not name and the list of ignored paths below
+# (IGNORED_DIRECTORIES, IGNORED_FILES) does not admit. It fails as well on every .gitignore file
+# that the fingerprint names besides the one at the root: the tree holds one. The step "Working
+# tree unchanged by verification" walks the tree again, so a file that a step leaves outside the
+# list fails the run that wrote it. The tools of the backend steps take their configuration from
+# backend/pyproject.toml by name and read no ignore file and no cache of the tree
+# (scripts/verify.d/20-backend.sh).
 #
 # Evidence (AVE-REQ-097): every run gets a new directory var/verify/runs/<run-id>/, exported to the
 # steps as AVE_EVIDENCE_DIR. run_step logs each step there (steps.tsv), test runners write their
@@ -257,18 +273,19 @@ tree_state() {
   )
 }
 
-# check_tree_unchanged <tree_state before the steps> — fails when a step changed the working tree.
+# check_tree_unchanged <tree_state before the steps> — fails when a step changed the working tree
+# or left a file outside the fingerprint and outside the list of ignored paths (below).
 check_tree_unchanged() {
   if [ -z "$1" ]; then
     printf 'Skipped: no working-tree fingerprint (outside Git, or a tree that keeps none: scripts/lib/verify-state.sh).\n'
-    return 0
+  elif [ "$(tree_state)" != "$1" ]; then
+    printf 'A verification step changed the working tree. Make it read-only, or send its output\n'
+    printf '(reports, coverage, screenshots, rendered media) below var/.\n'
+    printf 'Current git status:\n'
+    git status --short --untracked-files=all
+    return 1
   fi
-  [ "$(tree_state)" = "$1" ] && return 0
-  printf 'A verification step changed the working tree. Make it read-only, or send its output\n'
-  printf '(reports, coverage, screenshots, rendered media) to a path listed in .gitignore.\n'
-  printf 'Current git status:\n'
-  git status --short --untracked-files=all
-  return 1
+  check_files_outside_fingerprint
 }
 
 # record_evidence <tree_state before the steps> — writes the run's manifest.json.
@@ -276,37 +293,157 @@ record_evidence() {
   python3 -B scripts/evidence.py record --dir "$AVE_EVIDENCE_DIR" --tier "$TIER" --fingerprint "$1"
 }
 
-# check_no_ignored_sources — a file Git ignores inside the directories whose files the steps load
-# (sources, tests, scripts, hooks) would take part in a run and appear in no status, diff or
-# fingerprint: a conftest.py in an ignored directory, a module or a bytecode file beside a script.
-# Bytecode directories are exempt (no step reads them, header § Environment), and so are the
-# folder files an operating system leaves behind. The one skip is a directory without a
-# repository (no .git here or above); a Git command that fails inside a work tree fails the step.
-check_no_ignored_sources() {
-  local listed dir="$PWD"
+# The list of ignored paths (header § Files outside the fingerprint): the places of the tree that
+# a run admits outside its fingerprint. An entry names a place from which no step takes code,
+# configuration or a test file, and says why; what a step reads there is named in its comment.
+# Every other file that the fingerprint does not name fails the run, whatever hides it and
+# wherever it lies: the list admits the forms it names, so a form nobody thought of fails.
+#
+# IGNORED_DIRECTORIES — directories admitted as a whole, each a path from the root of the tree;
+# the walk of the tree stops at them. A file or a link under one of these names is no directory
+# and is judged as every other file.
+IGNORED_DIRECTORIES=(
+  # Output of the runs and of the product (/var/ in .gitignore): the evidence of each run in a
+  # directory that the run creates (var/verify/), render work and test artifacts that the tests
+  # write anew, and the fixture cache (var/fixtures/). A media test takes a file from that cache
+  # under a key that holds the specification, a digest of the generator's sources and the FFmpeg
+  # version; an entry that someone wrote by hand under such a key is local state.
+  var
+  # Application data and media a human keeps beside the tree (/data/ in .gitignore): no step
+  # names the directory.
+  data
+  # Worktrees and private clones of parallel agents: each is a tree of its own with its own runs;
+  # the link check of the "Project control files" step passes the directory over.
+  .claude/worktrees
+  # State of an agent tool: that tool reads it, no step does.
+  .serena
+  # The backend environment. Where UV_PROJECT_ENVIRONMENT names no other directory (CI) it is
+  # the toolchain the steps run on: trusted, and recorded in the manifest by the names and
+  # versions of its packages. Where the variable names another directory, uv and the tools it
+  # starts read nothing here.
+  backend/.venv
+  # Caches that pytest, ruff and mypy leave in backend/ when someone starts them by hand. The
+  # steps start pytest with -p no:cacheprovider, ruff with --no-cache and mypy with a cache
+  # directory in the scratch directory of the run (scripts/verify.d/20-backend.sh). ruff, which
+  # reads the Python files below backend/, passes these directories and .venv over by its
+  # built-in exclusions; mypy and pytest read backend/src and backend/tests.
+  backend/.pytest_cache
+  backend/.ruff_cache
+  backend/.mypy_cache
+)
+
+# IGNORED_FILES — files admitted by name: one extended regular expression per entry, matched
+# against the whole path from the root of the tree.
+IGNORED_FILES=(
+  # Personal Claude Code settings and memory: Claude Code reads them, no step does (check 12
+  # reads .claude/settings.json, the link check reads CLAUDE.md).
+  '\.claude/settings\.local\.json'
+  'CLAUDE\.local\.md'
+  # Secrets at the root of the tree: uv starts with --no-env-file, and no step opens a file of
+  # these names.
+  '\.env'
+  '\.env\.local'
+  '\.env\.[^/]*\.local'
+  # Bytecode that a Python started by hand leaves in a __pycache__ directory: under
+  # PYTHONPYCACHEPREFIX no Python of a step reads such a directory, and the scripts that start
+  # in isolated mode load the repository's modules from their source text. A bytecode file
+  # outside a __pycache__ directory is importable in place of a module and fails the run.
+  '(.*/)?__pycache__/[^/]*\.pyc'
+  # Folder files that an operating system leaves behind: no step takes code or configuration
+  # from a file of these names.
+  '(.*/)?\.DS_Store'
+  '(.*/)?Thumbs\.db'
+)
+
+# check_files_outside_fingerprint — the step "No file outside the fingerprint and the listed
+# paths" (header § Files outside the fingerprint), which check_tree_unchanged runs again after
+# the steps. The paths the fingerprint names come from vstate_listing, the listing function of
+# the fingerprint itself. A path below an embedded repository or a gitlink of that listing counts
+# as named: Git names such a directory as a whole, and the tree keeps no fingerprint then. The
+# one skip is a directory without a repository (no .git here or above); a Git command that fails
+# inside a work tree fails the step. The body is a subshell: the library, the locale and the
+# variables end with the step.
+check_files_outside_fingerprint() (
+  dir="$PWD"
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     while :; do
       if [ -e "$dir/.git" ]; then
         printf 'Git fails inside the work tree of %s/.git:\n' "$dir"
         git rev-parse --is-inside-work-tree 2>&1
-        return 1
+        exit 1
       fi
       [ -n "$dir" ] || break
       dir="${dir%/*}"
     done
     printf 'Skipped: outside a Git work tree (no .git here or above).\n'
-    return 0
+    exit 0
   fi
-  if ! listed="$(git ls-files --others --ignored --exclude-standard -- backend/src backend/tests scripts .claude/hooks)"; then
-    printf 'Git fails to list the ignored files of this work tree.\n'
-    return 1
+  # shellcheck source=lib/verify-state.sh
+  if ! . ./scripts/lib/verify-state.sh; then
+    printf 'Cannot load scripts/lib/verify-state.sh, which lists the paths of this work tree.\n'
+    exit 1
   fi
-  listed="$(printf '%s\n' "$listed" | awk '!/(^|\/)(__pycache__\/|\.DS_Store$|Thumbs\.db$)/')"
-  [ -z "$listed" ] && return 0
-  printf 'Files that Git ignores inside the source, test, script and hook directories:\n%s\n' "$listed"
-  printf 'Remove or track them: a run loads only files of the tree its fingerprint names.\n'
-  return 1
-}
+  # A path is a string of bytes: sort, comm and the expressions of IGNORED_FILES read it the same
+  # way in every locale.
+  export LC_ALL=C
+  work="$(mktemp -d "$AVE_RUN_SCRATCH/files.XXXXXX")" || exit 1
+  if ! vstate_listing >"$work/listing"; then
+    printf 'Git fails to list the files of this work tree.\n'
+    exit 1
+  fi
+  # The listing of the fingerprint: one record per index entry (the stages of an unmerged path
+  # follow each other) and per untracked file that no .gitignore file ignores. A path is printed
+  # as the shell would quote it (%q), so a name with a line feed stays one line.
+  repositories=() nested="" outside="" last=""
+  while IFS= read -r -d '' record; do
+    [ -n "$record" ] || continue
+    path="${record#*$'\t'}"
+    printf '%s\0' "$path"
+    case "${record%%$'\t'*}:$path" in
+      160000:*) repositories+=("$path/") ;;
+      *:*/) repositories+=("$path") ;;
+      *:*/.gitignore)
+        [ "$path" != "$last" ] || continue
+        last="$path"
+        printf -v path '%q' "$path"
+        nested+="$path"$'\n'
+        ;;
+    esac
+  done <"$work/listing" >"$work/named.unsorted"
+  prune=(-path ./.git)
+  for path in "${IGNORED_DIRECTORIES[@]}"; do
+    prune+=(-o -path "./$path" -type d)
+  done
+  if ! sort -zu "$work/named.unsorted" >"$work/named" ||
+    ! find . -mindepth 1 \( "${prune[@]}" \) -prune -o ! -type d -printf '%P\0' >"$work/on-disk.unsorted" ||
+    ! sort -z "$work/on-disk.unsorted" >"$work/on-disk" ||
+    ! comm -z -23 "$work/on-disk" "$work/named" >"$work/unnamed"; then
+    printf 'Cannot list the files of this work tree (find, sort, comm).\n'
+    exit 1
+  fi
+  admitted="^($(IFS='|' && printf '%s' "${IGNORED_FILES[*]}"))\$"
+  while IFS= read -r -d '' path; do
+    [[ $path =~ $admitted ]] && continue
+    for repository in ${repositories[@]+"${repositories[@]}"}; do
+      [[ $path == "$repository"* ]] && continue 2
+    done
+    printf -v path '%q' "$path"
+    outside+="$path"$'\n'
+  done <"$work/unnamed"
+  [ -n "$outside$nested" ] || exit 0
+  if [ -n "$outside" ]; then
+    printf 'Files of this tree that its fingerprint does not name and the list of ignored paths does not\n'
+    printf 'admit (ignored by a .gitignore rule, inside a directory named .git, or a special file):\n%s' "$outside"
+    printf 'Remove or track them: outside the listed paths a run admits only files that its fingerprint\n'
+    printf 'names. A place from which no step takes code, configuration or a test file joins the list in\n'
+    printf 'scripts/verify.sh with its reason.\n'
+  fi
+  if [ -n "$nested" ]; then
+    printf '.gitignore files besides the one at the root of the tree:\n%s' "$nested"
+    printf 'Move their rules to the root .gitignore: the tree holds one.\n'
+  fi
+  exit 1
+)
 
 # step_files — the component step files, as scripts/check-project-control.sh registers them.
 step_files() {
@@ -334,7 +471,7 @@ main() {
   export PYTHONPYCACHEPREFIX="$AVE_RUN_SCRATCH/pycache"
 
   run_step "Project control files" ./scripts/check-project-control.sh
-  run_step "No ignored file among sources, tests and scripts" check_no_ignored_sources
+  run_step "No file outside the fingerprint and the listed paths" check_files_outside_fingerprint
   for step_file in $(step_files); do
     # shellcheck source=/dev/null
     . "./$step_file" || run_step "Load $step_file" false

@@ -11,12 +11,14 @@ Audio carries a low-level pilot tone (source identification), a broadband chirp 
 every event time (sync and timing evidence), an overall gain and optional seeded white noise.
 
 Results are cached under ``var/fixtures/<name>-<hash>/`` where the hash covers the specification,
-the generator version and the FFmpeg version; a cache entry is reused only when its file still
-matches the recorded SHA-256. Each entry holds the media file and ``manifest.json``.
+the generator (its version and a digest of its sources, :func:`generator_sources`) and the FFmpeg
+version; a cache entry is reused only when its file still matches the recorded SHA-256. Each entry
+holds the media file and ``manifest.json``.
 """
 
 from __future__ import annotations
 
+import ast
 import functools
 import hashlib
 import json
@@ -52,6 +54,7 @@ __all__ = [
     "chirp",
     "ensure_fixture",
     "generator_digest",
+    "generator_sources",
     "synthesize_audio",
     "vfr_frame_ticks",
 ]
@@ -69,17 +72,56 @@ VFR_TICK_RATE = 120
 _TIMEOUT_S = 900.0
 
 
-@functools.cache
-def generator_digest() -> str:
-    """Digest of the generator's own source files.
+_GENERATOR_MODULES = ("ave.fixtures.barcode", "ave.fixtures.generate", "ave.fixtures.standard")
 
-    It is part of every cache key, so an edited generator writes new files and a test never passes
-    on the files an earlier generator left in the cache.
+
+def generator_sources(package_root: Path | None = None) -> dict[str, Path]:
+    """Source file of each module of the generator, by module name.
+
+    These are the three modules of ``ave.fixtures`` and every ``ave`` module that one of them
+    imports, directly or through another module, with the packages above each. The imports are
+    read from the source text: every ``import`` and ``from ... import`` statement of a module,
+    at any depth and in relative form too. So the result is the same in every process, whatever
+    was imported before; a module that is loaded by a computed name is outside it.
+    ``package_root`` is the directory that holds the ``ave`` package (default: the one this
+    module was loaded from).
     """
-    package = Path(__file__).resolve().parent
+    root = package_root or Path(__file__).resolve().parents[2]
+    found: dict[str, Path] = {}
+    pending = list(_GENERATOR_MODULES)
+    while pending:
+        name = pending.pop()
+        base = root.joinpath(*name.split("."))
+        path = base / "__init__.py" if base.is_dir() else base.with_suffix(".py")
+        if name in found or not path.is_file():
+            continue
+        found[name] = path
+        package = name if base.is_dir() else name.rpartition(".")[0]
+        pending.append(name.rpartition(".")[0] or name)
+        for node in ast.walk(ast.parse(path.read_bytes())):
+            if isinstance(node, ast.Import):
+                targets = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                above = package.split(".")[: len(package.split(".")) - max(node.level - 1, 0)]
+                module = ".".join([*(above if node.level else []), *filter(None, [node.module])])
+                targets = [module, *(f"{module}.{alias.name}" for alias in node.names)]
+            else:
+                continue
+            pending.extend(target for target in targets if target.split(".")[0] == "ave")
+    return found
+
+
+@functools.cache
+def generator_digest(package_root: Path | None = None) -> str:
+    """Digest of the generator's sources (:func:`generator_sources`): names, lengths and bytes.
+
+    It is part of every cache key, so an edit to the generator or to a module it imports writes
+    new files, and a test never passes on the files an earlier generator left in the cache.
+    """
     digest = hashlib.sha256()
-    for name in ("barcode.py", "generate.py", "standard.py"):
-        digest.update((package / name).read_bytes())
+    for name, path in sorted(generator_sources(package_root).items()):
+        data = path.read_bytes()
+        digest.update(f"{name}\0{len(data)}\0".encode() + data)
     return digest.hexdigest()[:16]
 
 

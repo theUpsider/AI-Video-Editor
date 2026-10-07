@@ -108,16 +108,19 @@ run_verify() {
   ./scripts/verify.sh --tier fast >"$1" 2>&1 </dev/null
 }
 
-# Increments and prints the failed-attempt counter. When the counter cannot be stored, or reads
-# back as another value, prints a value that still bounds the loop: 1 on a fresh stop
-# (stop_hook_active false), else the maximum.
+# Increments and prints the failed-attempt counter. The stored value counts when it is a decimal
+# number of one or two digits, read as decimal also with a leading zero (08 is eight); every
+# other content counts as 0. The counter stops at 99, so the gate never writes a value that it
+# would read as 0. When the counter cannot be stored, or reads back as another value, prints a
+# value that still bounds the loop: 1 on a fresh stop (stop_hook_active false), else the maximum.
 count_failed_attempt() {
   local stop_active="$1" max="$2" attempts
   attempts="$(vstate_get attempts)"
   case "$attempts" in
-    "" | *[!0-9]*) attempts=0 ;;
+    [0-9] | [0-9][0-9]) attempts=$((10#$attempts)) ;;
+    *) attempts=0 ;;
   esac
-  attempts=$((attempts + 1))
+  [ "$attempts" -ge 99 ] || attempts=$((attempts + 1))
   if ! vstate_set attempts "$attempts" || [ "$(vstate_get attempts)" != "$attempts" ]; then
     if [ "$stop_active" = "false" ]; then attempts=1; else attempts="$max"; fi
   fi
