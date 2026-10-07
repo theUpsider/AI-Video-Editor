@@ -33,7 +33,10 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
   admits its path, the tools read their configuration by name, hook registrations and frontmatter follow written
   forms, the probe judges device names as whole strings and creates nothing. Each track audited the statements of
   its requirement file ([WF-010](WORKFLOW_LOG.md)); new assumptions ASM-032 to ASM-041.
-- AVE-REQ-093/094/096/097/098 `in-progress` until the brief of the third review round is committed.
+- AVE-REQ-093/094/096/097/098 `verification`. Third review round briefed in
+  [its brief](briefs/2026-10-07-m0-final-review-3.md) at the commit that adds it (parent `9fc1579`, the merge);
+  not launched when this file was written: run the Workflow tool with `docs/workflows/m0-final-review-3.js` and
+  `{commit: '<full hash of the brief commit>'}` plus the model arguments.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -46,9 +49,8 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
 
 ## Next recommended work
 
-1. Third review round: write its brief, set the five to `verification`, commit, push, wait for green CI, then
-   launch reviewer and skeptic per requirement (two clones at most); on every upheld PASS tick the ACs, fill
-   § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+1. Launch the third review round as § In progress states; file each report as a handback part of its brief; on
+   every upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
 2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
 3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (bring the drafts
    up to the gates of this tree first).
@@ -74,7 +76,7 @@ None.
 
 ## Verification status
 
-`./scripts/verify.sh --tier release` PASS on the integration tree before its first commit and in the reviewer
-clones at `f996c17` (development container, arm64; 13 of 13 steps); CI (x86_64) release tier green at `fc068d8`
-on `m0-final-integration`, after the one failure at `fc66eb3` ([WF-009](WORKFLOW_LOG.md)); GitHub holds the
-state of later pushes. The fast tier (11 steps) passes on the working tree at every stop (Stop gate).
+`./scripts/verify.sh --tier release` PASS on the tree of the merge `9fc1579` (development container, arm64; 13 of
+13 steps; checker 1477, baseline 424, Stop hook 174, session start 77, tiers 133, probe 256 checks). CI (x86_64)
+release tier green at `9fc1579`; GitHub holds the state of later pushes. The fast tier (11 steps) passes on the
+working tree at every stop (Stop gate).

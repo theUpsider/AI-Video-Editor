@@ -2,7 +2,7 @@
 id: AVE-REQ-096
 title: Isolated bounded tasks and independent review
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -126,3 +126,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
 - 2026-10-07 — in-progress — verify-requirement PASS at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 3](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-3.md)) refuted by the skeptic: AC-4 — `docs/ENVIRONMENT_CAPABILITIES.md` § Limits item 5 let reviewer clones go one at a time, and the three runs since that line used two, so the record named as evidence stated a limit the runs exceeded; AC-1 to AC-3 upheld. The lead restates the limit from the measured footprint, counts reviewer clones and the lead's own code work in `develop` § 4 ([WF-011](../WORKFLOW_LOG.md)) and closes the six non-blocking items; the checker cases go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track B2 (lead)
 - 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), [handback part 4](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-4.md)): the seven sub-rules of check 11 that had no case have one each; the lead closed the refuted AC-4 and the other non-blocking items in the documents (`5afa701`): the brief rule with the two kinds of task that take none, the counting rules for reviewer clones and the lead's own code work, and the limits of check 11 and of the inherited lock claim (lead)
+- 2026-10-07 — verification — fixes of the second review round merged at `9fc1579` (release tier PASS on that tree); independent verification with a skeptic requested from [the review brief](../briefs/2026-10-07-m0-final-review-3.md) (lead)

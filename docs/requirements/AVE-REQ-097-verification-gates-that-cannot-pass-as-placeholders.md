@@ -2,7 +2,7 @@
 id: AVE-REQ-097
 title: Verification gates that cannot pass as placeholders
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -118,3 +118,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — verification — CI failed the release tier at `fc66eb3`, the first commit of the integration branch: the merge had dropped the executable bit of `scripts/tests/run.sh` in the Git index, which the development container cannot see through its mount. The mode is restored, and check 2 now reads the index mode of every entry point and covers the suites, their runner and the media stand-in (six cases); the review starts from the commit that holds this fix (lead)
 - 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 4](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-4.md)): AC-2 and AC-4 — a file that a `.gitignore` rule ignores outside the four checked directories (a `backend/ave.pyc`, a `.gitignore` in a subdirectory that hides `mypy.ini` and `ruff.toml`) takes part in the steps and in no fingerprint or ignored-file step, and ruff keeps its cache in the tree, against § Implementation evidence and ASM-023; AC-1 and AC-3 PASS. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), tracks B1 and B2 (lead)
 - 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), handback parts [3](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-3.md) and [4](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-4.md)): every file outside the fingerprint fails the run unless a written list admits its path, ruff, mypy and pytest take their configuration from `backend/pyproject.toml` by name and ruff keeps no cache, the generator digest covers the import closure, `show --require-complete` counts a failed fresh run of every tier, and an inspection line beside a test level counts only beside a passing tagged test (lead)
+- 2026-10-07 — verification — fixes of the second review round merged at `9fc1579` (release tier PASS on that tree); independent verification with a skeptic requested from [the review brief](../briefs/2026-10-07-m0-final-review-3.md) (lead)

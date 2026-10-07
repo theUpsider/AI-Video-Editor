@@ -2,7 +2,7 @@
 id: AVE-REQ-093
 title: Adopt and preserve the supplied requirements baseline
 type: constraint
-status: in-progress
+status: verification
 priority: must
 parent: AVE-FEAT-019
 source: human
@@ -245,3 +245,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
 - 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 1](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-1.md)): AC-3 — a heading on the first line of a footnote definition passes the canonical form while GitHub renders it, and in `docs/ROADMAP.md` raw HTML other than a comment and a Status line in another emphasis form pass, so two consequences that § Edge cases states do not hold; AC-1, AC-2 and AC-4 PASS, and the blocking findings of the first round are closed. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track A (lead)
 - 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), [handback part 1](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-1.md)): working files hold no footnote syntax and one fence form, the roadmap is read by the reader's rules with Status lines and lists found by their letters, and the replacement of an imported requirement is never `proposed`; a comparison with two Markdown renderers over 188 constructs shows none that a reader sees otherwise than the gate reads it; § Edge cases names the pinned forms and the limits (lead)
+- 2026-10-07 — verification — fixes of the second review round merged at `9fc1579` (release tier PASS on that tree); independent verification with a skeptic requested from [the review brief](../briefs/2026-10-07-m0-final-review-3.md) (lead)
