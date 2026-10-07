@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # scripts/tests/test-probe-environment.sh — tests of scripts/probe-environment.sh. Every AC-1 line is
 # compared with a value this suite measures itself in the same run: CPUs, memory (MemTotal of
-# /proc/meminfo in GiB) and disk (`df -h "$REPO"`); the accelerator verdict from device nodes alone; the
-# ffmpeg, ffprobe, python3, uv and git versions (`not installed` when hidden from PATH, a fake's
-# version when a fake comes first); Playwright's browser directory and the browser binaries; the
-# Git worktree count and branch (of the repository and of a fixture repository with three
-# worktrees); the Claude Code version, OS user and repository writability; credential variables by
-# name only; and the Network section, driven by a fake curl that answers from a script, records
-# every request and flags a request that downloads a body without a bound. Device nodes come from
-# a temp directory (AVE_PROBE_DEV_DIR) and every other external command is hidden or faked through
-# PATH, so the results hold on any host and no host is contacted. A fake nvidia-smi drives the
-# accelerator verdict (a diagnostic, a failure or an empty answer is no device; a GPU row is one),
-# and fixture inputs that differ from this host (a fake getconf and id, AVE_PROBE_PROC_DIR,
-# AVE_PROBE_ROOT) prove that the CPU, memory, CPU model, OS user and writability lines are computed.
+# /proc/meminfo in GiB) and disk (`df -h "$REPO"`); the two cgroup lines (this host's files, and
+# fixture directories given through AVE_PROBE_CGROUP_DIR); the accelerator verdict from device
+# nodes alone; the ffmpeg, ffprobe, python3, uv and git versions (`not installed` when hidden from
+# PATH, a fake's version when a fake comes first); Playwright's browser directory and the browser
+# binaries; the Git worktree count and branch (of the repository and of a fixture repository with
+# three worktrees); the Claude Code version, OS user and repository writability; credential
+# variables by name only; and the Network section, driven by a fake curl that answers from a
+# script, records every request and flags a request that downloads a body without a bound. Device
+# nodes come from temp directories (AVE_PROBE_DEV_DIR), which the cases of the device walk list
+# before and after their run, and the other external commands the cases vary are hidden or faked
+# through PATH, so no host is contacted. A fake nvidia-smi drives the accelerator verdict (a diagnostic, a failure or an empty
+# answer is no device; a GPU row is one), a fake dd shows how a node is opened, and fixture inputs
+# that differ from this host (a fake getconf and id, AVE_PROBE_PROC_DIR, AVE_PROBE_ROOT) prove that
+# the CPU, memory, CPU model, OS user and writability lines are computed.
 # Exit 0 when every check passes.
-# Every probe run starts in the temp directory, outside the repository it measures.
+# A probe run starts in the temp directory, outside the repository it measures; the one case that
+# exports CDPATH starts its fixture's probe through a relative path inside the fixture.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
 # quiet <grep arguments> — a grep that prints nothing and reads its whole input. `grep -q` stops at the
@@ -72,6 +75,22 @@ second_line() { local p="$1"; shift; (PATH="$p"; "$@" 2>/dev/null | sed -n 2p); 
 no_line() { [ -z "$1" ] || ! printf '%s\n' "$OUT" | quiet -xF -- "$1"; }
 # disk_free <dir> — "<Avail> free of <Size>" from the second line of `df -h <dir>`, read by this suite.
 disk_free() { df -h "$1" 2>/dev/null | { read -r _ && read -r _ size _ avail _ && printf '%s free of %s' "$avail" "$size"; }; }
+# snapshot <dir> — every entry below the directory with its kind, size, modification time and link
+# target: equal before and after a run that created, removed and changed nothing there.
+snapshot() { ls -laR --time-style=full-iso "$1" 2>&1; }
+# host_cgroup <label> <file> — the line of $OUT agrees with that file of this host's /sys/fs/cgroup,
+# read by this suite: `none` without the file and for the value max, else a line that ends with the
+# file's name and content in parentheses.
+host_cgroup() {
+  local file="/sys/fs/cgroup/$2" content
+  [ -e "$file" ] || { has_line "$1" none; return; }
+  content="$(cat "$file" 2>/dev/null)"
+  case "$content" in
+    max | "max "*) has_line "$1" none ;;
+    *) printf '%s\n' "$OUT" | awk -v p="$1 " -v s="($2 $content)" \
+         'index($0, p) == 1 && substr($0, length($0) - length(s) + 1) == s { n++ } END { exit !(n == 1) }' ;;
+  esac
+}
 
 # make_fake_curl <dir> <script line>... — writes <dir>/bin/curl, a fake curl that answers each URL
 # from the script lines ("<URL without scheme> <HTTP code> [<body bytes>]" or "<URL without scheme>
@@ -219,11 +238,16 @@ time_limits_ok() {
        END { exit !(n > 0 && bad == 0) }' "$1"
 }
 
-# Every probe run starts in the temp directory, outside the repository: the disk and Git lines pass
-# only when the probe measures the repository, whichever directory it starts in.
+# A probe run starts in the temp directory, outside the repository: the disk and Git lines pass
+# only when the probe measures the repository, whichever directory it starts in. The probe's test
+# inputs and CDPATH reach a run only where a case sets them.
 cd "$T" || exit 2
 unset PLAYWRIGHT_BROWSERS_PATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+unset AVE_PROBE_DEV_DIR AVE_PROBE_PROC_DIR AVE_PROBE_CGROUP_DIR AVE_PROBE_ROOT AVE_PROBE_SMI_TIMEOUT CDPATH
 BARE_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome)"
+# The cases that vary one input over many values (the cgroup files, the time limit of the query) run
+# without the media tools, whose lines they leave uncompared: a run is then about half as long.
+LEAN_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome ffmpeg ffprobe)"
 mkdir -p "$T/dev-none" "$T/dev-gpu" "$T/bin"
 # A device node of the fixtures is a symbolic link to /dev/null: a character device that every user
 # can open and that needs no privilege to create.
@@ -256,6 +280,9 @@ done
 check "cpus equals getconf _NPROCESSORS_ONLN ($(getconf _NPROCESSORS_ONLN))" 'has "^cpus +$(getconf _NPROCESSORS_ONLN)\$"'
 check "memory equals MemTotal of /proc/meminfo in GiB ($MEM_GIB)" '[ -n "$MEM_KB" ] && { has_line memory "$MEM_GIB" || has_line memory "$MEM_TIE"; }'
 check "disk equals the Avail and Size fields of df -h on the repository ($DISK_BEFORE)" '[ -n "$DISK_BEFORE" ] && { has_line "disk (repository)" "$DISK_BEFORE" || has_line "disk (repository)" "$DISK_AFTER"; }'
+# AVE-REQ-094 AC-1: without the test variable the two cgroup lines read /sys/fs/cgroup of this host.
+check "cpu quota agrees with /sys/fs/cgroup/cpu.max of this host ($(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo no file))" 'host_cgroup "cpu quota (cgroup v2)" cpu.max && [ "$(lines_of "cpu quota (cgroup v2)")" = 1 ]'
+check "memory limit agrees with /sys/fs/cgroup/memory.max of this host ($(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo no file))" 'host_cgroup "memory limit (cgroup v2)" memory.max && [ "$(lines_of "memory limit (cgroup v2)")" = 1 ]'
 # AVE-REQ-094 AC-1: media tools and toolchains equal the first line of their own version output,
 # without the lines that follow it.
 for SPEC in "ffmpeg -hide_banner -version" "ffprobe -hide_banner -version" "python3 --version" "uv --version" "git --version"; do
@@ -340,32 +367,86 @@ node "$T/dev-card/dri/card0"
 node "$T/dev-file/nvidia-readme.txt"
 NONE='accelerator: none (no device)'
 verdict() { printf '%s\n' "$OUT" | quiet -xF "$1" && [ "$(printf '%s\n' "$OUT" | grep -c '^accelerator:')" = 1 ]; }
-dev_run() { OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$1" "$PROBE" --offline 2>&1)"; CODE=$?; }
+# dev_run <device directory> [<launcher>...] — runs the probe on the directory (behind the launcher,
+# such as `setsid -w` or `env NAME=value`) and lists the directory before and after: DEV_SAME reads 1
+# when the run left it as it was, and CHANGED collects every directory a run changed.
+CHANGED=""
+dev_run() {
+  local dir="$1" before after
+  shift
+  before="$(snapshot "$dir")"
+  OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$dir" "$@" "$PROBE" --offline 2>&1 </dev/null)"; CODE=$?
+  after="$(snapshot "$dir")"
+  DEV_SAME=1
+  [ "$before" = "$after" ] || { DEV_SAME=0; CHANGED="$CHANGED $dir"; }
+}
 dev_run "$T/dev-plain"
 check "ordinary /dev entries (null, sda, a directory): accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE" && has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none'
 dev_run "$T/dev-ctl"
-check "driver control nodes without a GPU node: listed, and accelerator: none (no device)" 'verdict "$NONE" && has "^/dev/nvidia\* devices +.*/nvidia-caps .*/nvidia-uvm .*/nvidiactl *$"'
+check "driver control nodes without a GPU node: the five entries are listed, and accelerator: none (no device)" 'verdict "$NONE" && has_line "/dev/nvidia* devices" "$T/dev-ctl/nvidia-caps $T/dev-ctl/nvidia-modeset $T/dev-ctl/nvidia-uvm $T/dev-ctl/nvidia-uvm-tools $T/dev-ctl/nvidiactl" && has_line "/dev/dri devices" none'
 smi_run ctlnodevice 6 "$T/dev-ctl" "No devices were found"
 check "control nodes with nvidia-smi answering 'No devices were found' (exit 6): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
 dev_run "$T/dev-render"
 check "a DRI render node: accelerator: present names it" 'verdict "accelerator: present ($T/dev-render/dri/renderD128)"'
 dev_run "$T/dev-both"
-check "a GPU node and a render node: accelerator: present names both and leaves the display node out" 'verdict "accelerator: present ($T/dev-both/nvidia0 $T/dev-both/dri/renderD128)" && has "^/dev/dri devices +.*/card0 .*/renderD128 *$"'
+check "a GPU node and a render node: accelerator: present names both and leaves the display node out" 'verdict "accelerator: present ($T/dev-both/nvidia0 $T/dev-both/dri/renderD128)" && has_line "/dev/nvidia* devices" "$T/dev-both/nvidia0" && has_line "/dev/dri devices" "$T/dev-both/dri/card0 $T/dev-both/dri/renderD128"'
 dev_run "$T/dev-card"
-check "a display-only DRI node and dri/by-path: listed, and accelerator: none (no device)" 'verdict "$NONE" && has "^/dev/dri devices +.*/by-path .*/card0 *$"'
+check "a display-only DRI node and dri/by-path: listed, and accelerator: none (no device)" 'verdict "$NONE" && has_line "/dev/dri devices" "$T/dev-card/dri/by-path $T/dev-card/dri/card0"'
 dev_run "$T/nvidia-empty"
 check "an empty device directory whose own name starts with nvidia: accelerator: none (no device)" 'verdict "$NONE" && has_line "/dev/nvidia* devices" none'
 dev_run "$T/dev-file"
 check "a file named nvidia-readme.txt is no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
 dev_run "$T/dev-dirnode"
 check "directories named nvidia0 and dri/renderD128 are no devices: accelerator: none (no device)" 'verdict "$NONE"'
-# The whole name decides: a character device whose name only starts like a GPU node counts for nothing.
-for NAME in nvidia0.txt nvidia0-readme.txt nvidia3d-vision.conf nvidia dri/renderD128.bak dri/renderD1-notes dri/renderD; do
+# The whole name decides: a character device whose name only starts or only ends like a GPU node, or
+# that carries the name of the other directory's node, counts for nothing.
+for NAME in nvidia0.txt nvidia0-readme.txt nvidia3d-vision.conf nvidia dri/renderD128.bak dri/renderD1-notes dri/renderD \
+  xnvidia0 dri/card-renderD128 dri/xrenderD128 dri/nvidia0 renderD128; do
   D="$T/dev-name-$(printf '%s' "$NAME" | tr '/.' '--')"
   mkdir -p "$D/dri"; node "$D/$NAME"
   dev_run "$D"
   check "a character device named $NAME is no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
 done
+# Listed are the entries named nvidia* and the entries of dri: three fixtures of the loop above show
+# an entry that stands on no line, one that stands on the dri line, and a render name outside dri.
+dev_run "$T/dev-name-xnvidia0"
+check "xnvidia0 stands on no list line" 'has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none'
+dev_run "$T/dev-name-dri-nvidia0"
+check "dri/nvidia0 stands on the dri line alone" 'has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" "$T/dev-name-dri-nvidia0/dri/nvidia0"'
+dev_run "$T/dev-name-renderD128"
+check "renderD128 outside dri stands on no list line" 'has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none'
+# A name is one string: a line feed or a space inside it splits nothing. The entry is no GPU node,
+# it is one word of its list line (the shell's quoted form), and the probe leaves the directory as
+# it was.
+mkdir -p "$T/dev-lf" "$T/dev-lf-dri/dri" "$T/dev-space"
+node "$T/dev-lf/nvidia0"$'\n'"x"
+node "$T/dev-lf-dri/dri/renderD128"$'\n'".bak"
+node "$T/dev-space/nvidia0 1"
+dev_run "$T/dev-lf"
+check "a character device named nvidia0<LF>x is no GPU node: accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE"'
+check "a character device named nvidia0<LF>x: the probe leaves the device directory as it was" '[ "$DEV_SAME" = 1 ] && [ "$(find "$T/dev-lf" -mindepth 1 -printf x | wc -c)" = 1 ]'
+check "a character device named nvidia0<LF>x is one word of the one nvidia list line" 'has_line "/dev/nvidia* devices" "\$'"'"'$T/dev-lf/nvidia0\\nx'"'"'" && [ "$(lines_of "/dev/nvidia* devices")" = 1 ] && no_line x'
+dev_run "$T/dev-lf-dri"
+check "a character device named dri/renderD128<LF>.bak is no GPU node: accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE"'
+check "a character device named dri/renderD128<LF>.bak: the probe leaves the device directory as it was" '[ "$DEV_SAME" = 1 ] && [ "$(find "$T/dev-lf-dri/dri" -mindepth 1 -printf x | wc -c)" = 1 ]'
+check "a character device named dri/renderD128<LF>.bak is one word of the one dri list line" 'has_line "/dev/dri devices" "\$'"'"'$T/dev-lf-dri/dri/renderD128\\n.bak'"'"'" && [ "$(lines_of "/dev/dri devices")" = 1 ] && no_line .bak'
+dev_run "$T/dev-space"
+check "a character device named 'nvidia0 1' is no GPU node and one word of its list line" 'verdict "$NONE" && has_line "/dev/nvidia* devices" "$T/dev-space/nvidia0\\ 1"'
+# The same form holds for the directory part: a device directory with a space in its own name.
+mkdir -p "$T/dev spaced"; node "$T/dev spaced/nvidia0"
+dev_run "$T/dev spaced"
+check "a device directory named 'dev spaced': the list line and the verdict name its node as one word" 'verdict "accelerator: present ($T/dev\\ spaced/nvidia0)" && has_line "/dev/nvidia* devices" "$T/dev\\ spaced/nvidia0"'
+# dri as a symbolic link to a directory: the list line shows what the verdict counts.
+mkdir -p "$T/dev-linked"; ln -s "$T/dev-render/dri" "$T/dev-linked/dri"
+dev_run "$T/dev-linked"
+check "dri as a link to a directory: the list line and the verdict name the same render node" 'verdict "accelerator: present ($T/dev-linked/dri/renderD128)" && has_line "/dev/dri devices" "$T/dev-linked/dri/renderD128"'
+# Every entry of dri is listed, a hidden one included.
+mkdir -p "$T/dev-hidden/dri"; : > "$T/dev-hidden/dri/.hidden"
+dev_run "$T/dev-hidden"
+check "a hidden entry of dri is listed" 'verdict "$NONE" && has_line "/dev/dri devices" "$T/dev-hidden/dri/.hidden"'
+# A device directory that does not exist reads as one without entries, and stays absent.
+dev_run "$T/dev-missing"
+check "a missing device directory: both list lines read none and accelerator: none (no device)" '[ "$CODE" = 0 ] && [ ! -e "$T/dev-missing" ] && verdict "$NONE" && has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none'
 # The kind decides: only a character device counts under the exact name.
 mkdir -p "$T/dev-regular/dri" "$T/dev-fifo" "$T/dev-dangling/dri" "$T/dev-dirlink"
 : > "$T/dev-regular/nvidia0"; : > "$T/dev-regular/dri/renderD128"
@@ -374,10 +455,11 @@ ln -s "$T/no-such-node" "$T/dev-dangling/nvidia0"; ln -s "$T/no-such-node" "$T/d
 ln -s "$T/dev-none" "$T/dev-dirlink/nvidia0"
 for KIND in regular fifo dangling dirlink; do
   dev_run "$T/dev-$KIND"
-  check "nvidia0 as a $KIND entry is no device: accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE"'
+  check "nvidia0 as a $KIND entry is listed and is no device: accelerator: none (no device)" '[ "$CODE" = 0 ] && verdict "$NONE" && has_line "/dev/nvidia* devices" "$T/dev-$KIND/nvidia0"'
 done
-# Every number counts: a host that is given one GPU of several holds another node than nvidia0.
-for NAME in nvidia1 nvidia10 dri/renderD129; do
+# Every number counts, whatever its length: a host that is given one GPU of several holds another
+# node than nvidia0, and a render node carries one digit as well as three.
+for NAME in nvidia1 nvidia10 dri/renderD129 dri/renderD7 dri/renderD42; do
   D="$T/dev-number-$(printf '%s' "$NAME" | tr '/' '-')"
   mkdir -p "$D/dri"; node "$D/$NAME"
   dev_run "$D"
@@ -388,13 +470,51 @@ done
 mkdir -p "$T/dev-closed/dri" "$T/dev-half/dri"
 ln -s /dev/tty "$T/dev-closed/nvidia0"
 ln -s /dev/tty "$T/dev-half/nvidia0"; node "$T/dev-half/dri/renderD128"
-OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-closed" setsid -w "$PROBE" --offline 2>&1 </dev/null)"; CODE=$?
+dev_run "$T/dev-closed" setsid -w
 check "a GPU node that cannot be opened: accelerator: none names the node without access" '[ "$CODE" = 0 ] && verdict "accelerator: none (no access to $T/dev-closed/nvidia0)"'
-OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-half" setsid -w "$PROBE" --offline 2>&1 </dev/null)"; CODE=$?
+dev_run "$T/dev-half" setsid -w
 check "one node without access beside one that opens: accelerator: present names the open one" 'verdict "accelerator: present ($T/dev-half/dri/renderD128)"'
+# How a node is opened: a fake dd first on PATH records its operands and succeeds. The probe tries
+# the operands on /dev/null once, then opens each named character device once, for reading and for
+# writing, creating and truncating nothing and transferring nothing; the display node stays unopened.
+mkdir -p "$T/dd-record" "$T/dd-plain"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$T/dd-record/calls" > "$T/dd-record/dd"; chmod +x "$T/dd-record/dd"
+dev_run "$T/dev-both" env PATH="$T/dd-record:$BARE_PATH"
+DD_FORM="count=0 conv=nocreat,notrunc status=none"
+check "each GPU node is opened once as dd if=<node> of=<node> $DD_FORM" 'verdict "accelerator: present ($T/dev-both/nvidia0 $T/dev-both/dri/renderD128)" && [ "$(grep -cxF -- "if=$T/dev-both/nvidia0 of=$T/dev-both/nvidia0 $DD_FORM" "$T/dd-record/calls")" = 1 ] && [ "$(grep -cxF -- "if=$T/dev-both/dri/renderD128 of=$T/dev-both/dri/renderD128 $DD_FORM" "$T/dd-record/calls")" = 1 ]'
+check "the operands are tried on /dev/null once, and no other path is opened (the display node included)" '[ "$(grep -cxF -- "if=/dev/null of=/dev/null $DD_FORM" "$T/dd-record/calls")" = 1 ] && [ "$(wc -l < "$T/dd-record/calls")" = 3 ]'
+# Without a dd that takes these operands no node is opened, and the verdict says so.
+NODD_PATH="$(PATH="$BARE_PATH" path_without dd)"
+dev_run "$T/dev-gpu" env PATH="$NODD_PATH"
+check "no dd on PATH beside a GPU node: accelerator: unknown names the node the open test is unavailable for" '[ "$CODE" = 0 ] && ! (PATH="$NODD_PATH"; command -v dd >/dev/null 2>&1) && verdict "accelerator: unknown (open test unavailable for $T/dev-gpu/nvidia0)"'
+dev_run "$T/dev-none" env PATH="$NODD_PATH"
+check "no dd on PATH and no GPU node: accelerator: none (no device)" 'verdict "$NONE"'
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in *nocreat*) echo "dd: invalid conversion: nocreat" >&2; exit 1 ;; esac\nexit 0\n' "$T/dd-plain/calls" > "$T/dd-plain/dd"; chmod +x "$T/dd-plain/dd"
+dev_run "$T/dev-both" env PATH="$T/dd-plain:$BARE_PATH"
+check "a dd that knows no conv=nocreat beside two GPU nodes: accelerator: unknown names both" 'verdict "accelerator: unknown (open test unavailable for $T/dev-both/nvidia0 $T/dev-both/dri/renderD128)"'
+check "a dd that knows no conv=nocreat: after the trial on /dev/null no node is opened" '[ "$(cat "$T/dd-plain/calls")" = "if=/dev/null of=/dev/null $DD_FORM" ]'
+dev_run "$T/dev-gpu" env PATH="$T/smi-gpu:$NODD_PATH"
+check "no dd on PATH, a GPU node and a GPU row of nvidia-smi: accelerator: present names the row alone" 'has_line nvidia-smi "$GPU_ROW" && verdict "accelerator: present ($GPU_ROW)"'
+# A node behind two symbolic links is the character device at their end.
+mkdir -p "$T/dev-chain"; ln -s /dev/null "$T/dev-chain-end"; ln -s "$T/dev-chain-end" "$T/dev-chain/nvidia0"
+dev_run "$T/dev-chain"
+check "nvidia0 as a link to a link to a character device: accelerator: present names it" 'verdict "accelerator: present ($T/dev-chain/nvidia0)"'
+# Shell options the environment exports leave the walk as it is: with pathname expansion switched
+# off the nodes are still listed and counted, and with unmatched patterns made an error an empty
+# device directory still prints its three lines, without a `no match` message of the shell.
+dev_run "$T/dev-both" env SHELLOPTS=noglob
+check "SHELLOPTS=noglob exported: the walk still lists and counts the nodes" 'verdict "accelerator: present ($T/dev-both/nvidia0 $T/dev-both/dri/renderD128)" && has_line "/dev/dri devices" "$T/dev-both/dri/card0 $T/dev-both/dri/renderD128"'
+dev_run "$T/dev-none" env BASHOPTS=failglob
+check "BASHOPTS=failglob exported: an empty device directory prints both list lines and the verdict, and no error of the shell" '[ "$CODE" = 0 ] && verdict "$NONE" && has_line "/dev/nvidia* devices" none && has_line "/dev/dri devices" none && ! has "no match"'
+check "no probe run changed its device directory (changed:${CHANGED:- none})" '[ -z "$CHANGED" ]'
 for ANSWER in "Sorry, no GPU is attached to this machine" "name, memory.total [MiB]" "[N/A], [N/A]"; do
   smi_run comma 0 "$T/dev-none" "$ANSWER"
   check "nvidia-smi exits 0 with '$ANSWER' (a comma, no memory figure): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
+done
+# A row holds a name before its last comma and ends with the unit.
+for ANSWER in ", 16 MiB" " , 16 MiB" "Tesla T4, 15360 MiB (shared)" "Tesla T4, 15360 MiB "; do
+  smi_run rowform 0 "$T/dev-none" "$ANSWER"
+  check "nvidia-smi exits 0 with '$ANSWER' (no name, or text behind the unit): accelerator: none (no device)" 'has_line nvidia-smi "no GPU reported" && verdict "$NONE"'
 done
 smi_run commaname 0 "$T/dev-none" "Acme GPU, Model X, 8192 MiB"
 check "a GPU name that holds a comma: the row is reported and counts" 'has_line nvidia-smi "Acme GPU, Model X, 8192 MiB" && verdict "accelerator: present (Acme GPU, Model X, 8192 MiB)"'
@@ -414,6 +534,24 @@ OUT="$(PATH="$T/smi-limit:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" -
 check "the nvidia-smi query runs under a 10 s limit with a kill after 2 s more" 'has_line nvidia-smi "$GPU_ROW" && sed -n 1p "$T/smi-limit/arguments" | quiet -x -- "-k 2 10 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"'
 OUT="$(PATH="$T/smi-limit:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_SMI_TIMEOUT=7 "$PROBE" --offline 2>&1)"; CODE=$?
 check "AVE_PROBE_SMI_TIMEOUT replaces the limit of the query" 'has_line nvidia-smi "$GPU_ROW" && sed -n 1p "$T/smi-limit/arguments" | quiet -x -- "-k 2 7 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"'
+# The variable counts only as a positive whole number (digits alone, one of them above 0): every
+# other value leaves the 10 s (timeout reads 0 as no limit and 1m as a minute).
+# limit_run <value> — runs the probe with that value; LIMIT_ARGS receives what timeout was given.
+limit_run() {
+  rm -f "$T/smi-limit/arguments"
+  OUT="$(PATH="$T/smi-limit:$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_SMI_TIMEOUT="$1" "$PROBE" --offline 2>&1)"; CODE=$?
+  LIMIT_ARGS="$(cat "$T/smi-limit/arguments" 2>/dev/null)"
+}
+for VALUE in 30 007; do
+  limit_run "$VALUE"
+  check "AVE_PROBE_SMI_TIMEOUT=$VALUE is a positive whole number: timeout is given $VALUE" 'has_line nvidia-smi "$GPU_ROW" && [ "$LIMIT_ARGS" = "-k 2 $VALUE nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" ]'
+done
+for VALUE in 0 00 abc -5 +5 1.5 5s 1m " 7" "7 " "7 8" ""; do
+  limit_run "$VALUE"
+  check "AVE_PROBE_SMI_TIMEOUT='$VALUE' is no positive whole number: the limit stays 10 s" 'has_line nvidia-smi "$GPU_ROW" && [ "$LIMIT_ARGS" = "-k 2 10 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" ]'
+done
+limit_run "7"$'\n'"8"
+check "AVE_PROBE_SMI_TIMEOUT='7<LF>8' is no positive whole number: the limit stays 10 s" 'has_line nvidia-smi "$GPU_ROW" && [ "$LIMIT_ARGS" = "-k 2 10 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" ]'
 # Without a timeout command the query is left out: it could block the probe.
 printf '#!/bin/sh\necho "%s"\n' "$GPU_ROW" > "$T/smi-nolimit/nvidia-smi"; chmod +x "$T/smi-nolimit/nvidia-smi"
 NO_TIMEOUT_PATH="$(PATH="$BARE_PATH" path_without timeout)"
@@ -464,15 +602,80 @@ OUT="$(PATH="$FIX/lscpu-named:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PR
 check "cpuinfo without a model name: cpu model follows lscpu" 'has_line "cpu model" "Probe Fixture Arm Core"'
 OUT="$(PATH="$FIX/lscpu-dash:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_PROC_DIR="$FIX/proc-arm" "$PROBE" --offline 2>&1)"
 check "cpuinfo without a model name and lscpu answering '-': cpu model unknown" 'has_line "cpu model" unknown'
+# A command of the probe that fails (the search for a model name in this cpuinfo) does not end the
+# report, also when the environment exports the shell option that ends a script at a failure.
+OUT="$(PATH="$FIX/lscpu-named:$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_PROC_DIR="$FIX/proc-arm" env SHELLOPTS=errexit "$PROBE" --offline 2>&1)"; CODE=$?
+check "SHELLOPTS=errexit exported, a cpuinfo without a model name: the report runs to its last section" '[ "$CODE" = 0 ] && has_line "cpu model" "Probe Fixture Arm Core" && verdict "$NONE" && has "^## Network" && has "skipped \(--offline\)"'
 OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_ROOT="$FIX/root-missing" "$PROBE" --offline 2>&1)"; CODE=$?
 check "missing fixture root: repository writable no with that root" '[ "$CODE" = 0 ] && [ ! -e "$FIX/root-missing" ] && has_line "repository writable" "no ($FIX/root-missing)"'
 
+# AVE-REQ-094 AC-1: the cgroup lines follow cpu.max and memory.max of the directory given through
+# AVE_PROBE_CGROUP_DIR: the figure for a number, `none` for max and for a missing file, `unknown`
+# for any other content. The kernel totals stay on the cpus and memory lines.
+# cg_run <name> <cpu.max content> <memory.max content> — runs the probe on a fixture directory with
+# these two files; "-" leaves a file out.
+cg_run() {
+  CG="$T/cgroup-$1"
+  mkdir -p "$CG"
+  [ "$2" = - ] || printf '%s\n' "$2" > "$CG/cpu.max"
+  [ "$3" = - ] || printf '%s\n' "$3" > "$CG/memory.max"
+  OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$CG" "$PROBE" --offline 2>&1)"; CODE=$?
+}
+cg_run limited "200000 100000" 1073741824
+check "cpu.max '200000 100000': cpu quota 2.00 cpus" '[ "$CODE" = 0 ] && has_line "cpu quota (cgroup v2)" "2.00 cpus (cpu.max 200000 100000)"'
+check "memory.max 1073741824: memory limit 1.0 GiB" 'has_line "memory limit (cgroup v2)" "1.0 GiB (memory.max 1073741824)"'
+check "beside a quota the cpus and memory lines keep the kernel totals" 'has "^cpus +$(getconf _NPROCESSORS_ONLN)\$" && { has_line memory "$MEM_GIB" || has_line memory "$MEM_TIE"; }'
+cg_run fraction "150000 100000" 536870912
+check "cpu.max '150000 100000': cpu quota 1.50 cpus" 'has_line "cpu quota (cgroup v2)" "1.50 cpus (cpu.max 150000 100000)"'
+check "memory.max 536870912: memory limit 0.5 GiB" 'has_line "memory limit (cgroup v2)" "0.5 GiB (memory.max 536870912)"'
+cg_run rounded "333333 100000" 8000000000
+check "cpu.max '333333 100000': cpu quota 3.33 cpus" 'has_line "cpu quota (cgroup v2)" "3.33 cpus (cpu.max 333333 100000)"'
+check "memory.max 8000000000: memory limit 7.5 GiB" 'has_line "memory limit (cgroup v2)" "7.5 GiB (memory.max 8000000000)"'
+cg_run period "50000 200000" 1073741824
+check "cpu.max '50000 200000': the quota is divided by the period, 0.25 cpus" 'has_line "cpu quota (cgroup v2)" "0.25 cpus (cpu.max 50000 200000)"'
+cg_run max "max 100000" max
+check "cpu.max 'max 100000' and memory.max 'max': both lines read none" 'has_line "cpu quota (cgroup v2)" none && has_line "memory limit (cgroup v2)" none'
+cg_run nofiles - -
+check "a cgroup directory without the two files: both lines read none" '[ "$CODE" = 0 ] && has_line "cpu quota (cgroup v2)" none && has_line "memory limit (cgroup v2)" none'
+OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$T/cgroup-missing" "$PROBE" --offline 2>&1)"; CODE=$?
+check "a missing cgroup directory: both lines read none" '[ "$CODE" = 0 ] && [ ! -e "$T/cgroup-missing" ] && has_line "cpu quota (cgroup v2)" none && has_line "memory limit (cgroup v2)" none'
+cg_run cpuonly "200000 100000" -
+check "cpu.max alone: the quota is reported and the memory limit reads none" 'has_line "cpu quota (cgroup v2)" "2.00 cpus (cpu.max 200000 100000)" && has_line "memory limit (cgroup v2)" none'
+# Any other content reads unknown; one run takes a cpu.max form and, while the list lasts, a
+# memory.max form (an empty string is a file that holds an empty line).
+CPU_OTHER=("" max 200000 "200000 0" "200000 00" "abc 100000" "200000 abc" "200000 100000 7" "200000  100000"
+  "-1 100000" "2e5 100000" "max 100000"$'\n'"200000 100000" "max 0")
+MEMORY_OTHER=("" abc -1 "1024 kB" 1.5 "max 100000" "1073741824 0" "max"$'\n'"1073741824")
+for I in "${!CPU_OTHER[@]}"; do
+  CONTENT="${CPU_OTHER[$I]}"
+  cg_run "other-$I" "$CONTENT" "${MEMORY_OTHER[$I]--}"
+  check "cpu.max '$(printf '%s' "$CONTENT" | tr '\n' '|')' is no quota form: cpu quota unknown" 'has_line "cpu quota (cgroup v2)" unknown && [ "$(lines_of "cpu quota (cgroup v2)")" = 1 ]'
+  [ "$I" -lt "${#MEMORY_OTHER[@]}" ] || continue
+  CONTENT="${MEMORY_OTHER[$I]}"
+  check "memory.max '$(printf '%s' "$CONTENT" | tr '\n' '|')' is no limit form: memory limit unknown" 'has_line "memory limit (cgroup v2)" unknown && [ "$(lines_of "memory limit (cgroup v2)")" = 1 ]'
+done
+# The line end is one at most, and a NUL byte makes the content no text.
+mkdir -p "$T/cgroup-bare" "$T/cgroup-blank" "$T/cgroup-nul"
+printf '200000 100000' > "$T/cgroup-bare/cpu.max"; printf 'max' > "$T/cgroup-bare/memory.max"
+printf 'max 100000\n\n' > "$T/cgroup-blank/cpu.max"; printf '1073741824\n\n' > "$T/cgroup-blank/memory.max"
+printf 'max 100000\0\n' > "$T/cgroup-nul/cpu.max"; printf 'max\0\n' > "$T/cgroup-nul/memory.max"
+OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$T/cgroup-bare" "$PROBE" --offline 2>&1)"
+check "cpu.max and memory.max without a line end: the quota is reported and the memory limit reads none" 'has_line "cpu quota (cgroup v2)" "2.00 cpus (cpu.max 200000 100000)" && has_line "memory limit (cgroup v2)" none'
+OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$T/cgroup-blank" "$PROBE" --offline 2>&1)"
+check "cpu.max and memory.max with a second line end: both lines read unknown" 'has_line "cpu quota (cgroup v2)" unknown && has_line "memory limit (cgroup v2)" unknown'
+OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$T/cgroup-nul" "$PROBE" --offline 2>&1)"
+check "cpu.max and memory.max with a NUL byte behind max: both lines read unknown" 'has_line "cpu quota (cgroup v2)" unknown && has_line "memory limit (cgroup v2)" unknown'
+mkdir -p "$T/cgroup-directory/cpu.max" "$T/cgroup-directory/memory.max"
+OUT="$(PATH="$LEAN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" AVE_PROBE_CGROUP_DIR="$T/cgroup-directory" "$PROBE" --offline 2>&1)"; CODE=$?
+check "cpu.max and memory.max as directories: both lines read unknown" '[ "$CODE" = 0 ] && has_line "cpu quota (cgroup v2)" unknown && has_line "memory limit (cgroup v2)" unknown'
+
 # AVE-REQ-094 AC-1: a tool hidden from PATH is reported as not installed.
-HIDDEN_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome ffmpeg ffprobe python3 uv git)"
+HIDDEN_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome ffmpeg ffprobe python3 uv node pnpm git docker)"
 OUT="$(PATH="$HIDDEN_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$PROBE" --offline 2>&1)"; CODE=$?
 check "tools hidden from PATH: probe exits 0" '[ "$CODE" = 0 ]'
-for TOOL in ffmpeg ffprobe python3 uv git; do
-  check "$TOOL hidden from PATH: not installed" '! (PATH="$HIDDEN_PATH"; command -v "$TOOL" >/dev/null 2>&1) && has_line "$TOOL" "not installed"'
+# `type -P` looks on PATH alone (this suite holds a function named node).
+for TOOL in ffmpeg ffprobe python3 uv node pnpm git docker; do
+  check "$TOOL hidden from PATH: not installed" '! (PATH="$HIDDEN_PATH"; type -P "$TOOL" >/dev/null 2>&1) && has_line "$TOOL" "not installed"'
 done
 
 # AVE-REQ-094 AC-1: fakes first on PATH: each line follows the command the probe finds, so a value
@@ -565,6 +768,20 @@ OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" "$GITFIX/main/scripts/p
 check "git fixture: three worktrees on branch probe-fixture-branch" '[ "$FIX_CODE" = 0 ] && [ "$FIX_WT" = "3 listed" ] && [ "$FIX_BRANCH" = probe-fixture-branch ]'
 check "git fixture: worktrees equals git worktree list | wc -l ($FIX_WT)" '[ "$CODE" = 0 ] && has_line worktrees "$FIX_WT"'
 check "git fixture: branch equals git rev-parse --abbrev-ref HEAD ($FIX_BRANCH)" 'has_line branch "$FIX_BRANCH"'
+# AVE-REQ-094 AC-1: the root is the directory above the probe's own, whatever CDPATH the environment
+# exports. The fixture's probe starts through a relative path inside the fixture while CDPATH names
+# a directory that holds a scripts directory of its own.
+mkdir -p "$T/cdpath-decoy/scripts"
+FIX_DISK_BEFORE="$(disk_free "$GITFIX/main")"
+OUT="$(cd "$GITFIX/main" && PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" CDPATH="$T/cdpath-decoy" bash scripts/probe-environment.sh --offline 2>&1)"; CODE=$?
+FIX_DISK_AFTER="$(disk_free "$GITFIX/main")"
+check "CDPATH exported, relative start: worktrees and branch are the fixture's" '[ "$CODE" = 0 ] && has_line worktrees "$FIX_WT" && has_line branch "$FIX_BRANCH"'
+check "CDPATH exported, relative start: writability names the fixture root on one line" 'has_line "repository writable" "yes ($GITFIX/main)" && [ "$(lines_of "repository writable")" = 1 ]'
+check "CDPATH exported, relative start: disk measures the fixture root ($FIX_DISK_BEFORE)" '[ -n "$FIX_DISK_BEFORE" ] && { has_line "disk (repository)" "$FIX_DISK_BEFORE" || has_line "disk (repository)" "$FIX_DISK_AFTER"; }'
+# A probe in a directory whose name starts with a dash: the name is no option of dirname or cd.
+mkdir -p "$T/-dash/scripts" && cp "$PROBE" "$T/-dash/scripts/probe-environment.sh"
+OUT="$(PATH="$BARE_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" bash -- -dash/scripts/probe-environment.sh --offline 2>&1)"; CODE=$?
+check "the probe below a directory named -dash: the root is that directory" '[ "$CODE" = 0 ] && has_line "repository writable" "yes ($T/-dash)"'
 
 # AVE-REQ-094 AC-1: network. Without curl the probe says so.
 NOCURL_PATH="$(path_without nvidia-smi claude chromium chromium-browser google-chrome curl)"
@@ -595,15 +812,31 @@ net_run() {
   check "$name: only the seven hosts are requested" '[ -s "$NET/calls" ] && ! grep -q "^UNEXPECTED " "$NET/calls"'
   check "$name: no credential value reaches curl" '! grep -qF "$SECRET" "$NET/calls" && ! printf "%s\n" "$OUT" | quiet -F "$SECRET"'
 }
-# AVE-REQ-094 AC-1: each host answers in one scenario and gets no response in the other; a 4xx
-# still proves that the host answers; pypi.org/simple/ and github.com/ answer with a large body.
-net_run network-1 "pypi.org/simple/ 200 48000000" "files.pythonhosted.org/ fail:28" "registry.npmjs.org/ 301" \
-  "github.com/ 405" "huggingface.co/api/models?limit=1 429" "api.anthropic.com/ 404" "api.openai.com/ fail:6"
-net_run network-2 "pypi.org/simple/ fail:7" "files.pythonhosted.org/ 503" "registry.npmjs.org/ fail:28" \
-  "github.com/ 200 600000" "huggingface.co/api/models?limit=1 401" "api.anthropic.com/ fail:35" "api.openai.com/ 421"
+# AVE-REQ-094 AC-1: each of the seven hosts answers in one scenario and gets no response in the
+# other; a 4xx or 5xx still proves that the host answers; pypi.org/simple/ and github.com/ answer
+# with a large body.
+NET_1=("pypi.org/simple/ 200 48000000" "files.pythonhosted.org/ fail:28" "registry.npmjs.org/ 301"
+  "github.com/ 405 600000" "huggingface.co/api/models?limit=1 429" "api.anthropic.com/ 404" "api.openai.com/ fail:6")
+NET_2=("pypi.org/simple/ fail:7" "files.pythonhosted.org/ 503" "registry.npmjs.org/ fail:28"
+  "github.com/ fail:35" "huggingface.co/api/models?limit=1 fail:56" "api.anthropic.com/ fail:60" "api.openai.com/ 421")
+net_run network-1 "${NET_1[@]}"
+net_run network-2 "${NET_2[@]}"
+# The two scripts themselves: seven hosts, each with a code in one and a failure in the other.
+BOTH_STATES="$(printf '%s\n' "${NET_1[@]}" "${NET_2[@]}" | awk '
+  { state = ($2 ~ /^fail:/) ? "fail" : "code"; seen[$1 " " state]++; hosts[$1] = 1 }
+  END { for (h in hosts) { n++; if (seen[h " code"] != 1 || seen[h " fail"] != 1) bad++ } print n + 0, bad + 0 }')"
+check "the two scenarios hold seven hosts, each answering once and failing once" '[ "$BOTH_STATES" = "7 0" ]'
+# An exported shell option that drops unmatched patterns leaves the URL with a question mark in the
+# list of hosts.
+make_fake_curl "$T/net-nullglob" "pypi.org/simple/ 200" "files.pythonhosted.org/ 200" "registry.npmjs.org/ 200" \
+  "github.com/ 200" "huggingface.co/api/models?limit=1 204" "api.anthropic.com/ 200" "api.openai.com/ 200"
+OUT="$(PATH="$T/net-nullglob/bin:$NOCURL_PATH" AVE_PROBE_DEV_DIR="$T/dev-none" env BASHOPTS=nullglob "$PROBE" 2>&1)"; CODE=$?
+check "BASHOPTS=nullglob exported: huggingface.co/api/models?limit=1 is requested and reported, seven requests in all" '[ "$CODE" = 0 ] && has_line "huggingface.co/api/models?limit=1" "HTTP 204" && [ "$(grep -c "^CALL " "$T/net-nullglob/calls")" = 7 ] && ! grep -q "^UNEXPECTED " "$T/net-nullglob/calls"'
 
 "$PROBE" --bogus >/dev/null 2>&1; CODE=$?
 check "unknown option exits 2" '[ "$CODE" = 2 ]'
+OUT="$("$PROBE" --help 2>&1)"; CODE=$?
+check "--help exits 0 and prints the header comment from its first line through its last, and no line of code" '[ "$CODE" = 0 ] && has "^scripts/probe-environment\.sh " && has "^Usage: +\./scripts/probe-environment\.sh \[--offline\]" && has "^Not part of verify\.sh" && ! has "pipefail" && ! has "^#"'
 
 echo "PROBE TOTAL: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]
