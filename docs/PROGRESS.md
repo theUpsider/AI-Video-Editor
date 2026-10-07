@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-07 — M0 open: the fix round of the second review is merged on this branch; the third review round is next._
+_Last updated: 2026-10-07 — M0 open: the fix round of the second review is merged on this branch; the third review round was launched._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -33,10 +33,12 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
   admits its path, the tools read their configuration by name, hook registrations and frontmatter follow written
   forms, the probe judges device names as whole strings and creates nothing. Each track audited the statements of
   its requirement file ([WF-010](WORKFLOW_LOG.md)); new assumptions ASM-032 to ASM-041.
-- AVE-REQ-093/094/096/097/098 `verification`. Third review round briefed in
-  [its brief](briefs/2026-10-07-m0-final-review-3.md) at the commit that adds it (parent `9fc1579`, the merge);
-  not launched when this file was written: run the Workflow tool with `docs/workflows/m0-final-review-3.js` and
-  `{commit: '<full hash of the brief commit>'}` plus the model arguments.
+- AVE-REQ-093/094/096/097/098 `verification`. Third review round from
+  [its brief](briefs/2026-10-07-m0-final-review-3.md) at `d7d5604` (parent `9fc1579`, the merge): launched
+  2026-10-07 as workflow `wf_268ea4f6-bad` ([script](workflows/m0-final-review-3.js)); verdicts not recorded; on
+  resume without a recorded verdict, remove leftover clones `verify-*` and `challenge-*` under
+  `.claude/worktrees/`, then re-run the Workflow tool with that script and
+  `{commit: 'd7d56049c98254192201b85cdcfce323adff024f'}` plus the model arguments.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -49,8 +51,7 @@ and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchroniza
 
 ## Next recommended work
 
-1. Launch the third review round as § In progress states; file each report as a handback part of its brief; on
-   every upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+1. File each report of the third review round as a handback part of its brief; on every upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
 2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
 3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (bring the drafts
    up to the gates of this tree first).
