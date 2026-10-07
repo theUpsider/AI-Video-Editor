@@ -1,5 +1,5 @@
 # Current project state
-_Last updated: 2026-10-07 — M0 open: the second review round returned no upheld PASS; the fix round for its findings was launched._
+_Last updated: 2026-10-07 — M0 open: the fix round of the second review is merged on this branch; the third review round is next._
 
 <!-- Fast-recovery snapshot. Update after every requirement transition; keep under ~80 lines,
 with the five newest entries in § Recently completed and § Important recent decisions; history
@@ -17,26 +17,23 @@ Host: Windows 11 ARM64; every check runs in the development container (`scripts/
 
 ## Current objective
 
-Finish M0: close the findings of the second review round on AVE-REQ-093/094/096/097/098
-([fix brief](briefs/2026-10-07-m0-review-2-fixes.md)), review again (brief first, status `verification` first),
-move the five to `done` in the order 093 → 094 → 096/097/098, bring this branch into the working branch and
-`main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
+Finish M0: review AVE-REQ-093/094/096/097/098 a third time on this branch (brief first, status `verification`
+first), move the five to `done` in the order 093 → 094 → 096/097/098, bring this branch into the working branch
+and `main`, run the M0 milestone-review. Then M1 backend core ‖ M2 synchronization from the drafts.
 
 ## In progress
 
-- Integration branch `m0-final-integration` (this file's branch): the working branch with the fix round
-  `wf_5cd13360-464` and the AVE-REQ-094 task branch merged in; the working branch receives it after the reviews.
-- Second review round `wf_b18a5f3e-54e` at `f996c17`, verdicts recorded 2026-10-07 (handback parts 1 to 5 of
-  [its brief](briefs/2026-10-06-m0-final-review-2b.md)): AVE-REQ-093, AVE-REQ-094 and AVE-REQ-097 FAIL with two
-  blocking findings each; AVE-REQ-096 PASS refuted on AC-4 and AVE-REQ-098 PASS refuted on AC-2. All five are
-  `in-progress` (Status logs hold each finding); the 13 blocking findings of the first round are closed.
-- Fix round from [the fix brief](briefs/2026-10-07-m0-review-2-fixes.md) at `07eceb1`: tracks A (AVE-REQ-093),
-  C (AVE-REQ-094), B1 (run environment, hooks) and B2 (checker, evidence tool), each with a statement audit
-  ([WF-010](WORKFLOW_LOG.md)), in worktrees on branches `m0-r2-fixes-a`, `-c`, `-b1`, `-b2`. Launched 2026-10-07
-  as workflow `wf_6c06f19f-506`; results not recorded; on resume without a recorded result, look for a commit on
-  each branch and re-run the Workflow tool with `docs/workflows/m0-review-2-fixes.js` and
-  `{base: '07eceb1aa1693df708c240642f837d8838be175a', only: [the open tracks]}` plus the trailer and model
-  arguments. The lead closes AVE-REQ-096 and the lead-owned documents beside it.
+- Integration branch `m0-final-integration` (this file's branch): the working branch with both fix rounds merged
+  in; the working branch receives it after the reviews.
+- Second review round `wf_b18a5f3e-54e` at `f996c17`: three FAIL, two PASS refuted by the skeptic (handback parts
+  1 to 5 of [its brief](briefs/2026-10-06-m0-final-review-2b.md)).
+- Fix round `wf_6c06f19f-506` ([brief](briefs/2026-10-07-m0-review-2-fixes.md), handback parts 1 to 4): tracks A,
+  C, B1 and B2 COMPLETE and merged here with their proposed document text. Requirement files and the roadmap
+  follow written forms a Markdown renderer agrees with, every file outside the fingerprint fails unless a list
+  admits its path, the tools read their configuration by name, hook registrations and frontmatter follow written
+  forms, the probe judges device names as whole strings and creates nothing. Each track audited the statements of
+  its requirement file ([WF-010](WORKFLOW_LOG.md)); new assumptions ASM-032 to ASM-041.
+- AVE-REQ-093/094/096/097/098 `in-progress` until the brief of the third review round is committed.
 - AVE-REQ-004/012/018/019/020/021/024/031/072/075 `in-progress` (partial ACs; the rest needs M1/M2 work).
 
 ## Recently completed
@@ -49,19 +46,19 @@ move the five to `done` in the order 093 → 094 → 096/097/098, bring this bra
 
 ## Next recommended work
 
-1. File the handbacks of the fix round; merge its four branches here with `--no-commit`, apply the
-   proposed document text, pass `./scripts/verify.sh --tier release`, commit, push, wait for green CI.
-2. Third review round from a new brief (status `verification` first; two reviewer clones at most); on every
-   upheld PASS tick the ACs, fill § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
-3. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
-4. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/`.
+1. Third review round: write its brief, set the five to `verification`, commit, push, wait for green CI, then
+   launch reviewer and skeptic per requirement (two clones at most); on every upheld PASS tick the ACs, fill
+   § Test evidence, set `done`, update TRACEABILITY.md, commit, push.
+2. Merge this branch into the working branch, then `git push origin <commit>:main` after green CI.
+3. `milestone-review` M0; then M1 backend core ‖ M2 synchronization from `docs/briefs/drafts/` (bring the drafts
+   up to the gates of this tree first).
 
 ## Blockers
 
-Host disk: drive C: held 5.5 GB free of 237 GB on 2026-10-07; reviews proceed two clones at a time
-([ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § Limits item 5), and the human frees space before
-M1 adds render outputs (`docker builder prune` reclaims about 9 GB). External gaps with their unblock actions
-(provider credentials, a GPU device visible to the container, speech and vision models): § External gaps there.
+None for M0. Host disk: 16 GB free of 237 GB on 2026-10-07. External gaps with their unblock actions (provider
+credentials, a GPU device visible to the container, speech and vision models):
+[ENVIRONMENT_CAPABILITIES.md](ENVIRONMENT_CAPABILITIES.md) § External gaps. A long run needs the host awake
+(§ Limits item 8 there).
 
 ## Known failures
 
@@ -69,11 +66,11 @@ None.
 
 ## Important recent decisions
 
+- [ASM-041](ASSUMPTIONS.md) — gate hardening beyond the stated limits waits for a need.
+- [ASM-036](ASSUMPTIONS.md) — outside the fingerprint only listed paths pass; the step walks the tree.
+- [ASM-033](ASSUMPTIONS.md) — the roadmap is read by the letters a line opens with.
 - [WF-011](WORKFLOW_LOG.md) — reviewer clones and the lead's own code work count toward the concurrency limits.
 - [WF-010](WORKFLOW_LOG.md) — a fix track ends with a statement audit of its requirement file.
-- [ASM-030](ASSUMPTIONS.md) — check 12 fails every loop word in a hook command.
-- [ASM-026](ASSUMPTIONS.md) — requirement files hold the characters of an allow-list.
-- [ASM-025](ASSUMPTIONS.md) — the steps of verify.sh start from a named set of variables.
 
 ## Verification status
 

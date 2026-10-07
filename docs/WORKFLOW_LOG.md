@@ -310,3 +310,22 @@ Not an improvement entry: the measured starting point that later entries compare
   writers. After: measured on the two runs of the evaluation set.
 - Keep or revert, with reason: keep; the count is one line of the launch record, and the cleanup returned
   577 MiB of the state volume.
+
+### WF-012 — 2026-10-07 — Standby stopped a run for nine hours; writers share one container
+- Observed failure and evidence: the fix round `wf_6c06f19f-506` started at 00:18 local time; the host entered
+  standby at 00:38 (Windows event 506, reason "Power Button") and woke at 09:52. Both writers stood still for
+  that time, and the run then started tracks A and B1 again with new writers in the same worktrees, where track
+  B1 found the partial edits of its predecessor. During the run track C stopped its own mutation harness with a
+  process-name pattern that also matched a harness of track B2 in the shared development container, which lost
+  one mutation run ([handback part 2](briefs/handbacks/2026-10-07-m0-review-2-fixes.part-2.md)).
+- Root-cause hypothesis: the app's keep-awake setting prevents idle sleep only, and every worktree of the main
+  checkout uses the same container, so process names are shared among writers.
+- One proposed workflow/skill/context change: `develop` § 4 tells a writer in a worktree to read `git status` and
+  `git diff` first when its worktree holds edits (a restarted task) and to stop processes only by their process
+  ID or by a working directory of its own; `docs/ENVIRONMENT_CAPABILITIES.md` § Limits names standby.
+- Expected metric and fixed evaluation set (plus held-out cases): lost runs caused by another writer's cleanup,
+  and restarted tasks that overwrite inherited edits unread; evaluation set: the worktree runs of M1 and M2.
+- Independent review result: pending (the next review of this log; the lead records it).
+- Measured before/after result: before, one lost mutation run and one restart in a worktree with inherited edits
+  (read by the new writer). After: measured on the evaluation set.
+- Keep or revert, with reason: keep; both rules cost one sentence of a prompt.

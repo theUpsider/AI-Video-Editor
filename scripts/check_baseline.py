@@ -35,7 +35,8 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity, § 
      after it was done);
   e  a superseded baseline requirement logs a "superseded" line and names a replacement that
      exists: for version one the replacement is version-one, undeferred, of a priority not below
-     the baseline's; for future scope it is future-scope and deferred; either way it keeps the
+     the baseline's; for future scope it is future-scope and deferred; either way it is never
+     proposed (the rule of the imported file holds for the end of its chain), keeps the
      type, the source human, the origins and the scenarios, carries the Description and every
      baseline criterion verbatim, and the old file logs each difference ("AC-n dropped by <ID>:",
      "<ID> AC-m added [<mark>]:", "Description replaced by <ID> [<mark>]:"); a replacement under
@@ -47,10 +48,15 @@ Checks (rules: docs/requirements/README.md § Baseline import and integrity, § 
      for every requirement on the supersession chain of a human baseline requirement), carry
      scope and gate keys and stand in their parent's list;
   g  docs/ROADMAP.md lists every live version-one requirement exactly once, under the milestone
-     its primary_gate names, and the exclusions in the Deferred group only; the lists are the
-     lines with the template's labels, one of each per entry; every milestone entry holds one
-     Status line "- **Status:** planned", "in-progress" or "done", and a milestone with Status
-     done lists finished requirements only; fence lines follow the reader's rule;
+     its primary_gate names, and the exclusions in the Deferred group only; a milestone with
+     Status done lists finished requirements only. The roadmap is read by the rules that make
+     the entries, the Status lines and the lists the gate reads the ones a Markdown reader
+     shows (read_roadmap): characters of the reader's allow-list and the horizontal ellipsis;
+     fence lines, raw HTML, backtick runs and footnote syntax by the reader's rules; a heading
+     is a line at column 0, and a heading that reads as an entry heading has the template form
+     "### M<n> — <name>" or "### Deferred — <text>"; in an entry every line whose letters open
+     with "status" (milestones), "requirement" or "proposed" is a line of the template's exact
+     form, one of each kind, and a list item of one line;
   h  a summary: requirements by status and by gate, acceptance criteria ticked.
 Output: "ERROR: <path>: <message>" per violation, then the summary and "OK: ..." or "FAILED: ...".
 Exit:   0 no violations · 1 violations found · 2 usage, or a baseline unreadable before any violation.
@@ -76,6 +82,7 @@ if not sys.flags.isolated:
     os.execv(sys.executable, [sys.executable, "-I", "-B", os.path.abspath(__file__), *sys.argv[1:]])
 
 import hashlib
+import html
 import json
 import re
 import subprocess
@@ -103,20 +110,46 @@ reqfile = load_source("ave_reqfile", READER)
 
 STATUSES = reqfile.STATUSES
 ID_PATTERN = re.compile(r"^(AVE-EPIC-\d{2,}|AVE-FEAT-\d{3,}|AVE-REQ-\d{3,})-[a-z0-9-]+\.md$")
-MILESTONE = re.compile(r"^### (M\d+) — ")
-# The one Status line of a milestone entry (docs/ROADMAP.md § Milestone entry template).
+# The entry headings of docs/ROADMAP.md (§ Milestone entry template): a milestone, its number
+# written without a leading zero, and the Deferred group.
+MILESTONE = re.compile(r"^### (M(?:0|[1-9]\d*)) — \S")
+DEFERRED = re.compile(r"^### Deferred — \S")
+# A heading that reads as an entry heading: its letters and digits (roadmap_key), digits at the
+# start aside, open with M<digit> or Deferred.
+ENTRY_LIKE = re.compile(r"\d*(?:m\d|deferred)")
+# The one Status line of a milestone entry.
 MILESTONE_STATUS = re.compile(r"^- \*\*Status:\*\* (planned|in-progress|done)$")
-# The requirement lists of an entry, by the template's labels: (group, key, label pattern).
+# What a line of an entry reads as, by the letters it opens with (roadmap_key).
+STATUS_WORD = "status"
+LIST_WORDS = ("requirement", "proposed")
+REQUIREMENT_LINK = r"\[AVE-REQ-\d{3,}\]\(requirements/AVE-REQ-\d{3,}-[a-z0-9-]+\.md\)"
+ROADMAP_LINK = re.compile(r"\[(AVE-REQ-\d{3,})\]\(requirements/(AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
+# The text behind the label of a requirement list: links separated by a comma and a space.
+LINKS_ONLY = re.compile(rf" {REQUIREMENT_LINK}(?:, {REQUIREMENT_LINK})*")
+# The text behind the label of a 'Proposed during' line, its links removed: plain words.
+PLAIN_WORDS = re.compile(r"(?: [A-Za-z0-9 (),.;:-]*)?")
+# The requirement lists of an entry, by the template's labels: (group, key, label pattern,
+# pattern of the text behind the label once its links are removed; None for links only).
 ROADMAP_LISTS = (
-    ("milestone", "listed", re.compile(r"^- \*\*Requirements \(dependency order\):\*\*")),
-    ("milestone", "proposed", re.compile(r"^- \*\*Proposed during [A-Za-z0-9 ]+:\*\*")),
-    ("deferred", "listed", re.compile(r"^- \*\*Requirements:\*\*")),
+    ("milestone", "listed", re.compile(r"^- \*\*Requirements \(dependency order\):\*\*"), None),
+    ("milestone", "proposed", re.compile(r"^- \*\*Proposed during [A-Za-z0-9 ]+:\*\*"), PLAIN_WORDS),
+    ("deferred", "listed", re.compile(r"^- \*\*Requirements:\*\*"), None),
 )
-# A line that presents itself as a requirement list: any bullet, indentation and letter case.
-LIST_LIKE = re.compile(r"^ *[-*+] +\*\*(?:requirements|proposed)", re.IGNORECASE)
+# The line with text that follows a line the gate reads: a list item at column 0 or a heading.
+NEXT_ITEM = re.compile(r"- |#{1,6}(?: |$)")
+# The one link form of the roadmap: words in the brackets, a path or address without spaces in
+# the parentheses, no "!" before it (an image). LINK_MARKS is what every other link form and an
+# image hold; LINK_TARGET is the part of a link a Markdown reader does not show.
+PLAIN_LINK = re.compile(r"(?<!!)\[[A-Za-z0-9][A-Za-z0-9 .-]*\]\([A-Za-z0-9_./#:-]+\)")
+LINK_MARKS = re.compile(r"\]\(|!\[|\]\[")
+LINK_TARGET = re.compile(r"\]\([A-Za-z0-9_./#:-]+\)")
+# The ticked box of a task-list item, which a Markdown reader shows as a box.
+TASK_BOX = re.compile(r"\[[xX]\]")
+# The characters of docs/ROADMAP.md besides the allow-list of the requirement files: the sign the
+# roadmap held on 2026-10-07. A sign joins this list in a change of this file, which the diff shows.
+ROADMAP_CHARACTERS = {0x2026: "horizontal ellipsis"}
 # A ticked box of § Feature acceptance or § Success criteria, in any list form.
 TICKED_BOX = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)]) +\[[xX]\]")
-ROADMAP_LINK = re.compile(r"\[(AVE-REQ-\d{3,})\]\(requirements/(AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
 DEPENDENCY_LINK = re.compile(r"\]\((AVE-REQ-\d{3,})-[a-z0-9-]+\.md\)")
 PRIORITY_RANK = {"must": 3, "should": 2, "could": 1}
 GATE = re.compile(r"^(M\d+|FUTURE)$")
@@ -562,6 +595,12 @@ def check_supersession(item, req, files, absorbed) -> None:
             f"Gate change: {req['id']} → {name} primary_gate {successor.get('primary_gate')}"
             f" (baseline {req['gate']})"
         )
+    if successor.get("status") == "proposed":
+        error(
+            item.path,
+            f"the successor {name} is 'proposed'; an imported requirement never returns to"
+            " proposed, and the rule holds for the end of its supersession chain",
+        )
     if req["scope"] == "future" and (
         successor.get("scope") != "future" or successor.get("status") != "deferred"
     ):
@@ -810,84 +849,195 @@ def check_dependency_cycles(reqs) -> None:
             stack.extend((dep, [*path, dep]) for dep in graph[node])
 
 
+def roadmap_key(text: str, digits: bool = False) -> str:
+    """What a roadmap line reads as: the letters a Markdown reader shows, in lower case.
+
+    Link targets and ticked task boxes go (a reader shows the words in the brackets and a box),
+    character references are resolved, and emphasis marks, container markers, backslashes,
+    code-span marks and every other sign drop out, so '- __Status:__', '* *status*:',
+    '> - Status:', '&#83;tatus', '[1](x) Status' and '- [x] Status' all open with 'status'. With
+    digits, the digits stay (an entry heading reads 'm0...'). The link rule of read_roadmap makes
+    LINK_TARGET every link target of a line.
+    """
+    kept = "[^a-z0-9]" if digits else "[^a-z]"
+    shown = TASK_BOX.sub("", LINK_TARGET.sub("]", text))
+    return re.sub(kept, "", html.unescape(shown).lower())
+
+
 def read_roadmap():
     """The milestone entries of docs/ROADMAP.md: (milestone -> entry, problems).
 
     entry: {"status": the word of the entry's Status line, "listed": [IDs of its requirement
     list], "proposed": [IDs of its 'Proposed during' line]}; the Deferred group is the entry
-    FUTURE. The gate reads the lines with the template's labels (ROADMAP_LISTS), one of each per
-    entry, and the one Status line of a milestone entry (MILESTONE_STATUS); fence lines follow
-    the rule of the requirement files, so a list the gate reads is a list readers see.
+    FUTURE. The rules make the entries, the Status lines and the lists the gate reads the ones a
+    Markdown reader shows:
+      file     characters of the requirement files' allow-list and ROADMAP_CHARACTERS, written
+               out or as a character reference; no HTML comment; fence lines by the reader's
+               one form (reqfile.fence_like);
+      line     outside fenced blocks, the reader's rules for backtick runs, raw HTML and
+               footnote syntax (reqfile.inline_problems); no line of = or - alone; outside
+               code spans every "](" belongs to a link of the one form PLAIN_LINK, and "![" (an
+               image) and "][" (a reference link) fail, so the letters of a line that a reader
+               does not see are its link targets;
+      heading  an ATX heading at column 0; one that stands indented, in a list item or in a
+               quote fails. A heading whose letters and digits, digits at the start aside, open
+               with m<digit> or deferred is an entry heading of the template form (MILESTONE,
+               DEFERRED). An entry runs to the next heading of level 1 to 3;
+      entry    a line whose letters open with 'status' (milestone entries), 'requirement' or
+               'proposed' is a line of the template's exact form (MILESTONE_STATUS,
+               ROADMAP_LISTS): one Status line per milestone entry, one list of a kind per
+               entry, a requirement list of links only, a 'Proposed during' line of links and
+               plain words; the line with text behind such a line opens a list item at column 0
+               or is a heading, so the item the gate reads has one line.
+    Other text of an entry is free text.
     """
     entries, problems = {}, []
     current, name, fenced = None, "", False
-    text = ROADMAP.read_text(encoding="utf-8")
+    read_line = ""  # the line the gate read last, until the next line with text
+    data = ROADMAP.read_bytes()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        problems.append("the file is no valid UTF-8 text")
+        text = data.decode("utf-8", errors="replace")
     if "<!--" in text:
         problems.append("an HTML comment (<!--) hides text from readers; the roadmap holds none")
     for number, line in enumerate(text.split("\n"), 1):
+        # A Markdown reader shows the character a reference names, so the line is judged with
+        # its character references resolved.
+        for char in html.unescape(line):
+            if reqfile.bad_character(char) and ord(char) not in ROADMAP_CHARACTERS:
+                shown = "a carriage return" if char == "\r" else f"U+{ord(char):04X}"
+                problems.append(
+                    f"line {number}: {shown} is no character of the roadmap, written out or as"
+                    " a character reference (line feeds end lines; the allow-list holds the"
+                    " characters of a requirement file and ROADMAP_CHARACTERS in"
+                    " scripts/check_baseline.py)"
+                )
+                break
+        if read_line and line:
+            if not NEXT_ITEM.match(line):
+                problems.append(
+                    f"line {number}: '{line[:40]}' continues the line '{read_line}'; a line the"
+                    " gate reads is a list item of one line, and the next line with text opens"
+                    " a list item at column 0 ('- ') or is a heading"
+                )
+            read_line = ""
         if fenced:
             if line == reqfile.FENCE_CLOSE:
                 fenced = False
-            elif reqfile.FENCE_LIKE.match(line):
+            elif reqfile.fence_like(line):
                 problems.append(
                     f"line {number}: a fenced block closes with ``` at column 0 and holds no other"
                     " fence line"
                 )
             continue
-        if reqfile.FENCE_LIKE.match(line):
+        if reqfile.fence_like(line):
             if reqfile.FENCE_OPEN.match(line):
                 fenced = True
             else:
                 problems.append(
-                    f"line {number}: a fence line reads ``` or ```<language> at column 0"
-                    f" ('{line[:20]}'); a list inside any other fence is a code sample to readers"
+                    f"line {number}: a fence line reads ``` or ```<word> (letters, digits, _ or -)"
+                    f" at column 0 ('{line[:20]}'); a list inside any other fence is a code"
+                    " sample to readers"
                 )
             continue
-        match = MILESTONE.match(line)
-        if match or line.startswith("### Deferred "):
-            name = match.group(1) if match else "FUTURE"
-            if name in entries:
-                problems.append(f"milestone {name} has two entries")
-            current = entries.setdefault(
-                name, {"status": "", "status_lines": 0, "listed": [], "proposed": [], "lists": []}
+        problems.extend(f"line {number}: {problem}" for problem in reqfile.inline_problems(line))
+        plain, _unpaired = reqfile.outside_code_spans(line)
+        if LINK_MARKS.search(PLAIN_LINK.sub("", plain)):
+            problems.append(
+                f"line {number}: a link of the roadmap reads '[<words>](<path>)': words of"
+                " letters, digits, spaces, . and - in the brackets, a path or address without"
+                " spaces in the parentheses; every other ](, an image (![) and a reference link"
+                f" (][) fail ('{line[:50]}')"
             )
+        forms = reqfile.readings(line)
+        if any(reqfile.UNDERLINE.match(form) for form in forms):
+            problems.append(
+                f"line {number}: a line of = or - underlines a heading or draws a rule"
+                f" ('{line[:20]}')"
+            )
+        if reqfile.ATX.match(line):
+            match = MILESTONE.match(line)
+            if match or DEFERRED.match(line):
+                name = match.group(1) if match else "FUTURE"
+                if name in entries:
+                    problems.append(
+                        ("the Deferred group" if name == "FUTURE" else f"milestone {name}")
+                        + " has two entries"
+                    )
+                current = entries.setdefault(
+                    name,
+                    {"status": "", "status_lines": 0, "listed": [], "proposed": [], "lists": []},
+                )
+                continue
+            if ENTRY_LIKE.match(roadmap_key(line, digits=True)):
+                problems.append(
+                    f"line {number}: '{line[:60]}' reads as an entry heading; an entry heading"
+                    " reads '### M<n> — <name>' (the number without a leading zero) or"
+                    " '### Deferred — <text>'"
+                )
+            if len(line) - len(line.lstrip("#")) <= 3:
+                current = None
             continue
-        if line.startswith("#"):
-            current = None
+        if any(reqfile.ATX.match(form) for form in forms):
+            problems.append(
+                f"line {number}: a heading stands at column 0, outside list items and quotes"
+                f" ('{line[:50]}')"
+            )
             continue
         if current is None:
             continue
         where = "the Deferred group" if name == "FUTURE" else f"milestone {name}"
-        if name != "FUTURE" and "**status" in line.lower():
+        group = "deferred" if name == "FUTURE" else "milestone"
+        reads_as = roadmap_key(line)
+        if group == "milestone" and reads_as.startswith(STATUS_WORD):
             current["status_lines"] += 1
             match = MILESTONE_STATUS.match(line)
             if match:
                 current["status"] = match.group(1)
+                read_line = line
             else:
                 problems.append(
                     f"{where}: the Status line reads '- **Status:** planned', 'in-progress' or"
                     f" 'done' and nothing else ('{line[:60]}')"
                 )
             continue
-        group = "deferred" if name == "FUTURE" else "milestone"
-        key = next((k for g, k, label in ROADMAP_LISTS if g == group and label.match(line)), None)
-        label = line.split(":**")[0] + ":**" if ":**" in line else line[:60]
-        if key is None:
-            if LIST_LIKE.match(line):
-                problems.append(
-                    f"{where}: '{label}' is no requirement-list label of the template"
-                    " ('- **Requirements (dependency order):**' and"
-                    " '- **Proposed during <reviews>:**' under a milestone,"
-                    " '- **Requirements:**' in the Deferred group)"
-                )
+        if not reads_as.startswith(LIST_WORDS):
             continue
+        found = next(
+            (entry for entry in ROADMAP_LISTS if entry[0] == group and entry[2].match(line)), None
+        )
+        label = line.split(":**")[0] + ":**" if ":**" in line else line[:60]
+        if found is None:
+            problems.append(
+                f"{where}: '{label}' is no requirement-list label of the template"
+                " ('- **Requirements (dependency order):**' and"
+                " '- **Proposed during <reviews>:**' under a milestone,"
+                " '- **Requirements:**' in the Deferred group)"
+            )
+            continue
+        _group, key, pattern, words = found
         if key in current["lists"]:
             problems.append(f"{where} holds two '{label}' lines; an entry holds one list of a kind")
         current["lists"].append(key)
-        for text_id, target_id in ROADMAP_LINK.findall(line):
+        rest = line[pattern.match(line).end() :]
+        if words is None and not LINKS_ONLY.fullmatch(rest):
+            problems.append(
+                f"{where}: the line '{label}' holds requirement links"
+                " '[AVE-REQ-NNN](requirements/AVE-REQ-NNN-<slug>.md)' separated by ', ' and"
+                " nothing else"
+            )
+        if words is not None and not words.fullmatch(ROADMAP_LINK.sub("", rest)):
+            problems.append(
+                f"{where}: the line '{label}' holds requirement links and plain words (letters,"
+                " digits, spaces and ( ) , . ; : -) and nothing else"
+            )
+        for text_id, target_id in ROADMAP_LINK.findall(rest):
             if text_id != target_id:
                 problems.append(f"the link text {text_id} names another file than {target_id}")
             current[key].append(target_id)
+        read_line = label
     if fenced:
         problems.append("a fenced block stays open at the end of the file")
     for name, entry in entries.items():

@@ -4,8 +4,10 @@
 #   test-check-baseline.sh  scripts/check_baseline.py and scripts/requirements/import_baseline.py
 #   test-stop-hook.sh       .claude/hooks/stop-verify.sh and the working-tree step of scripts/verify.sh
 #   test-session-start.sh   .claude/hooks/session-start.sh
-#   test-verify-tiers.sh    tier selection, exit codes and heavy-media lock of scripts/verify.sh
-#   test-probe-environment.sh  scripts/probe-environment.sh (measured resources, media tools, toolchains,
+#   test-verify-tiers.sh    tier selection, exit codes and heavy-media lock of scripts/verify.sh; the
+#                           files outside the fingerprint; the options of the backend step file with
+#                           the real ruff and mypy (needs uv)
+#   test-probe-environment.sh  scripts/probe-environment.sh (measured resources and cgroup limits, media tools, toolchains,
 #                           browsers and Git; accelerator verdict; Claude Code version, OS user,
 #                           writability; network lines through a fake curl; never prints secrets)
 # (scripts/tests/test_*.py, the evidence tooling unit tests, run in verify.sh's fast tier through

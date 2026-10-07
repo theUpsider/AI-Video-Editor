@@ -2,8 +2,9 @@
 # scripts/tests/test-verify-tiers.sh — tier selection of scripts/verify.sh (fast ⊂ media ⊂ release),
 # its exit codes, the environment its steps start from and its heavy-media lock, in a fixture
 # project whose component step file registers one marker step per tier plus steps that report the
-# lock state and the environment. Needs git, python3, flock and
-# timeout. Every run uses a lock file in the suite's temp dir, so the suite never waits for a real
+# lock state and the environment; and the options of the real backend step file, with a stub of uv
+# and with the real ruff and mypy of the backend environment. Needs git, python3, flock, timeout
+# and uv. Every run uses a lock file in the suite's temp dir, so the suite never waits for a real
 # media run. Exit 0 when every check passes.
 # Checks are strings run by eval, which reads the variables they name.
 # shellcheck disable=SC2016,SC2034
@@ -22,7 +23,7 @@ if git -C "$T" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 2
 fi
 export GIT_CEILING_DIRECTORIES="$T"
-for tool in git python3 flock timeout; do
+for tool in git python3 flock timeout uv; do
   command -v "$tool" >/dev/null 2>&1 || { echo "test-verify-tiers.sh: $tool is required" >&2; exit 2; }
 done
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
@@ -150,7 +151,7 @@ OUTSIDE=(VERIFY_TIER=media PYTEST_ADDOPTS=--collect-only PYTEST_PLUGINS=x PYTHON
   GIT_WORK_TREE="$T/other" GIT_INDEX_FILE=/nonexistent/index GIT_OBJECT_DIRECTORY=/nonexistent
   GIT_ALTERNATE_OBJECT_DIRECTORIES=/nonexistent GIT_COMMON_DIR=/nonexistent GIT_NAMESPACE=other
   GIT_CONFIG_COUNT=abc AVE_FFMPEG=/nonexistent/ffmpeg AVE_FFPROBE=/nonexistent/ffprobe
-  AVE_EVIDENCE_DIR=/nonexistent AVE_RUN_SCRATCH=/nonexistent XDG_CONFIG_HOME=/nonexistent
+  AVE_EVIDENCE_DIR=/nonexistent AVE_RUN_SCRATCH=/nonexistent AVE_VAR_DIR=/nonexistent XDG_CONFIG_HOME=/nonexistent
   CLAUDE_VERIFY_GATE=off ANY_OTHER_NAME=1 'BASH_FUNC_true%%=() { echo "the function of the caller ran"; return 1; }')
 # The names a step sees: the caller's variables of the named set, the run's own, the shell's own.
 EXPECTED_NAMES="$(printf '%s\n' PATH HOME USER LOGNAME TMPDIR LANG LC_ALL TZ UV_PROJECT_ENVIRONMENT UV_CACHE_DIR \
@@ -191,51 +192,177 @@ rm "$R/scripts/verify.d/99-local.sh"
 run
 check "the restored fixture passes again" '[ "$CODE" = 0 ] && ran fast'
 
-# AVE-REQ-097 AC-4: a file Git ignores inside the source, test, script or hook directories takes
-# part in no status, diff or fingerprint, so a run that could load it fails.
-echo "## ignored files among sources, tests and scripts"
-IGNORED_STEP="No ignored file among sources, tests and scripts"
-check "the clean fixture passes the ignored-file step" 'passed "$IGNORED_STEP"'
+# AVE-REQ-097 AC-2, AVE-REQ-097 AC-4: a file of the tree that its fingerprint does not name takes
+# part in no status, diff or fingerprint, so a run that could load it fails, wherever the file
+# lies and whatever hides it. The step admits the list of ignored paths of verify.sh
+# (IGNORED_DIRECTORIES, IGNORED_FILES) and no other place.
+echo "## files outside the fingerprint"
+FILES_STEP="No file outside the fingerprint and the listed paths"
+TREE_STEP="Working tree unchanged by verification"
+check "the clean fixture passes the step" 'passed "$FILES_STEP"'
 # plant <path> — writes a file there; unplant <path> <topmost directory the case created, if any>
 plant() { mkdir -p "$R/$(dirname "$1")" && printf 'x\n' > "$R/$1"; }
 unplant() { rm -f "$R/$1"; [ -z "${2:-}" ] || rm -rf "${R:?}/$2"; }
-while read -r planted created; do
-  plant "$planted"
-  run
-  check "an ignored $planted fails the run and is named" '[ "$CODE" = 1 ] && [ -z "$(cd "$R" && git status --porcelain)" ] && printf "%s\n" "$OUT" | quiet -F "<== FAIL: $IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "$planted"'
-  unplant "$planted" "$created"
-done <<'PLANTED'
-scripts/unittest.pyc
+failed() { printf '%s\n' "$OUT" | quiet -F "<== FAIL: $1 ("; }
+named() { printf '%s\n' "$OUT" | quiet -xF -- "$1"; }
+clean_for_git() { [ -z "$(cd "$R" && git status --porcelain)" ]; }
+as_committed() { [ -z "$(cd "$R" && git status --porcelain --ignored | grep -v "^!! var/")" ]; }
+# The three forms of the review finding, each alone: a bytecode file where pytest finds it ahead
+# of the product package, and a .gitignore file below the root that lists itself and hides the
+# configuration of a tool or the target of a link.
+plant backend/ave.pyc
+run
+check "an ignored backend/ave.pyc fails the run and is named" '[ "$CODE" = 1 ] && clean_for_git && failed "$FILES_STEP" && named backend/ave.pyc'
+unplant backend/ave.pyc
+printf '.gitignore\nmypy.ini\nruff.toml\n' > "$R/backend/.gitignore"
+printf '[mypy]\nfiles = tests/__init__.py\n' > "$R/backend/mypy.ini"
+printf 'exclude = ["src", "tests"]\n' > "$R/backend/ruff.toml"
+run
+check "a backend/.gitignore that lists itself, mypy.ini and ruff.toml fails the run, and the three are named" '[ "$CODE" = 1 ] && clean_for_git && failed "$FILES_STEP" && named backend/.gitignore && named backend/mypy.ini && named backend/ruff.toml'
+rm -f "$R/backend/.gitignore" "$R/backend/mypy.ini" "$R/backend/ruff.toml"
+printf '.gitignore\nhidden-note.md\n' > "$R/docs/.gitignore"
+printf 'hidden\n' > "$R/docs/hidden-note.md"
+run
+check "a docs/.gitignore that lists itself and a link target fails the run, and both are named" '[ "$CODE" = 1 ] && clean_for_git && failed "$FILES_STEP" && named docs/.gitignore && named docs/hidden-note.md'
+rm -f "$R/docs/.gitignore" "$R/docs/hidden-note.md"
+# Paths that a rule of the root .gitignore ignores and the list does not admit: the directories
+# of the first form of this step, the names of the list at another depth or in another place, a
+# file of another kind inside a bytecode directory, and the rules the list leaves out. One run
+# holds them all; the step names each path it fails on.
+OUTSIDE_LIST='scripts/unittest.pyc
+.claude/hooks/local.pyc
 backend/tests/unit/test-results/conftest.py backend/tests/unit
 backend/src/ave/dist/module.py backend/src
-.claude/hooks/local.pyc
-PLANTED
-plant scripts/__pycache__/evidence.cpython-312.pyc
-plant scripts/tests/.DS_Store
-plant var/fixtures/cache.pyc
+docs/.env
+backend/.env.local
+docs/.env.test.local
+docs/CLAUDE.local.md
+docs/.serena/project.yml docs/.serena
+.venv/lib/site.py .venv
+backend/src/.venv/lib/site.py backend/src
+.pytest_cache/v/cache/lastfailed .pytest_cache
+scripts/.ruff_cache/content/x scripts/.ruff_cache
+backend/tests/.mypy_cache/3.11/x.json backend/tests/.mypy_cache
+scripts/__pycache__/helper.py scripts/__pycache__
+scripts/__pycache__/sub/helper.cpython-312.pyc scripts/__pycache__
+backend/.coverage
+backend/htmlcov/index.html backend/htmlcov
+node_modules/x/index.js node_modules
+dist/bundle.js dist
+playwright-report/index.html playwright-report
+test-results/result.json test-results'
+while read -r planted created; do plant "$planted"; done <<<"$OUTSIDE_LIST"
 run
-check "bytecode directories, folder files of the operating system and var/ pass" '[ "$CODE" = 0 ] && passed "$IGNORED_STEP"'
-unplant scripts/tests/.DS_Store scripts/__pycache__
-rmdir "$R/scripts/tests" 2>/dev/null || true
-check "the fixture is as committed after the planted files are gone" '[ -z "$(cd "$R" && git status --porcelain --ignored | grep -v "^!! var/")" ]'
-# A Git command that fails inside a work tree proves nothing about ignored files: the step fails.
-# A directory without a repository is the one skip.
+check "ignored paths outside the list fail the run while Git reports the tree clean" '[ "$CODE" = 1 ] && clean_for_git && failed "$FILES_STEP"'
+while read -r planted created; do
+  check "an ignored $planted is named" 'named "$planted"'
+  unplant "$planted" "$created"
+done <<<"$OUTSIDE_LIST"
+check "the fixture is as committed after the planted files are gone" 'as_committed'
+# Files that Git lists nowhere: one inside a directory named .git below the root, and a FIFO. A
+# FIFO under the name of a listed directory is no directory, so it fails as every other FIFO. A
+# file name of the list counts at the place the list names: settings.local.json elsewhere fails.
+mkdir -p "$R/docs/.git" && printf 'hidden\n' > "$R/docs/.git/hidden-note.md"
+printf '{}\n' > "$R/docs/.git/settings.local.json"
+mkfifo "$R/docs/notes.fifo" "$R/data"
+run_bounded
+GIT_LISTS='git ls-files --cached --others --exclude-per-directory=.gitignore && git ls-files --others --ignored --exclude-per-directory=.gitignore'
+check "control: the two listings of Git hold a file that a rule ignores" 'plant docs/seen.pyc && (cd "$R" && eval "$GIT_LISTS") | quiet -x docs/seen.pyc; seen=$?; unplant docs/seen.pyc; [ "$seen" = 0 ]'
+check "a file inside a directory named .git below the root and a FIFO fail the run, and no listing of Git holds them" '[ "$CODE" = 1 ] && clean_for_git && ! (cd "$R" && eval "$GIT_LISTS") | quiet -e hidden-note -e notes.fifo && failed "$FILES_STEP" && named docs/.git/hidden-note.md && named docs/notes.fifo'
+check "a FIFO under the name of a listed directory fails the run" 'named data'
+check "a settings.local.json outside .claude/ fails the run" 'named docs/.git/settings.local.json'
+rm -rf "$R/docs/.git" "$R/docs/notes.fifo" "$R/data"
+# A name with a line feed stays one line of the report, as the shell quotes it.
+TWO_LINES="$(printf 'docs/two\nlines.pyc')"
+printf -v TWO_LINES_QUOTED '%q' "$TWO_LINES"
+printf 'x\n' > "$R/$TWO_LINES"
+run
+check "a name with a line feed is printed on one line, as the shell quotes it" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && named "$TWO_LINES_QUOTED"'
+rm -f "$R/$TWO_LINES"
+# The tree holds one .gitignore, at its root: another one fails the run, tracked or untracked,
+# also inside a directory of the list.
+printf 'nothing-of-this-name\n' > "$R/docs/.gitignore"
+run
+check "an untracked .gitignore below the root fails the run and is named" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && printf "%s\n" "$OUT" | quiet -x ".gitignore files besides the one at the root of the tree:" && named docs/.gitignore'
+(cd "$R" && git add docs/.gitignore)
+run
+check "a tracked .gitignore below the root fails the run and is named" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && named docs/.gitignore'
+(cd "$R" && git rm -q -f --cached docs/.gitignore) && rm -f "$R/docs/.gitignore"
+printf '!keep.py\n' > "$R/var/.gitignore"
+(cd "$R" && git add -f var/.gitignore)
+run
+check "a tracked .gitignore inside a directory of the list fails the run and is named" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && named var/.gitignore'
+(cd "$R" && git rm -q -f --cached var/.gitignore) && rm -f "$R/var/.gitignore"
+# The list: one planted path per entry, in one run. A path of the list passes the step; were its
+# entry gone, the run would fail and name the path.
+ODD_BYTE="$(printf 'scripts/__pycache__/caf\351.cpython-312.pyc')"
+LISTED="var/fixtures/cache.pyc
+data/media/clip.py data
+.claude/worktrees/x/conftest.py .claude/worktrees
+.serena/project.yml .serena
+backend/.venv/lib/site.py backend/.venv
+backend/.pytest_cache/v/cache/lastfailed backend/.pytest_cache
+backend/.ruff_cache/content/x backend/.ruff_cache
+backend/.mypy_cache/3.11/x.json backend/.mypy_cache
+.claude/settings.local.json
+CLAUDE.local.md
+.env
+.env.local
+.env.test.local
+scripts/__pycache__/evidence.cpython-312.pyc scripts/__pycache__
+backend/tests/__pycache__/conftest.cpython-311-pytest-9.1.1.pyc backend/tests/__pycache__
+$ODD_BYTE
+scripts/tests/.DS_Store scripts/tests
+docs/Thumbs.db"
+while read -r planted created; do plant "$planted"; done <<<"$LISTED"
+# The names of the list are bytes: under a UTF-8 locale the expressions still match a name that
+# holds a byte outside UTF-8.
+check "control: under the UTF-8 locale of this case an expression does not match that byte by itself" '! LC_ALL=C.UTF-8 bash -c '"'"'[[ $1 =~ ^[^/]*$ ]]'"'"' _ "${ODD_BYTE##*/}"'
+LC_ALL=C.UTF-8 run
+check "every path of the list passes the step, under a UTF-8 locale too" '[ "$CODE" = 0 ] && passed "$FILES_STEP" && passed "$TREE_STEP"'
+while read -r planted created; do
+  check "the list admits $(printf '%q' "$planted")" '! named "$(printf "%q" "$planted")"'
+  unplant "$planted" "$created"
+done <<<"$LISTED"
+check "the fixture is as committed after the listed files are gone" 'as_committed'
+# Git names an embedded repository and a gitlink as a whole (and the tree keeps no fingerprint
+# then): the files below them count as named.
+mkdir -p "$R/vendor/sub"
+(cd "$R/vendor/sub" && git init -q && git config user.email t@t && git config user.name t && printf 'v1\n' > f.txt && git add f.txt && git commit -qm sub)
+run
+check "the files of an untracked embedded repository count as named" '[ "$CODE" = 0 ] && passed "$FILES_STEP" && passed "$TREE_STEP"'
+(cd "$R" && git add vendor/sub 2>/dev/null)
+run
+check "the files below a gitlink count as named" '[ "$(cd "$R" && git ls-files -s vendor/sub | cut -d " " -f 1)" = 160000 ] && [ "$CODE" = 0 ] && passed "$FILES_STEP"'
+(cd "$R" && git rm -q -f --cached vendor/sub)
+rm -rf "$R/vendor"
+# A step that leaves a file outside the list fails the run that wrote it: the tree is walked
+# again after the steps.
+printf 'fast_step "a step that leaves a file" sh -c "echo x > backend/leftover.pyc"\n' >> "$R/scripts/verify.d/20-backend.sh"
+run
+check "a file that a step leaves outside the list fails the working-tree step of the same run" '[ "$CODE" = 1 ] && passed "$FILES_STEP" && failed "$TREE_STEP" && named backend/leftover.pyc'
+cp "$T/20-fixture.sh" "$R/scripts/verify.d/20-backend.sh"
+rm -f "$R/backend/leftover.pyc"
+run
+check "the restored fixture passes both steps" '[ "$CODE" = 0 ] && passed "$FILES_STEP" && passed "$TREE_STEP" && as_committed'
+# A Git command that fails inside a work tree proves nothing about the files of the tree: the
+# step fails. A directory without a repository is the one skip.
 cp "$R/.git/config" "$T/git-config.saved"
 printf '[core\n' > "$R/.git/config"
 run
-check "a repository that Git cannot read fails the ignored-file step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet -F "<== FAIL: $IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails inside the work tree of $R/.git:"'
+check "a repository that Git cannot read fails the step" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails inside the work tree of $R/.git:"'
 cp "$T/git-config.saved" "$R/.git/config"
 cp "$R/.git/index" "$T/git-index.saved"
 printf 'no index\n' > "$R/.git/index"
 run
-check "a listing that Git cannot produce fails the ignored-file step" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet -F "<== FAIL: $IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails to list the ignored files of this work tree."'
+check "a listing that Git cannot produce fails the step" '[ "$CODE" = 1 ] && failed "$FILES_STEP" && printf "%s\n" "$OUT" | quiet -x "Git fails to list the files of this work tree."'
 cp "$T/git-index.saved" "$R/.git/index"
 run
-check "the restored repository passes the ignored-file step" '[ "$CODE" = 0 ] && passed "$IGNORED_STEP" && [ -z "$(cd "$R" && git status --porcelain)" ]'
+check "the restored repository passes the step" '[ "$CODE" = 0 ] && passed "$FILES_STEP" && clean_for_git'
 PLAIN="$T/plain-project"
 "$W/make-fixture.sh" "$PLAIN" >/dev/null
 OUT="$(cd "$PLAIN" && ./scripts/verify.sh 2>&1)"; CODE=$?
-check "a directory without a repository skips the ignored-file step" '[ "$CODE" = 0 ] && passed "$IGNORED_STEP" && printf "%s\n" "$OUT" | quiet -x "Skipped: outside a Git work tree (no .git here or above)."'
+check "a directory without a repository skips the step" '[ "$CODE" = 0 ] && passed "$FILES_STEP" && printf "%s\n" "$OUT" | quiet -x "Skipped: outside a Git work tree (no .git here or above)."'
 
 # AVE-REQ-097 AC-4: a suite whose cases were all skipped establishes nothing.
 echo "## skipped suites"
@@ -264,7 +391,69 @@ OUT="$(cd "$R" && AVE_FFMPEG=/nonexistent/ffmpeg AVE_FFPROBE=/nonexistent/ffprob
 check "the pytest steps take their configuration from pyproject.toml alone, and uv reads no environment file" 'printf "%s\n" "$OUT" | quiet -E "^uv run --frozen --quiet --no-env-file --directory backend pytest -c pyproject.toml -q -p no:cacheprovider --forbid-skips --evidence-report=.*/pytest-unit.json -m not media and not slow$"'
 check "every uv call of the backend steps passes --no-env-file" '[ "$(printf "%s\n" "$OUT" | grep -c "^uv run ")" -ge 5 ] && ! printf "%s\n" "$OUT" | grep "^uv run " | quiet -v -- "^uv run --frozen --quiet --no-env-file --directory backend "'
 check "a pytest step that left no report fails" '[ "$CODE" = 1 ] && printf "%s\n" "$OUT" | quiet "no report: the pytest session ended before it wrote one" && printf "%s\n" "$OUT" | quiet -F "<== FAIL: Backend unit tests"'
-check "the type checker reads no cache from the tree" 'printf "%s\n" "$OUT" | quiet -E "^uv run .* mypy --cache-dir=.*/verify-run\.[^/]*/mypy-cache$" && ! printf "%s\n" "$OUT" | quiet -F -- "--cache-dir=$R/"'
+# Each tool takes the configuration the tree tracks, by name, and neither an ignore file nor a
+# cache of the tree: both ruff commands and the type checker, as the stub of uv saw them start.
+RUFF_LINES="$(printf '%s\n' "$OUT" | grep -E "^uv run --frozen --quiet --no-env-file --directory backend ruff (format --check|check) ")"
+check "the format check and the lint are the two ruff commands of the step file" '[ "$(printf "%s\n" "$RUFF_LINES" | grep -c .)" = 2 ] && printf "%s\n" "$RUFF_LINES" | quiet " ruff format --check " && printf "%s\n" "$RUFF_LINES" | quiet " ruff check "'
+check "both ruff commands take their configuration from pyproject.toml by name" '[ "$(printf "%s\n" "$RUFF_LINES" | grep -c -- " --config pyproject\.toml ")" = 2 ]'
+check "both ruff commands read no ignore file" '[ "$(printf "%s\n" "$RUFF_LINES" | grep -c -- " --no-respect-gitignore ")" = 2 ]'
+check "both ruff commands read and write no cache" '[ "$(printf "%s\n" "$RUFF_LINES" | grep -c -- " --no-cache ")" = 2 ]'
+check "the type checker takes its configuration from pyproject.toml by name" 'printf "%s\n" "$OUT" | quiet -E "^uv run .* mypy --config-file pyproject\.toml "'
+check "the type checker reads no cache from the tree" 'printf "%s\n" "$OUT" | quiet -E "^uv run .* mypy .*--cache-dir=[^ ]*/verify-run\.[^/ ]*/mypy-cache$" && ! printf "%s\n" "$OUT" | quiet -F -- "--cache-dir=$R/"'
+# The same options with the real ruff and mypy of the backend environment, in a project that
+# holds a failing source file beside the files that would hide it: the configuration files a
+# tool finds ahead of pyproject.toml, an ignore file, and a cache written for an earlier text.
+# options_of <command words> — the arguments the step file gave uv for that command.
+options_of() {
+  printf '%s\n' "$OUT" | sed -n "s|^uv run --frozen --quiet --no-env-file --directory backend \($1 .*\)\$|\1|p" | sed -n 1p
+}
+RUFF_FORMAT="$(options_of "ruff format")"
+RUFF_CHECK="$(options_of "ruff check")"
+MYPY="$(options_of mypy | sed 's| --cache-dir=[^ ]*||') --cache-dir=$T/mypy-cache"
+P="$T/tool-project"
+BAD='import os\n\n\ndef broken() -> int:\n    return "text"\nx=1\n'
+mkdir -p "$P"
+printf '[tool.ruff.lint]\nselect = ["F"]\n\n[tool.mypy]\nfiles = ["bad.py"]\n' > "$P/pyproject.toml"
+printf '%b' "$BAD" > "$P/bad.py"
+printf 'VALUE = 1\n' > "$P/good.py"
+# real <command…> — a tool of the backend environment, started in the project; sets CODE.
+real() { (cd "$P" && uv run --frozen --quiet --no-env-file --project "$REPO/backend" "$@") >/dev/null 2>&1; CODE=$?; }
+# ruff_codes / mypy_code — the exit codes of the tools under the options of the step file (words
+# without blanks).
+# shellcheck disable=SC2086
+ruff_codes() { real $RUFF_FORMAT; printf '%s' "$CODE"; real $RUFF_CHECK; printf '%s' "$CODE"; }
+# shellcheck disable=SC2086
+mypy_code() { real $MYPY; printf '%s' "$CODE"; }
+check "the step file names a ruff format, a ruff check and a mypy command" '[ -n "$RUFF_FORMAT" ] && [ -n "$RUFF_CHECK" ] && [ -n "$(options_of mypy)" ]'
+check "control: the real format check, lint and type check fail the source file" '[ "$(ruff_codes)$(mypy_code)" = 111 ]'
+printf 'exclude = ["bad.py"]\n' > "$P/ruff.toml"
+printf '[mypy]\nfiles = good.py\n' > "$P/mypy.ini"
+check "a ruff.toml and a mypy.ini beside pyproject.toml change no result" '[ "$(ruff_codes)$(mypy_code)" = 111 ]'
+real ruff format --check --no-respect-gitignore --no-cache .; SHADOW="$CODE"
+real ruff check --no-respect-gitignore --no-cache .; SHADOW="$SHADOW$CODE"
+real mypy --cache-dir="$T/mypy-cache-shadow"; SHADOW="$SHADOW$CODE"
+check "control: without the option each tool takes the file beside pyproject.toml and passes ($SHADOW)" '[ "$SHADOW" = 000 ]'
+rm -f "$P/ruff.toml" "$P/mypy.ini"
+printf 'bad.py\n' > "$P/.ignore"
+check "an ignore file that names the source file changes no result" '[ "$(ruff_codes)" = 11 ]'
+real ruff format --check --config pyproject.toml --no-cache .; IGNORE="$CODE"
+real ruff check --config pyproject.toml --no-cache .; IGNORE="$IGNORE$CODE"
+check "control: without the option ruff passes the source file over ($IGNORE)" '[ "$IGNORE" = 00 ]'
+rm -f "$P/.ignore"
+# A cache entry of ruff holds the time stamp and the mode of a file: an edited file with its
+# earlier time stamp passes unread while the cache is in use.
+printf 'VALUE = 2\n' > "$P/bad.py"
+real ruff format --check --config pyproject.toml --no-respect-gitignore .; CACHED="$CODE"
+real ruff check --config pyproject.toml --no-respect-gitignore .; CACHED="$CACHED$CODE"
+touch -r "$P/bad.py" "$T/stamp"
+printf '%b' "$BAD" > "$P/bad.py"
+touch -r "$T/stamp" "$P/bad.py"
+real ruff format --check --config pyproject.toml --no-respect-gitignore .; CACHED="$CACHED$CODE"
+real ruff check --config pyproject.toml --no-respect-gitignore .; CACHED="$CACHED$CODE"
+check "control: with its cache ruff passes an edited file that kept its time stamp ($CACHED)" '[ "$CACHED" = 0000 ] && [ -d "$P/.ruff_cache" ]'
+check "a cache written for an earlier text changes no result" '[ "$(ruff_codes)" = 11 ]'
+rm -rf "$P/.ruff_cache"
+check "the tools leave no cache in the project" '[ "$(ruff_codes)$(mypy_code)" = 111 ] && [ ! -e "$P/.ruff_cache" ] && [ ! -e "$P/.mypy_cache" ] && [ -d "$T/mypy-cache" ]'
 # AVE-REQ-097 AC-3: the fast tier renders nothing; its tests see media tools that refuse to run,
 # through the variables that ave.proc reads and by name on PATH.
 MEDIA_STUB="$R/scripts/lib/media-tier-only.sh"

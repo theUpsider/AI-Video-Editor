@@ -6,7 +6,7 @@ Verification and tests run inside the Linux development container of
 every entry below is a measured observation or an executed test on this host or in that container. The
 container is a build and test environment; it is no production host. Re-check after a session restart: tools,
 network policy and credentials can change. `./scripts/dev-container.sh ./scripts/probe-environment.sh`
-re-measures the shell-observable part (resources, accelerators with a device verdict, media tools, toolchains,
+re-measures the shell-observable part (resources with the cgroup v2 limits, accelerators with a device verdict, media tools, toolchains,
 browsers, Git worktrees and branch, the Claude Code version, OS user and repository writability, credential
 variables by name, and network reachability: one HEAD request per host with a 10 s limit, reported as
 `HTTP <code>` for any status and `unreachable` when no response arrives, so no body is downloaded and the verdict
@@ -21,13 +21,13 @@ container (4 vCPU, 15 GiB, egress proxy); Git history holds its record.
 | Item | Observation | How observed |
 |---|---|---|
 | Host OS | Windows 11 Home 10.0.26200, ARM64; shell Git Bash (MSYS, x86_64 emulation) | `uname -a`, system information |
-| Host CPU / memory / disk | Snapdragon X Plus, 8 cores; 15.6 GiB; 5.2 GiB free of 237 GiB on `C:` (98 % used) on 2026-10-06, 19 GiB on 2026-10-02 | `Get-CimInstance`, `df -h`; probe `disk (repository)` |
+| Host CPU / memory / disk | Snapdragon X Plus, 8 cores; 15.6 GiB; 16 GiB free of 237 GiB on `C:` (94 % used) on 2026-10-07, 5.2 GiB on 2026-10-06, 19 GiB on 2026-10-02 | `Get-CimInstance`, `df -h`; probe `disk (repository)` |
 | Host toolchain | Git 2.55.0, uv 0.11.29, Python 3.14 only, no `python3` command, no FFmpeg; Docker Desktop with the WSL 2 backend | command checks |
 | Native verification on the host | Unsupported: the fast tier failed 5 of 9 steps (no `python3`; backend unit tests reject Windows paths) | `./scripts/verify.sh` before ADR-009 |
 | Container OS / kernel | Ubuntu 24.04.5 LTS, Linux 6.18 (WSL 2) aarch64 | probe |
-| Container CPU / memory | 8 CPUs, 7.5 GiB plus 2 GiB swap; no cgroup limit (`memory.max` reads `max`), so `/proc/meminfo` shows the total of the Docker Desktop WSL 2 virtual machine; `lscpu` names no CPU model on this arm64 kernel (probe `cpu model unknown`) | probe, `free -h`; [research handback](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-1.md) § Oracles |
+| Container CPU / memory | 8 CPUs, 7.5 GiB plus 2 GiB swap; no cgroup limit (probe `cpu quota (cgroup v2) none` and `memory limit (cgroup v2) none` on 2026-10-07: `cpu.max` reads `max 100000`, `memory.max` reads `max`), so `/proc/meminfo` shows the total of the Docker Desktop WSL 2 virtual machine; `lscpu` names no CPU model on this arm64 kernel (probe `cpu model unknown`) | probe, `free -h`; [research handback](briefs/handbacks/2026-10-03-ave-req-094-probe-evidence.part-1.md) § Oracles |
 | Container limits | 1 048 576 open files; runs as root (uid 0); the checkout is a writable bind mount at `/workspace` | `ulimit -n`; probe § Claude Code and session |
-| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`; probe verdict `accelerator: none (no device)`), so no GPU path is verifiable. The verdict counts a character device named `/dev/nvidia<N>` or `/dev/dri/renderD<N>` that this user can open, and a `nvidia-smi` GPU row with a memory figure; a node without access reads `none (no access to …)`. A render node of a software or virtual DRM driver also reads present, so `present` states that a device node opens and the tests of the requirement that uses the device show whether it works | probe § Accelerators |
+| GPU | Host: integrated Qualcomm Adreno X1-45. Container: none (no `/dev/nvidia*`, no `/dev/dri`, no `nvidia-smi`; probe verdict `accelerator: none (no device)`), so no GPU path is verifiable. The verdict counts a character device named `/dev/nvidia<N>` or `/dev/dri/renderD<N>` that this user can open for reading and for writing, and a `nvidia-smi` GPU row with a name and a memory figure; a node without access reads `none (no access to …)`, and where `dd` cannot open without creating a node reads `unknown (open test unavailable for …)`. A render node of a software or virtual DRM driver also reads present, so `present` states that a device node opens and the tests of the requirement that uses the device show whether it works | probe § Accelerators |
 | CI | GitHub Actions `ubuntu-24.04` x86_64 runner, release tier on every push | `.github/workflows/verify.yml` |
 
 ## Tooling
@@ -127,14 +127,14 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
 4. Live provider, agent-runtime, vision and GPU tests cannot run here (no credentials, no GPU device); their
    adapters get contract tests, and the release report lists each as externally unverified with the exact
    prerequisite (§ External gaps).
-5. Disk: 5.5 GiB free on the host on 2026-10-07 (19 GiB on 2026-10-02); the development image takes 1.3 GiB,
+5. Disk: 16 GiB free on the host on 2026-10-07 (5.2 GiB the day before, 19 GiB on 2026-10-02); the development
+   image takes 1.3 GiB,
    and render outputs stay in gitignored or container-local paths. Measured on 2026-10-07: a private clone
    with its run data takes 42 to 60 MiB on the host and its backend environment 24 MiB on the state volume,
    where a removed clone leaves that environment behind (31 had gathered, 744 MiB; the lead removed the 28
    of removed clones). The limit that follows from the footprint: at most two reviewer clones exist at a
    time, each removes its backend environment before it stops its container (`develop` § 4 Concurrency
-   limits, [WF-011](WORKFLOW_LOG.md)), and release-tier runs serialize on the heavy-media lock. The human
-   frees space on `C:` before M1 adds render outputs.
+   limits, [WF-011](WORKFLOW_LOG.md)), and release-tier runs serialize on the heavy-media lock.
 6. Evidence on the Docker Desktop bind mount: one reviewer clone observed a completed release run's directory
    and `latest-release.json` absent about 40 s after the run, while its harness had executed the background
    verify launch twice and the second run's manifest persisted; the lead has not reproduced it
@@ -143,6 +143,10 @@ never uses them (ASM-015 of the baseline: a developer subscription is no product
    virtual machine gave no answer) while a stopped run's six clone containers were being removed and a CPU
    stress test with ten busy loops ran in the main container on eight cores; restarting Docker Desktop restored
    it and the state volume. Stress runs stay below the core count.
+8. Standby stops every agent of a session: on 2026-10-07 the host stood in standby from 00:38 to 09:52 after a
+   press of the power button, and the workflow run started its two writers again on wake
+   ([WF-012](WORKFLOW_LOG.md)). The app's keep-awake setting prevents idle sleep only; a long run needs the host
+   on mains power with the lid open.
 
 ## External gaps
 

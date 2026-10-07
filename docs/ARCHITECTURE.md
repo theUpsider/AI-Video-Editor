@@ -286,8 +286,8 @@ In effect since bootstrap
 1. **Single entry point.** [scripts/verify.sh](../scripts/verify.sh) is the one command
    humans, Claude, the Stop hook and CI run. It runs every step of its tier, prints a summary, and exits
    1 when any step fails (2 on a usage error).
-2. **Tiers.** `--tier fast` (default): project control files, no ignored file among sources, tests,
-   scripts and hooks, requirements baseline integrity, evidence tooling tests, backend format/lint/types,
+2. **Tiers.** `--tier fast` (default): project control files, no file outside the fingerprint and the listed ignored
+   paths, requirements baseline integrity, evidence tooling tests, backend format/lint/types,
    unit tests (their media tools, through `ave.proc` and by name on `PATH`, are stand-ins that exit 1, so the
    fast tier renders nothing).
    `--tier media` adds the real-media and population tests. `--tier release` adds the tooling regression suites ([scripts/tests/run.sh](../scripts/tests/run.sh),
@@ -297,9 +297,9 @@ In effect since bootstrap
    [scripts/verify.d/](../scripts/verify.d/); each is a required file, verify.sh sources exactly the required
    ones, a step file that cannot be loaded fails the run, and the checker fails on any other entry there.
    A run starts its steps from a named set of variables (header of `scripts/verify.sh`), loads no pytest plugin
-   by itself, starts `uv` without an environment file, keeps
-   bytecode and the type checker's cache in a scratch directory outside the tree, keeps the directory of a
-   script out of every Python module path and selects tests by marker expression only
+   by itself, starts `uv` without an environment file, keeps bytecode and the type checker's cache in a scratch directory outside the tree, starts ruff without a
+   cache and without an ignore file, names `backend/pyproject.toml` as the configuration of ruff, mypy and pytest,
+   keeps the directory of a script out of every Python module path and selects tests by marker expression only
    ([ASM-023](ASSUMPTIONS.md) names what stays trusted).
    The media and release tiers hold the heavy-media lock for their whole run (§ Testing strategy item 6); in the
    development container the lock file lives on the shared state volume (`AVE_HEAVY_LOCK`).
@@ -320,8 +320,8 @@ In effect since bootstrap
    `verify.sh --tier fast` when Claude finishes a turn and the working tree differs from the last passing
    tree, so no turn triggers media renders. A failure blocks stopping and feeds the log tail back to
    Claude; after `CLAUDE_VERIFY_MAX_ATTEMPTS` (default 3; 1 to 10) consecutive failures the gate releases with
-   a warning. `CLAUDE_VERIFY_GATE=off` disables it for humans; check 12 fails a settings file that sets a gate
-   variable, removes the gate, adds a second Stop command, registers the gate with another handler type or with
+   a warning. `CLAUDE_VERIFY_GATE=off` disables it for humans; check 12 fails a settings file whose top-level value is no JSON object, that sets a gate variable, removes the
+   gate, gives a registration a key outside its written form, adds a second Stop command, registers the gate with another handler type or with
    any text around the registered command, or sets `SHELLOPTS`, `BASHOPTS`, `BASH_ENV` or `ENV`. Results and the full log live in
    `.git/claude-verify/` (one per worktree).
 5. **Session start.** [.claude/hooks/session-start.sh](../.claude/hooks/session-start.sh)
@@ -334,7 +334,7 @@ In effect since bootstrap
    implementations and the locked backend environment, then runs `./scripts/verify.sh --tier release` on
    push, pull request and manual dispatch.
 7. **Rules.** verify.sh stays non-interactive, deterministic, read-only toward the working tree
-   (outputs go to gitignored paths) and identical locally and in CI. Never weaken, skip or suppress a check
+   (outputs go below `var/`) and identical locally and in CI. Never weaken, skip or suppress a check
    to get green; fix the root cause.
 
 ## Risks and technical debt

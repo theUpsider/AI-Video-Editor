@@ -9,7 +9,8 @@
   (docs/requirements/) and the baseline scenario list: an unknown tag stops the run, so
   evidence can never point at nothing.
 * Every collected test file and every loaded conftest.py is a file Git knows: one that an ignore
-  rule hides stops the run, so evidence comes only from files of the tree the fingerprint names.
+  rule hides stops the run, so every test file and conftest.py of a session is a file that the
+  fingerprint names; scripts/verify.sh fails on every other file outside the fingerprint.
   Inside a repository (a ``.git`` entry in the tree's directory or in one above it) a Git that
   fails to answer stops the run as well; a tree without a repository is the one case in which
   nothing is asked.
@@ -186,7 +187,7 @@ class EvidenceRecorder:
         hidden = _ignored_by_git(files)
         if hidden:
             raise pytest.UsageError(
-                "test files that Git ignores (evidence comes only from files of the tree the"
+                "test files that Git ignores (a session takes its test files from paths the"
                 " fingerprint names):\n  " + "\n  ".join(hidden)
             )
         evidence = _evidence_module()

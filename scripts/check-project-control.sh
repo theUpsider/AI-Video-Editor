@@ -3,19 +3,21 @@
 #
 # Usage:  ./scripts/check-project-control.sh      (run by ./scripts/verify.sh; no arguments)
 # Checks: 1 required files exist                    6 relative Markdown links resolve
-#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings; no line claims
-#         3 .claude/settings.json is valid JSON       that work is running
-#         4 agent frontmatter                       8 requirement files (docs/requirements/README.md)
-#         5 skill frontmatter                       9 ADR files (docs/decisions/README.md)
-#                                                  10 requirement matrix in docs/TRACEABILITY.md
+#         2 scripts and hooks are executable        7 docs/PROGRESS.md headings; no paragraph or
+#         3 .claude/settings.json is valid JSON       list item claims that work is running
+#         4 agent frontmatter (name, description,   8 requirement files (docs/requirements/README.md)
+#           the listed keys only)                   9 ADR files (docs/decisions/README.md)
+#         5 skill frontmatter (the same rules)     10 requirement matrix in docs/TRACEABILITY.md
 #        11 task briefs (docs/briefs/README.md): every heading once and in template order, no empty
 #           section, an AVE-REQ ID under Requirements, a commit under Input revision, each judged
 #           without HTML comments; docs/briefs/ holds briefs (*.md), README.md, drafts/ and
 #           handbacks/ only; each handback in docs/briefs/handbacks/ is named after its brief
-#        12 .claude/settings.json policy: no permission bypass, the SessionStart hook runs on
-#           startup, resume and compact, hook commands start no loop, sleep or background job and
-#           none runs asynchronously; the Stop gate is one handler of type command with exactly
-#           the registered command, and no setting switches it off or changes the hooks' shell
+#        12 .claude/settings.json policy: the file is one JSON object; no permission bypass; hook
+#           commands start no loop, sleep or background job and none runs asynchronously; the
+#           SessionStart hook and the Stop gate are registered in one written form (group keys,
+#           handler keys, type command, exactly the registered command), the SessionStart hook for
+#           startup, resume, clear and compact, the Stop gate once; no setting switches a hook
+#           off or changes the hooks' shell
 # Output: every violation as "ERROR: <path>: <message>", "WARN: ..." for a check that could not
 #         run, then an "OK: ..." or "FAILED: ..." summary.
 # Exit:   0 no errors · 1 errors found · 2 usage error
@@ -327,12 +329,48 @@ AWK
 
 # Checks 4 and 5. Variable kind=agent|skill. The expected name is the file's basename (agent) or
 # its directory name (skill).
+# AVE-REQ-098 AC-4: the frontmatter holds the keys of a written list, the keys these files held on
+# 2026-10-07. Every other key fails, so a permission mode ("permissionMode"), a hook block
+# ("hooks") or a key of a later Claude Code version enters through a change of the list, which the
+# diff shows. A frontmatter line is a "key: value" line of a listed key at column 0, an indented
+# line that continues the value of the key above it, or a blank line; any other line (a quoted key,
+# "key :", a flow mapping, a comment) fails, because this reader would take no key from it.
 IFS= read -r -d '' AWK_IDENTITY <<'AWK' || true
+BEGIN {
+  AGENT_KEYS = "name|description|tools|model|color|skills"
+  SKILL_KEYS = "name|description|when_to_use|argument-hint|context|agent|background"
+  keys = (kind == "skill") ? SKILL_KEYS : AGENT_KEYS
+  shown_keys = keys
+  gsub(/\|/, ", ", shown_keys)
+}
 FNR == 1 { n++; path[n] = FILENAME }
-{ sub(/\r$/, ""); fm_track(n, $0) }
+{
+  sub(/\r$/, "")
+  if (FNR > 1 && fm_state[n] == 1) {
+    if (trim($0) != "---") judge_line(n, $0)
+    else if ($0 !~ /^---[ \t]*$/)
+      note(n, "frontmatter line " FNR " is an indented '---' line: the block closes with '---' at column 0, and a reader that takes this line for text would read the lines below it as keys (AVE-REQ-098 AC-4)")
+  }
+  fm_track(n, $0)
+}
 END { for (i = 1; i <= n; i++) check_identity(i) }
 
-function check_identity(i,   expected, name) {
+# Notes the frontmatter line of file i when it is outside the written form; check_identity reports
+# the notes of a file whose frontmatter block is closed.
+function judge_line(i, line,   key) {
+  if (match(line, /^[A-Za-z_][A-Za-z0-9_-]*:/)) {
+    key = substr(line, 1, RLENGTH - 1)
+    if (!in_list(key, keys))
+      note(i, "frontmatter key '" key "' (line " FNR ") is outside the keys of " kind " frontmatter (" shown_keys "); a permission mode, a hook block or any other key fails (AVE-REQ-098 AC-4)")
+    return
+  }
+  if (line ~ /^[ \t]*$/ || (line ~ /^[ \t]/ && fm_last != "")) return
+  note(i, "frontmatter line " FNR " is no 'key: value' line at column 0, no indented continuation of the key above it and no blank line (AVE-REQ-098 AC-4)")
+}
+
+function note(i, msg) { notes[i]++; noted[i, notes[i]] = msg }
+
+function check_identity(i,   expected, name, j) {
   expected = path[i]
   if (kind == "skill") { sub(/\/SKILL\.md$/, "", expected); expected = basename(expected) }
   else { expected = basename(expected); sub(/\.md$/, "", expected) }
@@ -340,6 +378,7 @@ function check_identity(i,   expected, name) {
   name = fmv(i, "name")
   if (name != expected) err(path[i], "frontmatter name '" name "' must equal '" expected "'")
   if (fmv(i, "description") == "") err(path[i], "frontmatter description is missing or empty")
+  for (j = 1; j <= notes[i]; j++) err(path[i], noted[i, j])
 }
 AWK
 
@@ -378,11 +417,14 @@ function destination(s,   j) {
 }
 AWK
 
-# Check 7. Variables: path, headings ("|"-separated exact heading lines).
+# Check 7. Variables: path, headings ("|"-separated exact heading lines). A heading counts as an
+# exact line outside fenced blocks and HTML comments (AVE-REQ-098 AC-1): a heading that stands only
+# inside a comment or a fenced block is absent for the reader of the rendered file, and for the rule.
 IFS= read -r -d '' AWK_HEADINGS <<'AWK' || true
 {
   sub(/\r$/, "")
-  if (!in_fence($0)) seen[rtrim($0)] = 1
+  if (!in_comment && in_fence($0)) next
+  seen[rtrim(strip_comments_outside_spans($0))] = 1
 }
 END {
   count = split(headings, want, "|")
@@ -394,20 +436,74 @@ AWK
 # Check 7: docs/PROGRESS.md claims no ongoing execution (AVE-REQ-098 AC-3). Variable: path. A later
 # session cannot check that work "is running"; delegated work in flight is recorded stop-safe
 # ("launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact
-# command>"). Outside fenced blocks, HTML comments and code spans, a line fails with one of the
+# command>"). Outside fenced blocks, HTML comments and code spans, the text fails with one of the
 # wordings "running", "underway", "under way", "in flight", "ongoing", "still executing" or "runs
-# now", in any letter case and with spaces, tabs or hyphens between the words; "nothing is
-# running", "not running" and "no longer running" pass. The rule knows this list: another wording
-# of the same claim is judged by the reader of the diff (commit review, verify-requirement).
+# now", in any letter case and with spaces, tabs, hyphens or a line wrap between the words;
+# "nothing is running", "not running" and "no longer running" pass, also across a line wrap.
+# Consecutive lines are joined by one space before the wordings are matched, so a paragraph or a
+# list item that a line wrap splits is read whole: a blank line (a line of spaces, tabs and quote
+# markers ">" only) or a fenced block ends the joined text, and nothing else does: a heading and
+# the next list item are joined with the lines around them, so a wording split over two list items
+# fails too. The quote markers and the indentation in front of a line, the spaces at its end and a
+# backslash that closes it are left out. Comments and code spans are removed line by line first, so
+# a code span that a line wrap splits is read as text. The error names the line on which the
+# wording begins. The rule knows this list: another wording of the same claim, or a listed wording
+# with other characters between its words (emphasis marks, a tag, an entity), is judged by the
+# reader of the diff (commit review, verify-requirement). The check reads fenced blocks, comments
+# and code spans as its helpers above do (a fence at any indentation, a comment from "<!--" to the
+# next "-->" over any number of lines, a code span within one line): where a Markdown renderer
+# shows text that these helpers take for a fence, a comment or a code span, the reader of the diff
+# judges it.
 IFS= read -r -d '' AWK_PROGRESS_CLAIMS <<'AWK' || true
 FNR == 1 { fence_char = ""; in_comment = 0 }
 {
   sub(/\r$/, "")
-  if (!in_comment && in_fence($0)) next
-  line = " " tolower(strip_comments(strip_code_spans($0))) " "
-  gsub(/nothing is running|no longer running|not running/, "", line)
-  if (line ~ /[^a-z](running|underway|under[ \t-]+way|in[ \t-]+flight|on-?going|still[ \t-]+executing|runs[ \t-]+now)[^a-z]/)
-    err(path, "line " FNR ": claims ongoing execution ('running', 'underway', 'under way', 'in flight', 'ongoing', 'still executing' or 'runs now'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
+  if (!in_comment && in_fence($0)) { judge_block(); next }
+  clean = strip_comments(strip_code_spans($0))
+  if (unquoted($0) == "") { judge_block(); next }
+  join_line(clean)
+}
+END { judge_block() }
+
+# The line without the quote markers and the indentation in front of it.
+function unquoted(s) { sub(/^([ \t]*>)*[ \t]*/, "", s); return s }
+
+# Appends one line, without its quote markers, its indentation, the spaces at its end and a
+# closing backslash, to the joined text; part_start and part_line map a position of that text to
+# its line.
+function join_line(s) {
+  s = unquoted(s)
+  sub(/[ \t]+$/, "", s)
+  sub(/\\$/, "", s)
+  parts++
+  block = (parts == 1) ? s : block " " s
+  part_start[parts] = length(block) - length(s) + 1
+  part_line[parts] = FNR
+}
+
+# Matches the wordings in the joined text and reports each line on which one begins, once. A
+# negation is replaced by spaces of its length, so the positions of the text stay valid.
+function judge_block(   s, rest, off, at, k, reported) {
+  if (!parts) return
+  s = " " tolower(block) " "
+  while (match(s, /nothing is running|no longer running|not running/))
+    s = substr(s, 1, RSTART - 1) sprintf("%" RLENGTH "s", "") substr(s, RSTART + RLENGTH)
+  rest = s
+  off = 0
+  reported = 0
+  while (match(rest, /[^a-z](running|underway|under[ \t-]+way|in[ \t-]+flight|on-?going|still[ \t-]+executing|runs[ \t-]+now)[^a-z]/)) {
+    at = off + RSTART
+    k = parts
+    while (k > 1 && part_start[k] > at) k--
+    if (part_line[k] != reported) {
+      reported = part_line[k]
+      err(path, "line " reported ": claims ongoing execution ('running', 'underway', 'under way', 'in flight', 'ongoing', 'still executing' or 'runs now'), which no later session can check; record delegated work as 'launched <date>; verdict not recorded; on resume without a recorded verdict, re-run <exact command>'")
+    }
+    off += RSTART + RLENGTH - 2
+    rest = substr(s, off + 1)
+  }
+  parts = 0
+  block = ""
 }
 AWK
 
@@ -480,16 +576,26 @@ function names_commit(s,   ref, i, after, rest, off, start, len, before) {
 AWK
 
 # Check 12: policy of .claude/settings.json (AVE-REQ-098 AC-2, AC-4; AVE-REQ-097 AC-3), run by
-# python3 with the file as its argument. Prints one ERROR line per violation; prints nothing for a
-# file that is no valid JSON object (check 3 reports that). Hook matchers follow Claude Code: "",
-# "*" or none match every source; letters, digits, "_", "-" and "|" only form a list of exact
-# names; anything else (a comma-separated list included) is an unanchored regular expression.
+# python3 with the file as its argument. Prints one ERROR line per violation. A file that python3
+# cannot read as JSON gets no line here (check 3, which reads it with python3 too, reports it); a
+# file whose top-level value is another JSON value than an object (a list, null, a string, a
+# number) is valid JSON for check 3, holds no hook, and fails here by its own line.
+# Hook matchers follow Claude Code: "", "*" or none match every source; letters, digits, "_", "-"
+# and "|" only form a list of exact names; anything else (a comma-separated list included) is an
+# unanchored regular expression.
 # A hook command fails with the shell word "while" or "until", a "for ((" loop, "sleep", "nohup",
-# "disown", "setsid", a background "&", "--dangerously-skip-permissions" or "--permission-mode".
+# "disown", "setsid", a background "&", the text "dangerously-skip-permissions" (with any text
+# before it, so "--allow-dangerously-skip-permissions" too) or "--permission-mode". "while" and
+# "until" count as shell words unless a letter, a digit, "_", ".", "/" or "-" stands directly
+# before or after them ("wait-until-ready.sh", "--meanwhile", "--until=5" hold none); after "=",
+# "+", ":", a quote or a space the word counts.
 # The rule knows this list: a loop or a bypass written another way (inside a script the command
 # calls, for example) is judged by the reader of the diff (commit review, verify-requirement).
+# The two registrations follow one written form (see REGISTERED below): everything else under
+# hooks.SessionStart and hooks.Stop fails, so a form nobody listed fails too.
 # The file checked is .claude/settings.json; the personal .claude/settings.local.json and the
-# user-level settings lie outside the repository and outside this check.
+# user-level settings lie outside the repository and outside this check. Whether Claude Code
+# accepts the file as a whole (its own schema) is outside this check too.
 IFS= read -r -d '' PY_SETTINGS_POLICY <<'PY' || true
 import json
 import re
@@ -501,13 +607,20 @@ try:
         data = json.load(handle)
 except (OSError, ValueError):
     sys.exit(0)
-if not isinstance(data, dict):
-    sys.exit(0)
 
 
 def error(message):
     print(f"ERROR: {path}: {message}")
 
+
+JSON_KINDS = {list: "a list", str: "a string", bool: "a boolean", type(None): "null"}
+if not isinstance(data, dict):
+    error(
+        f"the top-level value is {JSON_KINDS.get(type(data), 'a number')}; the settings file is one"
+        " JSON object, and any other value registers no SessionStart hook and no Stop gate"
+        " (AVE-REQ-098 AC-2, AVE-REQ-097 AC-3)"
+    )
+    sys.exit(0)
 
 permissions = data.get("permissions")
 mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None
@@ -531,10 +644,41 @@ skipped_prompts(data, "")
 
 UNBOUNDED = re.compile(
     r"(?<![\w./-])(?:while|until)(?![\w./-])|\bfor\s*\(\(|\b(?:sleep|nohup|disown|setsid)\b"
-    r"|--dangerously-skip-permissions|--permission-mode|(?<![&|<>])&(?![&>])"
+    r"|dangerously-skip-permissions|--permission-mode|(?<![&|<>])&(?![&>])"
 )
-SESSION_SOURCES = ("startup", "resume", "compact")
+# AVE-REQ-098 AC-2: the context is empty after a new session, a resumed one, /clear and compaction.
+SESSION_SOURCES = ("startup", "resume", "clear", "compact")
 SESSION_HOOK = ".claude/hooks/session-start.sh"
+STOP_HOOK = ".claude/hooks/stop-verify.sh"
+# AVE-REQ-098 AC-2, AVE-REQ-097 AC-3: the written form of the two registrations. A group of
+# hooks.SessionStart or hooks.Stop is an object with the listed keys, its "hooks" value is a list,
+# and each handler in it is an object with the keys of HANDLER_KEYS, "type": "command" and exactly
+# the registered command. A key outside the lists ("if", "once", "shell", "async") could keep the
+# script from running, text around the command could run something else or discard what the
+# script prints, and a handler of another type would never start it: each of them fails.
+REGISTERED = {
+    "SessionStart": {
+        "name": "SessionStart hook",
+        "hook": SESSION_HOOK,
+        "command": '"$CLAUDE_PROJECT_DIR"/' + SESSION_HOOK,
+        "group_keys": ("hooks", "matcher"),
+        "alone": "nothing else",
+        "rule": "AVE-REQ-098 AC-2",
+    },
+    "Stop": {
+        "name": "Stop gate",
+        "hook": STOP_HOOK,
+        "command": '"$CLAUDE_PROJECT_DIR"/' + STOP_HOOK,
+        "group_keys": ("hooks",),
+        "alone": "no other verification command",
+        "rule": "AVE-REQ-097 AC-3",
+    },
+}
+HANDLER_KEYS = ("type", "command", "timeout")
+
+
+def listed(keys):
+    return ", ".join(json.dumps(key) for key in keys)
 
 
 def as_list(value):
@@ -558,17 +702,39 @@ hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
 covered = set()
 registered = False
 for event, groups in hooks.items():
+    form = REGISTERED.get(event)
+    if form and not isinstance(groups, list):
+        error(f"hooks.{event} is no list of groups ({form['rule']})")
     for number, group in enumerate(as_list(groups)):
+        where = f"hooks.{event}[{number}]"
         if not isinstance(group, dict):
+            if form:
+                error(f"{where} is no group object ({form['rule']})")
             continue
+        if form:
+            for key in sorted(set(group) - set(form["group_keys"])):
+                error(
+                    f"{where} holds the key {json.dumps(key)}; a group of hooks.{event} holds"
+                    f" {listed(form['group_keys'])} only ({form['rule']})"
+                )
+            if not isinstance(group.get("hooks"), list):
+                error(f"{where} holds no list of handlers under \"hooks\" ({form['rule']})")
         for handler in as_list(group.get("hooks")):
             if not isinstance(handler, dict):
+                if form:
+                    error(f"{where} holds a handler that is no object ({form['rule']})")
                 continue
             if handler.get("async") not in (None, False):
                 error(
                     f"hooks.{event}[{number}] runs a hook asynchronously (\"async\": "
                     f"{json.dumps(handler.get('async'))}), which escapes its timeout (AVE-REQ-098 AC-4)"
                 )
+            if form:
+                for key in sorted(set(handler) - set(HANDLER_KEYS)):
+                    error(
+                        f"{where} handler holds the key {json.dumps(key)}; a handler of"
+                        f" hooks.{event} holds {listed(HANDLER_KEYS)} only ({form['rule']})"
+                    )
             if handler.get("type") != "command":
                 continue
             command = str(handler.get("command", ""))
@@ -578,23 +744,44 @@ for event, groups in hooks.items():
                     f"hooks.{event}[{number}] command {command!r} starts a loop, a sleep, a background "
                     f"job or a permission bypass ({found.group(0).strip()!r}; AVE-REQ-098 AC-4)"
                 )
-            if event == "SessionStart" and SESSION_HOOK in command:
+            if event == "SessionStart" and command == form["command"]:
                 registered = True
                 covered.update(s for s in SESSION_SOURCES if matches(group.get("matcher"), s))
-# AVE-REQ-097 AC-3: the Stop gate is registered once, as a handler of type "command" whose command
-# is exactly the registered one, and nothing in the settings file switches it off, loosens it or
-# runs a heavier tier at every stop. Text after the command (" || true") would discard the gate's
-# exit status, and a handler of another type would never start the script.
-STOP_HOOK = ".claude/hooks/stop-verify.sh"
-STOP_COMMAND = '"$CLAUDE_PROJECT_DIR"/' + STOP_HOOK
+
+
+def handlers_of(event):
+    return [
+        handler
+        for group in as_list(hooks.get(event))
+        if isinstance(group, dict)
+        for handler in as_list(group.get("hooks"))
+        if isinstance(handler, dict)
+    ]
+
+
+# AVE-REQ-098 AC-2, AVE-REQ-097 AC-3: every handler of the two registrations is of type "command"
+# and its command is exactly the registered one. Text after the command (" || true", a redirect, a
+# pipe) would discard the script's exit status or its output, text before it ("false &&") or a
+# command that only names the script (in a comment, as an argument of echo) would never start it,
+# and a handler of another type would never start it either.
+for event, form in REGISTERED.items():
+    for handler in handlers_of(event):
+        command = str(handler.get("command", ""))
+        if handler.get("type") != "command":
+            error(
+                f"hooks.{event} handler has type {json.dumps(handler.get('type'))}; the"
+                f" {form['name']} is a handler of type \"command\" ({form['rule']})"
+            )
+        if command != form["command"]:
+            error(
+                f"hooks.{event} command {command!r} must run the {form['name']} {form['hook']} and"
+                f" {form['alone']}: it reads exactly {form['command']}, with nothing before or"
+                f" after it ({form['rule']})"
+            )
+# AVE-REQ-097 AC-3: the Stop gate is registered once, and nothing in the settings file switches
+# it off, loosens it or runs a heavier tier at every stop.
 SHELL_VARIABLES = ("SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV")
-stop_handlers = [
-    handler
-    for group in as_list(hooks.get("Stop"))
-    if isinstance(group, dict)
-    for handler in as_list(group.get("hooks"))
-    if isinstance(handler, dict)
-]
+stop_handlers = handlers_of("Stop")
 if len(stop_handlers) != 1:
     error(
         f"hooks.Stop holds {len(stop_handlers)} command(s); it holds exactly one, the Stop gate"
@@ -602,17 +789,6 @@ if len(stop_handlers) != 1:
     )
 for handler in stop_handlers:
     command = str(handler.get("command", ""))
-    if handler.get("type") != "command":
-        error(
-            f"hooks.Stop handler has type {json.dumps(handler.get('type'))}; the Stop gate is a"
-            ' handler of type "command" (AVE-REQ-097 AC-3)'
-        )
-    if command != STOP_COMMAND:
-        error(
-            f"hooks.Stop command {command!r} must run the Stop gate {STOP_HOOK} and no other"
-            f" verification command: it reads exactly {STOP_COMMAND}, with nothing before or after"
-            " it (AVE-REQ-097 AC-3)"
-        )
     if "CLAUDE_VERIFY_" in command:
         error(f"hooks.Stop command {command!r} sets a gate variable (AVE-REQ-097 AC-3)")
 if data.get("disableAllHooks") not in (None, False):
@@ -928,7 +1104,7 @@ EOF
 # required-file rule accounts for (AVE-REQ-097 AC-4).
 check_step_files() {
   local file
-  for file in scripts/verify.d/* scripts/verify.d/.[!.]*; do
+  for file in scripts/verify.d/* scripts/verify.d/.[!.]* scripts/verify.d/..?*; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     case "
 $REQUIRED_FILES
@@ -998,7 +1174,15 @@ collect_files() {
 }
 
 check_agents() {
+  # collect_files passes over README.md, and Claude Code reads every *.md file of .claude/agents/ as
+  # an agent definition: a README.md there would carry frontmatter that check 4 never reads.
+  if [ -e .claude/agents/README.md ] || [ -L .claude/agents/README.md ]; then
+    error ".claude/agents/README.md" "is read by Claude Code as an agent definition and by check 4 as none: .claude/agents/ holds agent files only (AVE-REQ-098 AC-4)"
+  fi
+  # A file whose name opens with a dot is an agent file too: the pattern matches it.
+  shopt -s dotglob
   collect_files .claude/agents/*.md
+  shopt -u dotglob
   COUNT_AGENTS=$FILE_COUNT
   [ "$COUNT_AGENTS" -gt 0 ] || return 0
   run_awk "agent frontmatter" -v kind=agent "$AWK_LIB$AWK_IDENTITY" "${FILES[@]}"
@@ -1006,11 +1190,14 @@ check_agents() {
 
 check_skills() {
   local dir
+  # A directory whose name opens with a dot is a skill directory too: the patterns match it.
+  shopt -s dotglob
   for dir in .claude/skills/*/; do
     [ -d "$dir" ] || continue
     [ -f "${dir}SKILL.md" ] || error "${dir%/}" "skill directory has no SKILL.md"
   done
   collect_files .claude/skills/*/SKILL.md
+  shopt -u dotglob
   COUNT_SKILLS=$FILE_COUNT
   [ "$COUNT_SKILLS" -gt 0 ] || return 0
   run_awk "skill frontmatter" -v kind=skill "$AWK_LIB$AWK_IDENTITY" "${FILES[@]}"

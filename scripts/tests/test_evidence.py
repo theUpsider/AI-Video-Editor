@@ -47,13 +47,21 @@ def _tag(number: int, criterion: int) -> str:
     return f"{_id(number)} AC-{criterion}"
 
 
-def _requirement(number: int, status: str, criteria: int, inspected: tuple[str, ...] = ()) -> Any:
+def _requirement(
+    number: int,
+    status: str,
+    criteria: int,
+    inspected: tuple[str, ...] = (),
+    beside_test: tuple[str, ...] = (),
+) -> Any:
     return evidence.Requirement(
         _id(number),
         Path(f"{_id(number)}-x.md"),
         status,
         tuple(f"AC-{n}" for n in range(1, criteria + 1)),
         frozenset(inspected),
+        (),
+        frozenset(beside_test),
     )
 
 
@@ -157,6 +165,12 @@ NOT_PASSING_MODULES = (
         _unit_module("{tag}", "    async def test_other(self):\n        self.assertEqual(1, 2)\n"),
         "error: test_fixture.Case.test_other",
     ),
+    (
+        "file whose process ends with another status after its tests passed",
+        "import atexit\nimport os\nimport unittest\n\natexit.register(os._exit, 3)\n\n\n"
+        "class Case(unittest.TestCase):\n    # {tag}\n    def test_passes(self):\n        pass\n",
+        "the test process exited 3",
+    ),
 )
 
 
@@ -229,6 +243,15 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(state(not_run, True), "inspected")
         self.assertEqual(state(collected[_tag(12, 1)] + not_run, False), "passed")
         self.assertEqual(evidence.unrun(collected[_tag(12, 1)] + not_run), 1)
+        # An inspection line of a criterion verified by inspection alone counts without a test;
+        # where the strategy names a test level too (third argument) it counts only beside a
+        # tagged test that passed.
+        self.assertEqual(state([], True), "inspected")
+        self.assertEqual(state([], True, True), "missing")
+        self.assertEqual(state(not_run, True, True), "not-run")
+        self.assertEqual(state(collected[_tag(12, 3)], True, True), "inspected")
+        self.assertEqual(state(collected[_tag(12, 1)], True, True), "passed")
+        self.assertEqual(state(collected[_tag(12, 2)], True, True), "failed")
 
     # AVE-REQ-097 AC-4
     def test_the_done_gate_judges_every_tier(self) -> None:
@@ -816,6 +839,22 @@ class EvidenceTests(unittest.TestCase):
             self.assertRegex(evidence._run(["git", "rev-parse", "HEAD"]), r"^[0-9a-f]{40}$")
 
     # AVE-REQ-097 AC-2
+    def test_the_output_of_a_command_that_failed_is_no_answer(self) -> None:
+        """The manifest takes a commit, a fingerprint and a tool version from commands: what a
+        command prints before it exits with another status than 0 (an error text, a partial
+        listing) reads ``unavailable``, and so does a command that prints nothing or does not
+        start."""
+        printing = "import sys; print('first line'); print('second line'); sys.exit({status})"
+        ended = [sys.executable, "-c", printing.format(status=0)]
+        failed = [sys.executable, "-c", printing.format(status=1)]
+        self.assertEqual(evidence._run(ended), "first line")
+        self.assertEqual(evidence._run(ended, whole=True), "first line\nsecond line")
+        self.assertEqual(evidence._run(failed), "unavailable")
+        self.assertEqual(evidence._run(failed, whole=True), "unavailable")
+        self.assertEqual(evidence._run([sys.executable, "-c", "pass"]), "unavailable")
+        self.assertEqual(evidence._run([str(self.tmp / "no-such-tool")]), "unavailable")
+
+    # AVE-REQ-097 AC-2
     def test_the_package_listing_starts_uv_without_an_environment_file(self) -> None:
         """The digest of the installed packages comes from the locked environment as it is: uv reads
         no environment file, so no variable of such a file reaches the listing."""
@@ -928,7 +967,14 @@ class EvidenceTests(unittest.TestCase):
             third.steps(("Backend unit tests", "PASS"))
             evidence.record(third.path, "fast", "a" * 40)
             self.assertEqual(self._show(*flags), 1)
-            self.assertEqual(self._show(*flags, "--tier", "fast"), 0)
+            # --tier selects the run that is shown; the failed fresh media run still counts.
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                code = evidence.main(["show", *flags, "--tier", "fast"])
+            self.assertEqual(code, 1, shown.getvalue())
+            self.assertIn("tier fast, PASS", shown.getvalue())
+            self.assertIn("Completeness: the run of tier media FAILED", shown.getvalue())
+            self.assertEqual(self._show(_id(12), "--require-fresh", "--tier", "fast"), 0)
             # The heaviest fresh run is the one shown, whatever was recorded last.
             shown = io.StringIO()
             with contextlib.redirect_stdout(shown):
@@ -962,11 +1008,20 @@ class EvidenceTests(unittest.TestCase):
             self.assertIn("tier release, PASS", shown.getvalue())
             self.assertIn("Completeness: the run of tier fast FAILED", shown.getvalue())
             self.assertEqual(self._show(_id(12), "--require-fresh"), 0)
+            # The same with --tier release, the form the milestone review certifies with: the
+            # option selects the run shown, and the failed fresh fast run still counts.
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                code = evidence.main(["show", *flags, "--tier", "release"])
+            self.assertEqual(code, 1, shown.getvalue())
+            self.assertIn("tier release, PASS", shown.getvalue())
+            self.assertIn("Completeness: the run of tier fast FAILED", shown.getvalue())
             other = RunDirectory(self.tmp, "20261002T000002Z-1")
             other.report("unit", passed)
             other.steps(("Backend unit tests", "PASS"), ("Backend lint", "FAIL"))
             evidence.record(other.path, "fast", "b" * 40)
             self.assertEqual(self._show(*flags), 0)
+            self.assertEqual(self._show(*flags, "--tier", "release"), 0)
 
     # AVE-REQ-097 AC-2
     def test_record_creates_the_evidence_directory_or_ends_with_a_tool_error(self) -> None:
@@ -1269,6 +1324,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(requirement.status, "done")
         self.assertEqual(requirement.criteria, ("AC-1", "AC-2"))
         self.assertEqual(requirement.inspected, frozenset({"AC-2"}))
+        self.assertEqual(requirement.beside_test, frozenset())
         self.assertEqual(requirement.problems, ())
 
     # AVE-REQ-097 AC-4
@@ -1282,7 +1338,9 @@ class EvidenceTests(unittest.TestCase):
             path = self._requirement_file(50)
             self._edit(path, "- AC-1 — unit — a test.", "- AC-1 — unit and inspection — both.")
             self._edit(path, "## Test evidence\n", "## Test evidence\n" + line)
-            self.assertEqual(evidence.read_requirement(path).inspected, frozenset({"AC-1", "AC-2"}))
+            requirement = evidence.read_requirement(path)
+            self.assertEqual(requirement.inspected, frozenset({"AC-1", "AC-2"}))
+            self.assertEqual(requirement.beside_test, frozenset({"AC-1"}))
         with self.subTest("an inspection line inside a fenced block"):
             path = self._requirement_file(50)
             self._edit(
@@ -1291,6 +1349,68 @@ class EvidenceTests(unittest.TestCase):
                 "```text\n- AC-2 → inspection: checked the log — pass\n```\n",
             )
             self.assertEqual(evidence.read_requirement(path).inspected, frozenset())
+
+    # AVE-REQ-097 AC-4
+    def test_an_inspection_line_never_stands_in_for_a_test_level_the_strategy_names(self) -> None:
+        """A criterion whose strategy names a test level beside inspection needs a tagged test
+        that passed: its inspection line alone leaves it missing for the done gate and for
+        ``show --require-complete``. A criterion verified by inspection alone stays credited."""
+        line = "- AC-1 → inspection: read the code — pass\n"
+        strategies = {
+            "one line names both levels": "- AC-1 — unit and inspection — both.",
+            "three levels": "- AC-1 — unit, integration and inspection — all three.",
+            "a line for each level": "- AC-1 — unit — a test.\n- AC-1 — inspection — a reading.",
+            "inspection with a note in the level field": "- AC-1 — inspection (records) — why.",
+        }
+        for name, strategy in strategies.items():
+            with self.subTest(name):
+                path = self._requirement_file(50)
+                self._edit(path, "- AC-1 — unit — a test.", strategy)
+                self._edit(path, "## Test evidence\n", "## Test evidence\n" + line)
+                requirement = evidence.read_requirement(path)
+                self.assertEqual(requirement.problems, ())
+                self.assertEqual(requirement.inspected, frozenset({"AC-1", "AC-2"}))
+                self.assertEqual(requirement.beside_test, frozenset({"AC-1"}))
+                self.assertEqual(self._check_done(path), [f"{_id(50)} AC-1: missing in this run"])
+        for name, strategy in (
+            ("inspection alone", "- AC-1 — inspection — a reading."),
+            ("inspection alone with further spaces around the level", "- AC-1 —  inspection  — a reading."),
+        ):
+            with self.subTest(name):
+                path = self._requirement_file(50)
+                self._edit(path, "- AC-1 — unit — a test.", strategy)
+                self._edit(path, "## Test evidence\n", "## Test evidence\n" + line)
+                self.assertEqual(evidence.read_requirement(path).beside_test, frozenset())
+                self.assertEqual(self._check_done(path), [])
+        # The run decides: with a tagged test that passed the criterion is evidenced, and with a
+        # tagged test that did not run it stays open for the release tier.
+        known = _requirement(12, "done", 2, inspected=("AC-1", "AC-2"), beside_test=("AC-1",))
+        flags = (_id(12), "--require-fresh", "--require-complete")
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            self._known(known),
+            mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40),
+        ):
+            self.run_dir.steps(("Backend unit tests", "PASS"))
+            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            self.assertEqual(self._show(*flags), 1)
+            self.assertEqual(
+                evidence.done_problems(self.run_dir.path, {known.id: known}, "fast"),
+                [f"{_tag(12, 1)}: missing in this run"],
+            )
+            second = RunDirectory(self.tmp, "20261002T000001Z-1")
+            second.report("unit", [_test("t::a", "passed", [_tag(12, 1)])])
+            second.steps(("Backend unit tests", "PASS"))
+            evidence.record(second.path, "fast", "a" * 40)
+            self.assertEqual(self._show(*flags), 0)
+            self.assertEqual(evidence.done_problems(second.path, {known.id: known}), [])
+            third = RunDirectory(self.tmp, "20261002T000002Z-1")
+            third.report("unit", [_test("t::a", "deselected", [_tag(12, 1)])])
+            self.assertEqual(evidence.done_problems(third.path, {known.id: known}, "fast"), [])
+            self.assertEqual(
+                evidence.done_problems(third.path, {known.id: known}),
+                [f"{_tag(12, 1)}: 1 tagged test(s) did not run in this run"],
+            )
 
     # AVE-REQ-097 AC-2, AVE-REQ-097 AC-4
     def test_requirement_ids_of_any_width_stay_apart(self) -> None:
@@ -1353,6 +1473,29 @@ class EvidenceTests(unittest.TestCase):
         requirement = evidence.read_requirement(path)
         self.assertEqual(requirement.criteria, ("AC-1", "AC-2"))
         self.assertTrue(requirement.problems)
+
+    # AVE-REQ-097 AC-4
+    def test_show_refuses_completeness_for_a_file_outside_the_canonical_form(self) -> None:
+        """A requirement file outside the canonical form has no single reading: ``show`` names the
+        problem, and with ``--require-complete`` it exits 1 although each criterion is evidenced."""
+        path = self._requirement_file(50)
+        self.run_dir.report("unit", [_test("t::a", "passed", [_tag(50, 1)])])
+        self.run_dir.steps(("Backend unit tests", "PASS"))
+        flags = (_id(50), "--require-fresh", "--require-complete")
+        with (
+            mock.patch.object(evidence, "VERIFY_DIR", self.tmp),
+            mock.patch.object(evidence, "REQUIREMENTS", self.tmp),
+            mock.patch.object(evidence, "current_fingerprint", return_value="a" * 40),
+        ):
+            evidence.record(self.run_dir.path, "fast", "a" * 40)
+            self.assertEqual(self._show(*flags), 0)
+            self._edit(path, "status: done\n", 'status: "done"\n')
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                code = evidence.main(["show", *flags])
+            self.assertEqual(code, 1, shown.getvalue())
+            self.assertIn("form   NOT CANONICAL", shown.getvalue())
+            self.assertEqual(self._show(_id(50), "--require-fresh"), 0)
 
 
 if __name__ == "__main__":

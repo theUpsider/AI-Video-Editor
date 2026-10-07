@@ -24,18 +24,40 @@ When working, read only the current milestone entry; [PROGRESS.md](PROGRESS.md)
 8. Every requirement that is not superseded stands on exactly one requirement list: a version-one
    requirement under the milestone its `primary_gate` names (on a `Proposed during …` line while it
    is `proposed`), an exclusion in the Deferred group. A milestone with Status done lists finished
-   requirements only. `scripts/check_baseline.py` reads the entries `### M<n> — …` and
-   `### Deferred …` and fails on a difference. In an entry it reads the lines that open, at column 0,
-   with a label of the template: `- **Requirements (dependency order):**` and
-   `- **Proposed during <words>:**` (letters, digits and spaces) under a milestone,
-   `- **Requirements:**` in the Deferred group, one of each per entry; a line that opens with a
-   bullet (`-`, `*`, `+`, indented or at column 0) and bold `Requirements` or `Proposed`, in any
-   letter case, under any other label fails. Every milestone entry holds exactly one Status line,
-   and it reads `- **Status:** planned`, `- **Status:** in-progress` or `- **Status:** done` with
-   nothing after the word; any other line of the entry that holds `**Status` in any letter case
-   fails. A fence line reads three backticks at column 0, alone or with a language word, as in the
-   requirement files, and this file holds no HTML comment, so every list the gate reads is a list
-   readers see. Other text of an entry is free text that the diff review judges.
+   requirements only. `scripts/check_baseline.py` reads this file by the rules below and fails on a
+   difference, so the entries, the Status lines and the lists it reads are the ones a Markdown reader
+   shows.
+   - The file: every character stands on the allow-list of the requirement files
+     ([Canonical form](requirements/README.md#canonical-form) rule 1) or is the horizontal ellipsis,
+     written out or as a character reference. Fenced blocks have the one form of rule 5 there. Outside
+     fenced blocks a line follows rule 4 there for raw HTML and backtick runs and rule 3 there for
+     footnote syntax; the file holds no HTML comment and no line of `=` or of `-` alone. Outside code
+     spans a link reads `[<words>](<path>)`: words of letters, digits, spaces, `.` and `-` behind a
+     first letter or digit, and a path or address of letters, digits and `_ . / # : -`; every other
+     `](`, an image (`![`) and a reference link of two bracket pairs (`][`) fail.
+   - Headings: a heading is a line that opens at column 0 with one to six `#` and a space; behind
+     spaces, in a list item or in a quote it fails. A heading of any level whose letters and digits,
+     digits at the start aside, open with `M` and a digit or with `Deferred`, in any letter case, is
+     an entry heading: it reads `### M<n> — <name>` (the number without a leading zero) or
+     `### Deferred — <text>`, and each entry stands once. An entry runs to the next heading of level
+     1 to 3.
+   - Entry lines: a line of a milestone entry whose letters open with `status`, in any letter case,
+     is its Status line; every milestone entry holds exactly one, and it reads
+     `- **Status:** planned`, `- **Status:** in-progress` or `- **Status:** done` with nothing after
+     the word. A line of an entry whose letters open with `requirement` or `proposed` is a list of
+     the template, one of each per entry: `- **Requirements (dependency order):**` under a milestone
+     and `- **Requirements:**` in the Deferred group, each followed by links
+     `[AVE-REQ-NNN](requirements/AVE-REQ-NNN-<slug>.md)` separated by `, ` and by nothing else;
+     `- **Proposed during <words>:**` (letters, digits and spaces) under a milestone, followed by
+     such links and plain words (letters, digits, spaces and `( ) , . ; : -`). The letters of a line
+     or a heading are read with its character references resolved and without its link targets and
+     ticked task boxes, so emphasis marks, bullets, quote signs, backslashes and code-span marks
+     change nothing. Each of these lines is a list item of one line: the next line that holds text
+     opens a list item at column 0 with `- ` or is a heading.
+   - Free text: other text of an entry is free text that the diff review judges, such as the word
+     Status or a milestone number behind other words of a line or a heading, another word for a
+     label, bold text that imitates a heading, a code sample and an entry under another milestone
+     number.
 
 ## Planning rules
 

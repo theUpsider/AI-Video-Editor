@@ -83,9 +83,7 @@ For each `done` requirement in scope:
    ```
 
    The command reads the release run of step 2 (test markers and comment tags; a grep of the tag would also
-   match fixture text). An AC shown `missing` has no test: it needs an `inspection` line in `## Test evidence`
-   whose `## Verification strategy` line names inspection, and then reads `inspected`; otherwise it is
-   unevidenced (blocking). An exit status other than 0 is blocking.
+   match fixture text). An AC shown `missing` has no test: where its `## Verification strategy` line names inspection alone it needs an `inspection` line in `## Test evidence` and then reads `inspected`; where the strategy names a test level it needs that tagged test; otherwise it is unevidenced (blocking). An exit status other than 0 is blocking.
 3. The tagged tests ran and passed in step 2: the runner output shows them executed, none skipped.
 4. Re-run `verify-requirement AVE-REQ-NNN` (a fresh reviewer fork) for each requirement that is high-risk (security, data integrity, parsing, state machines, concurrency, media or file-format handling), that has an AC verified by inspection (no test re-runs it, so only the fork re-performs that inspection on the current tree), or that is doubtful: its implementation files changed after its completion commit (`git log --oneline "$(git log -1 --format=%H --grep='AVE-REQ-NNN[:,]')"..HEAD -- <paths from § Implementation evidence>`), its tests changed later, or a journey failure in step 5 points at it. In a re-verification, the reviewer's notes on `done` status and ticked ACs are expected; ignore them. Add each re-verified ID to the checkpoint's `re-verified:` field.
 5. A FAIL verdict reopens the requirement (`done → in-progress`, logged reason, affected ACs unticked, TRACEABILITY.md and PROGRESS.md updated) and is blocking.

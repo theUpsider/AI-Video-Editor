@@ -21,9 +21,19 @@ Canonical form, in short:
                heading tag;
   HTML         no comment, no line that starts with "<", and no tag ("<" before a letter, "/",
                "!" or "?") outside code spans; a code span opens and closes on one line;
-  fences       "```" or "```<language>" at column 0, closed by "```";
+  footnotes    none: "[^" and "^[" fail outside code spans and fenced blocks, so no footnote
+               definition (a container whose first line opens a block), no footnote reference
+               and no inline footnote exists;
+  fences       one form: a line of exactly three backticks at column 0, alone or followed by
+               one word of letters, digits, "_" or "-", opens a block, and a line of exactly
+               three backticks at column 0 closes it; every other line that opens with three
+               or more backticks or tildes, after its leading spaces or after a container
+               marker, fails, inside a block too;
   criteria     "- [ ] AC-n <text>" or "- [x] AC-n <text>", and nothing else in that section;
   Status       dated log lines only, "- YYYY-MM-DD — <status> — <text>", dates never decreasing.
+
+scripts/check_baseline.py judges docs/ROADMAP.md by the same fence rule (fence_like, FENCE_OPEN,
+FENCE_CLOSE) and the same rules for one line outside fenced blocks (inline_problems).
 
 Usage: read(path) returns a ReqFile; its problems list is empty for a canonical file.
 Python 3.8+ standard library only; imports nothing from the repository.
@@ -101,9 +111,16 @@ UNDERLINE = re.compile(r"(?:=+|-+) *$")
 CONTAINER = re.compile(r">|[-*+](?= |$)|\d{1,9}[.)](?= |$)")
 HTML_LINE = re.compile(r"^ {0,3}<")
 HTML_HEADING = re.compile(r"</?h[1-6]\b", re.IGNORECASE)
-FENCE_LIKE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
-FENCE_OPEN = re.compile(r"^```[A-Za-z0-9_+.-]*$")
+# The one fence form: three backticks at column 0, alone or with one word, open a block and
+# three backticks at column 0 close it. FENCE_RUN is what opens or closes a fenced block for a
+# Markdown reader; fence_like finds it behind leading spaces and container markers, and every
+# such line outside the one form fails.
+FENCE_RUN = re.compile(r"`{3,}|~{3,}")
+FENCE_OPEN = re.compile(r"^```[A-Za-z0-9_-]*$")
 FENCE_CLOSE = "```"
+# Footnote syntax: a definition "[^label]: ..." or a reference "[^label]" (GitHub), and the
+# inline form "^[text]" that other Markdown readers add.
+FOOTNOTE = re.compile(r"\[\^|\^\[")
 # The characters of a working file besides the line feed and U+0020 to U+007E: the signs the
 # working files held on 2026-10-06 (the baseline package is ASCII). Every other character fails,
 # visible or invisible; a sign joins this list in a change of this file, which the diff shows.
@@ -129,7 +146,8 @@ def digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def _bad_character(char: str) -> bool:
+def bad_character(char: str) -> bool:
+    """Whether a character stands outside the allow-list of a working file."""
     return not (char == "\n" or " " <= char <= "~" or ord(char) in EXTRA_CHARACTERS)
 
 
@@ -186,6 +204,44 @@ def outside_code_spans(line: str):
     return "".join(kept), unpaired
 
 
+def fence_like(line: str) -> bool:
+    """Whether a reading of the line opens with three or more backticks or tildes.
+
+    A Markdown reader opens and closes a fenced block on such a line at column 0, behind up to
+    three spaces and inside a quote or a list item; the canonical form admits the two lines of
+    FENCE_OPEN and FENCE_CLOSE and fails every other one, so the reader and a Markdown reader
+    agree on every line that opens or closes a block.
+    """
+    return any(FENCE_RUN.match(form) for form in readings(line))
+
+
+def inline_problems(line: str):
+    """The problems of one line outside fenced blocks that its code spans decide.
+
+    A run of backticks unpaired on the line, raw HTML outside code spans and footnote syntax
+    outside code spans; scripts/check_baseline.py applies the same list to docs/ROADMAP.md.
+    Each problem is a text without its line number.
+    """
+    plain, unpaired = outside_code_spans(line)
+    found = []
+    if unpaired:
+        found.append(
+            "a run of backticks stays unpaired; a code span opens and closes on one line"
+            f" ('{line[:50]}')"
+        )
+    if RAW_HTML.search(plain):
+        found.append(
+            f"raw HTML outside a code span ('{plain[RAW_HTML.search(plain).start() :][:30]}')"
+        )
+    if FOOTNOTE.search(plain):
+        found.append(
+            "footnote syntax ([^ or ^[) outside a code span; a footnote definition is a"
+            " container that opens a block, and the file holds none"
+            f" ('{plain[FOOTNOTE.search(plain).start() :][:30]}')"
+        )
+    return found
+
+
 class ReqFile:
     """One working file: frontmatter, H1, sections, criteria, Status log and form problems."""
 
@@ -219,7 +275,7 @@ class ReqFile:
     def _characters(self, text: str) -> None:
         for number, line in enumerate(text.split("\n"), 1):
             for char in line:
-                if _bad_character(char):
+                if bad_character(char):
                     name = "a carriage return" if char == "\r" else f"U+{ord(char):04X}"
                     self._problem(
                         f"line {number}: {name} is no character of a requirement file (line"
@@ -285,18 +341,22 @@ class ReqFile:
                     self.raw_sections[current].append(line)
                 if line == FENCE_CLOSE:
                     fenced = False
-                elif FENCE_LIKE.match(line):
+                elif fence_like(line):
                     self._problem(
                         f"line {number}: a fenced block closes with ``` at column 0 and holds no"
                         " other fence line"
                     )
                 continue
-            if FENCE_LIKE.match(line):
-                if not FENCE_OPEN.match(line):
+            if fence_like(line):
+                # The one form opens a block; every other fence line is a problem and opens
+                # none, so the lines behind it are judged as lines of the file.
+                if FENCE_OPEN.match(line):
+                    fenced = True
+                else:
                     self._problem(
-                        f"line {number}: a fence line reads ``` or ```<language> at column 0"
+                        f"line {number}: a fence line reads ``` or ```<word> (letters, digits,"
+                        f" _ or -) at column 0 ('{line[:20]}')"
                     )
-                fenced = True
                 if current is not None:
                     self.raw_sections[current].append(line)
                 elif self.h1:
@@ -305,17 +365,8 @@ class ReqFile:
                         " section"
                     )
                 continue
-            plain, unpaired = outside_code_spans(line)
-            if unpaired:
-                self._problem(
-                    f"line {number}: a run of backticks stays unpaired; a code span opens and"
-                    f" closes on one line ('{line[:50]}')"
-                )
-            if RAW_HTML.search(plain):
-                self._problem(
-                    f"line {number}: raw HTML outside a code span"
-                    f" ('{plain[RAW_HTML.search(plain).start() :][:30]}')"
-                )
+            for problem in inline_problems(line):
+                self._problem(f"line {number}: {problem}")
             forms = readings(line)
             if ATX.match(forms[0]):
                 # A heading at column 0 or behind leading spaces: the H1, a template heading, or

@@ -95,7 +95,10 @@ Status log the gates check are the ones a Markdown reader sees.
    `N.`, `N)`): what remains opens no ATX heading (`#` to `######` before a space or the line's end) and is
    no run of `=` or of `-` alone. So a heading of another level, an indented heading, a heading inside a
    list item or a quote and an underline fail at any indentation; a heading tag `<h1>` to `<h6>` fails
-   anywhere on such a line. New content goes into an existing section.
+   anywhere on such a line. The file holds no footnote syntax: `[^` and `^[` fail outside code spans and
+   fenced blocks, so the footnote definition (a further container of GitHub's Markdown, whose first line
+   can open a heading), the footnote reference and the inline footnote of other Markdown readers do not
+   occur. New content goes into an existing section.
 4. HTML: no comment (`<!--` anywhere in the file), no line outside fenced blocks that opens with `<` at
    column 0 or behind one to three spaces, no heading tag (rule 3), and no tag outside code spans and
    fenced blocks: there `<` before a letter, `/`, `!` or `?` fails (`<details>`, `</s>`, a declaration, a
@@ -104,8 +107,14 @@ Status log the gates check are the ones a Markdown reader sees.
    run that stays unpaired on its line fails, so no span reaches over a line end and the reader pairs the
    spans a Markdown reader pairs. A backslash before a backtick outside a span makes that backtick plain
    text.
-5. Fenced blocks open with three backticks, alone or followed by a language word, at column 0, and close
-   with three backticks at column 0.
+5. Fenced blocks have one form: a line of exactly three backticks at column 0, alone or followed by one
+   word of letters, digits, `_` or `-`, opens a block, and a line of exactly three backticks at column 0
+   closes it. Every other line that opens with three or more backticks or tildes, after its leading spaces
+   or after a container marker of rule 3, fails, inside a block too: an indented fence, a fence in a quote
+   or a list item, a tilde fence, a run of four backticks, another character in the info word, a space
+   before it, spaces or text behind the closing backticks, a code span of three backticks at a line
+   start. Such a line opens no block for the reader, which judges the lines behind it by rules 3 and 4.
+   The reader and a Markdown reader so agree on every line that opens or closes a fenced block.
 6. `## Acceptance criteria` holds criterion lines only: `- [ ] AC-n <text>`, `- [x] AC-n <text>` once ticked.
 7. `## Status` holds log lines only: `- YYYY-MM-DD — <status> — <text>` with a real date and a lifecycle
    status, oldest first.
@@ -187,8 +196,9 @@ Filled evidence sections look like this:
 ```
 
 An inspection line counts for a criterion whose `## Verification strategy` holds its own line naming
-inspection as a level, `- AC-n — inspection — <why no test can judge it>` (or
-`- AC-n — integration and inspection — …`); `scripts/evidence.py` credits no other inspection line.
+inspection as a level, `- AC-n — inspection — <why no test can judge it>` ; `scripts/evidence.py` credits no other inspection line. Where the strategy names a test level beside inspection
+(`- AC-n — integration and inspection — …`, or a further line for the criterion), the inspection line counts only
+beside a tagged test that passed in the run.
 
 ### Epic (EPIC)
 
@@ -412,7 +422,9 @@ means status `ready` or later, and `deferred`. For an approved requirement:
 2. In the old file set `status: superseded`, add `superseded_by: <new ID>` as the last
    frontmatter key, and log the reason in a `superseded` Status-log line. For a baseline
    requirement, check_baseline.py also requires that the replacement (the end of any
-   `superseded_by` chain) exists and keeps what the human asked for. For version one it keeps scope
+   `superseded_by` chain) exists and keeps what the human asked for. It is never `proposed`: the rule
+   that keeps an imported requirement out of that status ([Status lifecycle](#status-lifecycle) rule 8)
+   holds for the end of its chain. For version one it keeps scope
    `v1`, is not `deferred` and has a priority not below the baseline's; a future-scope requirement
    is superseded only by a future-scope, `deferred` requirement (an exclusion enters version one
    only through a new baseline from the human). Either way the replacement keeps the type,
@@ -571,10 +583,7 @@ pass through to `python3 -I -B scripts/check_baseline.py`, which owns the
     `primary_gate` or in the Deferred group, a `primary_gate` that names no milestone, an exclusion
     outside the Deferred group, a requirement past `proposed` on a "Proposed during" line, a
     milestone with Status done that lists an unfinished requirement, or a listed ID without a file;
-    and a roadmap entry outside the form the gate reads ([ROADMAP.md](../ROADMAP.md) § Rules 8): a
-    milestone entry without exactly one Status line `- **Status:** planned`, `in-progress` or `done`,
-    a list line under another label than the template's, a second list of one kind in an entry, a
-    fence line outside [Canonical form](#canonical-form) rule 5, or an HTML comment;
+    and a roadmap outside the form the gate reads ([ROADMAP.md](../ROADMAP.md) § Rules 8, which holds the rules in full): a character outside the allow-list and the horizontal ellipsis, an HTML comment, raw HTML, an unpaired run of backticks, footnote syntax, a fence line outside [Canonical form](#canonical-form) rule 5, a line of `=` or of `-` alone, a link outside the one form; a heading away from column 0, a heading that reads as an entry heading outside the template form, a second entry; a milestone entry without exactly one Status line `- **Status:** planned`, `in-progress` or `done`, a second line whose letters open with `status`, a list line under another label than the template's, a second list of one kind, a requirement list that holds anything besides its links, a Proposed line that holds anything besides links and plain words, or a continuation of a line the gate reads;
 11. a missing or stale IMPORT_MAPPING.md.
 
 check_baseline.py runs in Python's isolated mode and loads the import tool and the reader from their

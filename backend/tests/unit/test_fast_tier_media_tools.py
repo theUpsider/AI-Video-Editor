@@ -1,8 +1,13 @@
 """The fast tier's media tools refuse to run: AVE-REQ-097 AC-3.
 
-scripts/verify.d/20-backend.sh points AVE_FFMPEG and AVE_FFPROBE at scripts/lib/media-tier-only.sh
-for the fast pytest step, so a test that renders without the ``media`` marker fails there and the
-Stop gate, which runs the fast tier at every stop, never triggers a render.
+For the fast pytest step scripts/verify.d/20-backend.sh points AVE_FFMPEG and AVE_FFPROBE at
+scripts/lib/media-tier-only.sh and puts copies of it named ``ffmpeg`` and ``ffprobe`` first on
+PATH. A test without the ``media`` marker that calls a media tool through ``ave.proc`` or by name
+therefore fails there, and the Stop gate, which runs the fast tier at every stop, starts no render
+that way. Two forms reach the real tool in the fast tier: a test that names a media tool by an
+absolute path, and a test that starts a process with a PATH of its own. The review of the test
+judges both. The cases below cover the two variables; scripts/tests/test-verify-tiers.sh covers
+the stand-ins on PATH.
 """
 
 from __future__ import annotations

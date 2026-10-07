@@ -240,9 +240,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Date:** 2026-10-03
 - **Assumption:** Check 12 of `scripts/check-project-control.sh` evaluates hook matchers by Claude Code's documented
   rules with Python's `re.search` standing in for JavaScript's unanchored `RegExp.test`; the SessionStart hook must
-  match `startup`, `resume` and `compact`, while `clear` and `fork` stay optional.
+  match `startup`, `resume`, `clear` and `compact`, while `fork` stays optional.
 - **Reason:** The checker runs without Claude Code; AVE-REQ-098 AC-2 names compaction and a new session.
-- **Impact:** An exotic regex construct can differ between the two engines; a matcher without `clear` passes.
+- **Impact:** An exotic regex construct can differ between the two engines.
   Only `|`-separated names form a list; a comma-separated list is a regular expression that matches no source,
   and check 12 rejects it (found by the AVE-REQ-098 skeptic, 2026-10-03).
 - **Status:** open
@@ -251,15 +251,17 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-015 — The probe counts accelerators by device nodes and nvidia-smi
 - **Date:** 2026-10-03
 - **Assumption:** `scripts/probe-environment.sh` reports an accelerator as present from a character device
-  under `/dev` whose whole name is `nvidia<N>` or `dri/renderD<N>` and that this user can open, and from a GPU
-  row with a memory figure that `nvidia-smi` prints; FFmpeg's built-in hardware encoders and every other entry
-  of `/dev` never count.
+  under `/dev` whose whole name is `nvidia<N>` or `dri/renderD<N>` and that this user can open for reading and for writing, and from a GPU
+  row with a name and a memory figure that `nvidia-smi` prints; FFmpeg's built-in hardware encoders and every other entry
+  of `/dev` never count. The open runs through GNU `dd` with `count=0 conv=nocreat,notrunc` and creates nothing; where
+  `dd` lacks these operands a GPU node reads `accelerator: unknown (open test unavailable for <node>)`.
 - **Reason:** AVE-REQ-094 edge case: a compiled-in encoder says nothing about a device.
 - **Impact:** A host with a render node, a software or virtual DRM driver included, reports `present` before any
   hardware encode is tested; AVE-REQ-076 still needs a test encode.
 - **Status:** open — 2026-10-06 — narrowed to GPU nodes and rows with a memory figure after the review of
   AVE-REQ-094 at `eb73896` (handback part 5), and to character devices with the whole name that open after the
-  review at `d4147d8` (handback part 6)
+  review at `d4147d8` (handback part 6); 2026-10-07 — names judged as one string, an open that creates nothing and a
+  third verdict `unknown` after the review at `f996c17` (second round, handback part 2)
 - **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
 
 ### ASM-016 — .env.example lists the product's variables only
@@ -305,8 +307,11 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Date:** 2026-10-03
 - **Assumption:** Check 7 rejects the wordings "running", "underway", "under way", "in flight", "ongoing", "still
   executing" and "runs now" in PROGRESS.md outside comments, fences and code spans, in any letter case and with
-  spaces or hyphens between the words, and allows the negations ("nothing is running", "not running", "no longer
-  running"). The rule knows this list; the commit review judges any other wording.
+  spaces, tabs, hyphens or a line wrap between the words (consecutive lines are joined up to a blank line or a fenced
+  block, so a wording split over two list items fails too), and allows the negations ("nothing is running", "not
+  running", "no longer running"), also across a line wrap. The rule knows this list; the commit review judges any other
+  wording, a listed wording with other characters between its words, and text a renderer shows while the checker takes
+  it for a comment, a fence or a code span.
 - **Reason:** AVE-REQ-098 AC-3 forbids claiming that unfinished work keeps executing after the session stops.
 - **Impact:** Other uses of the words in PROGRESS.md need rephrasing.
 - **Status:** open
@@ -352,7 +357,9 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 - **Date:** 2026-10-06
 - **Assumption:** The mechanical gates trust the interpreter, the shell and the tools on `PATH` of the development
   container and of CI, and they treat `var/verify/` and `.git/claude-verify/` as local, unauthenticated state.
-  `verify.sh` starts its steps from a named set of variables and reads no cache from the tree; a replaced
+  `verify.sh` starts its steps from a named set of variables, reads no cache from the tree and admits outside the
+  fingerprint only the listed ignored paths (`IGNORED_DIRECTORIES` and `IGNORED_FILES` in `scripts/verify.sh`); what
+  lies at those paths, a fixture written by hand under a valid cache key among it, is local state; a replaced
   tool, a hand-written manifest or a hand-written Stop-gate record lies outside every diff and outside the gates,
   and so do the files under `HOME`, the personal and user-level Claude Code settings, the shell options that act
   before the first line of a script (`SHELLOPTS`, `BASHOPTS`) and the files of a backend environment beyond the
@@ -436,8 +443,10 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
 ### ASM-030 — Check 12 fails every loop word in a hook command
 - **Date:** 2026-10-06
 - **Assumption:** A hook command in `.claude/settings.json` with the shell word `while` or `until` or with a
-  `for ((` loop fails check 12, whatever its condition; so does `--permission-mode` with any value. The folder
-  files `.DS_Store` and `Thumbs.db` pass in `docs/briefs/`, as in the ignored-file step.
+  `for ((` loop fails check 12, whatever its condition; so does `--permission-mode` with any value. A loop word
+  counts as a shell word unless a letter, a digit, `_`, `.`, `/` or `-` stands directly before or after it; the text
+  `dangerously-skip-permissions` fails behind any prefix. The folder
+  files `.DS_Store` and `Thumbs.db` pass in `docs/briefs/`, as in the step "No file outside the fingerprint and the listed paths".
 - **Reason:** An always-true condition has unbounded spellings; a hook command of this project is a script path.
 - **Impact:** A hook that needs a loop keeps it inside its script, where the inspection of `.claude/hooks/*.sh`
   reads it.
@@ -453,3 +462,131 @@ assumption here. Escalation criteria: [CLAUDE.md](../CLAUDE.md) § Autonomy and 
   placed inside another checkout is judged by that checkout's ignore rules.
 - **Status:** open
 - **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-032 — Working files hold no footnote syntax and one fence form
+- **Date:** 2026-10-07
+- **Assumption:** In a requirement, feature or epic file `[^` and `^[` fail outside code spans and fenced blocks. A
+  fenced block opens with three backticks at column 0, alone or with one word of letters, digits, `_` or `-`, and
+  closes with exactly three backticks at column 0; every other line that reads as a fence line fails. The roadmap
+  follows the same two rules.
+- **Reason:** A footnote definition is a container that GitHub renders, and one fence form keeps the reader and a
+  Markdown renderer agreed on every fence line (second review round, handback part 1).
+- **Impact:** No file held either form. An info word with `+` or `.` fails; a character class such as a caret in
+  brackets belongs in a code span.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-033 — The roadmap is read by the letters a line opens with
+- **Date:** 2026-10-07
+- **Assumption:** In a milestone entry a line whose letters open with `status`, `requirement` or `proposed` is a
+  line of the template's exact form. A requirement list holds links only, a Proposed line links and plain words
+  (letters, digits, spaces and `( ) , . ; : -`), and each such line is a list item of one line. Links have one
+  form, headings stand at column 0, milestone numbers carry no leading zero, and no line holds `=` or `-` alone.
+- **Reason:** A comparison of the gate with two Markdown renderers over 188 constructs showed 43 where a reader
+  saw something the gate read otherwise; these rules close them
+  ([handback part 1](briefs/handbacks/2026-10-07-m0-review-2-fixes.part-1.md)).
+- **Impact:** A note on a Proposed line uses plain words; a rule in the roadmap is drawn with stars; words before
+  the word Status stay free text. Rendering beyond CommonMark and GitHub's Markdown specification (math, diagrams,
+  emoji shortcodes) was compared with no renderer.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-034 — The replacement of an imported requirement is never proposed
+- **Date:** 2026-10-07
+- **Assumption:** The end of a supersession chain of an imported requirement is `ready` or later, `blocked`, or for
+  an exclusion `deferred`.
+- **Reason:** The lifecycle holds no move back to `proposed` for an imported requirement, and a replacement stands
+  for it.
+- **Impact:** A replacement reaches Ready before the old file is set to `superseded`.
+- **Status:** open
+- **Links:** [AVE-REQ-093](requirements/AVE-REQ-093-adopt-and-preserve-the-supplied-requirements-baseline.md)
+
+### ASM-035 — The probe reads the cgroup limits at the mount root and prints paths in quoted form
+- **Date:** 2026-10-07
+- **Assumption:** The lines `cpu quota (cgroup v2)` and `memory limit (cgroup v2)` read `cpu.max` and `memory.max`
+  of `/sys/fs/cgroup`. The device lines and the verdict print each path in the form of the shell's `printf %q`,
+  entries separated by one space.
+- **Reason:** A container with a cgroup namespace of its own (the development container, Docker's default on
+  cgroup v2) shows its limits at the mount root; a quoted path keeps a name with a line feed or a space one word
+  of one line.
+- **Impact:** A container that shares the host's cgroup namespace, a limit of a parent cgroup and cgroup v1 read
+  `none` (observed with `--cgroupns=host`). Ordinary paths print unchanged.
+- **Status:** open
+- **Links:** [AVE-REQ-094](requirements/AVE-REQ-094-capability-aware-native-dynamic-workflows.md)
+
+### ASM-036 — Outside the fingerprint only listed paths pass, and the step walks the tree
+- **Date:** 2026-10-07
+- **Assumption:** The step "No file outside the fingerprint and the listed paths" walks the tree on disk and fails
+  on every file that the fingerprint does not name, unless `IGNORED_DIRECTORIES` or `IGNORED_FILES` of
+  `scripts/verify.sh` admits its path; the walk runs again after the steps. Eight directories and eight file forms
+  are listed, the three hand-run cache directories of `backend/` among them. The tree holds one `.gitignore`, at
+  its root.
+- **Reason:** A file that an ignore rule hides took part in the steps (second review round, handback part 4 of the
+  review). Git lists nothing inside a directory named `.git` below the root and no special file, so the step reads
+  the disk. Each entry of the list has a run that shows no step reads it
+  ([handback part 3](briefs/handbacks/2026-10-07-m0-review-2-fixes.part-3.md)).
+- **Impact:** An ignored path anywhere else fails every tier until it is removed or listed with such a run; outputs
+  go below `var/`. The requirement that brings the frontend toolchain lists its paths (`node_modules/`, build and
+  report directories) or sends them below `var/`.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-037 — The generator digest reads import statements
+- **Date:** 2026-10-07
+- **Assumption:** The fixture cache key holds a digest of every `ave` module in the closure of the `import`
+  statements that start at the three modules of `ave.fixtures`.
+- **Reason:** The closure is the same in every process; the modules a process happens to have loaded differ.
+- **Impact:** A module loaded by a computed name lies outside the digest and needs the diff review. The digest
+  value changed, so the first media run after this change regenerates the fixtures once.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-038 — The failed-attempt counter has two digits and stops at 99
+- **Date:** 2026-10-07
+- **Assumption:** The Stop gate reads its counter file as a decimal number of one or two digits, with a leading
+  zero too; every other content counts as 0, and the gate writes no value above 99.
+- **Reason:** The limit is at most 10; a value the gate would read as 0 starts the blocks again.
+- **Impact:** None in normal use; a counter file written by hand follows the same reading.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md)
+
+### ASM-039 — Hook registrations and frontmatter follow written forms
+- **Date:** 2026-10-07
+- **Assumption:** Every group and handler under `hooks.SessionStart` and `hooks.Stop` of `.claude/settings.json`
+  has the registered form (a group holds `hooks`, for SessionStart also `matcher`; a handler holds `type`,
+  `command` and optionally `timeout`, with exactly the registered command), so a second SessionStart command
+  fails. Agent and skill frontmatter holds the keys listed on 2026-10-07 (`name`, `description`, `tools`, `model`,
+  `color`, `skills`; `name`, `description`, `when_to_use`, `argument-hint`, `context`, `agent`, `background`).
+- **Reason:** A rule that lists what it admits fails a form nobody thought of; the checker cannot know how Claude
+  Code reads a key it does not list.
+- **Impact:** A further start-up action goes into `.claude/hooks/session-start.sh`; a new handler key or
+  frontmatter key needs a change of the list in `scripts/check-project-control.sh`.
+- **Status:** open
+- **Links:** [AVE-REQ-098](requirements/AVE-REQ-098-persistent-progress-and-bounded-autonomous-continuation.md), [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-040 — An inspection line beside a test level counts only beside a passing tagged test
+- **Date:** 2026-10-07
+- **Assumption:** Where a criterion's strategy names a test level beside inspection, `scripts/evidence.py` credits
+  the inspection line only when a tagged test of the criterion passed in the run; the level field `inspection`
+  alone is the one form that credits an inspection line by itself.
+- **Reason:** An inspection line alone satisfied the done gate for such a criterion (second review round, handback
+  part 4 of the review, non-blocking 6).
+- **Impact:** Such a criterion without a tagged test reads `missing`; twelve criteria of that kind exist, each
+  tagged.
+- **Status:** open
+- **Links:** [AVE-REQ-097](requirements/AVE-REQ-097-verification-gates-that-cannot-pass-as-placeholders.md)
+
+### ASM-041 — Gate hardening beyond the stated limits waits for a need
+- **Date:** 2026-10-07
+- **Assumption:** The fix tracks of the second review round proposed further gate rules; each stands as a stated
+  limit in § Edge cases of its requirement and becomes a requirement when a failure or a milestone needs it: the
+  cgroup limits of a parent cgroup; tracked backend files below directory names that ruff, mypy and pytest pass
+  over; the entries of `.claude/` by allow-list; one canonical form for the comments, fences and code spans of
+  `docs/PROGRESS.md`; an allow-list for the `env` block of `.claude/settings.json`; the baseline package directory
+  as a link.
+- **Reason:** `CLAUDE.md` § Development principles 5 and 6: each of these closes a path that needs write access to
+  the repository and shows in the diff, and none serves a criterion of M0.
+- **Impact:** The commit review and `verify-requirement` judge these forms; the milestone review settles this
+  entry.
+- **Status:** open
+- **Links:** [AVE-FEAT-019](requirements/AVE-FEAT-019-autonomous-implementation-workflow.md)

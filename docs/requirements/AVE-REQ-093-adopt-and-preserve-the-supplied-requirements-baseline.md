@@ -35,51 +35,83 @@ The implementing agent shall integrate this specification into the existing boot
 ## Edge cases
 - A baseline file edited, added or removed, the package's own validator included → the baseline check fails
   with "baseline changed": the checker verifies the manifest's inventory and every file's size and SHA-256 itself
-  before it runs the package validator (AC-1, AC-3).
+  before it runs the package validator, and it runs the validator only when the validator's own bytes verified
+  (AC-1, AC-3).
 - MANIFEST.json edited, removed or duplicated inside the package, or a baseline edit with a re-hashed
   MANIFEST.json → the baseline check fails with "baseline changed": the checker pins the manifest's SHA-256
   outside the package (AC-1, AC-3).
-- A working requirement file missing, duplicated or with a changed identity (title, type, priority, scope,
-  source, parent, origins, scenarios, Description), with a baseline dependency dropped or another baseline
-  requirement added as a dependency, or an imported epic or feature with another title, priority, goal or
-  parent → the baseline check fails; a Description change passes only with a logged reason, and a derived
-  requirement may join the dependencies (AC-1, AC-3).
-- One number of a kind under two IDs (`AVE-REQ-0103` beside `AVE-REQ-103`) → fails: the one-file rule counts
-  by kind and number (AC-1).
+- The working file of a baseline requirement, feature or epic missing, a second file for a baseline requirement
+  or feature, a changed identity (the title, type, priority, scope, source, parent, origins, scenarios,
+  baseline path, frontmatter id, H1 or Description of a requirement; the title, priority or parent of a
+  feature; the title, priority or goal of an epic), a baseline dependency dropped or another baseline
+  requirement added as a dependency → the baseline check fails; a Description change passes only with a
+  logged reason, and a derived requirement may join the dependencies (AC-1, AC-3).
+- One number of a kind under two IDs (`AVE-REQ-0102` beside `AVE-REQ-102`, `AVE-REQ-0001` beside
+  `AVE-REQ-001`) → fails: the one-file rule counts by kind and number (AC-1).
 - A criterion or the Description reworded or removed, or text added to the Description (a fenced block
   included), without its marker line in the Status log (`AC-n changed [<mark>]: <reason>`,
   `AC-n removed: <reason>`, `Description changed [<mark>]: <reason>`) → fails; with the line → reported. The
   marker opens the log line's text and the mark is the first sixteen hex digits of the SHA-256 of the new
-  text, so a line that quotes the rule, names another requirement or covers an earlier edit records
-  nothing; a reason without a letter or a digit of U+0020 to U+007E records nothing either (AC-3).
-- A working file outside the canonical form (README § Canonical form: a repeated, quoted or unknown frontmatter
-  key, a second block or a stray character around the frontmatter, a character outside the allow-list of
-  `scripts/reqfile.py` (U+0020 to U+007E, the line feed and seven listed signs, so a carriage return, a tab
-  and every invisible character fail whatever their Unicode class), a heading outside the template, an HTML
-  comment, a line that starts with `<`, a tag outside code spans (`<` before a letter, `/`, `!` or `?`), a
-  run of backticks unpaired on its line, an irregular fence, a Status log with an undated, unordered or
-  free-text line) → fails: `scripts/reqfile.py` reads every working file for the baseline gate and the done
-  gate, so a file they accept has one reading, and a Markdown reader sees the status, the Description and
-  the criteria that were checked (AC-3, AC-4). A heading is judged after the line's leading spaces and again
-  after each container marker (`>`, `-`, `*`, `+`, `N.`, `N)`): an ATX heading at any indentation, on a
+  text, so a line that quotes the rule, names another requirement, stands outside § Status or covers an
+  earlier edit records nothing; a reason without a letter or a digit of U+0020 to U+007E, and the
+  template's placeholder as the reason, record nothing either (AC-3).
+- A working file outside the canonical form (README § Canonical form) → fails: `scripts/reqfile.py` reads
+  every working file for the baseline gate and the done gate, so a file they accept has one reading
+  (AC-3, AC-4). The forms the suite pins: a repeated, quoted or unknown frontmatter key or one outside the
+  template's order, a second block or a stray character at the frontmatter's end; a character outside the
+  allow-list of `scripts/reqfile.py`, which holds U+0020 to U+007E, the line feed and seven listed signs (a
+  carriage return, a tab, a byte-order mark, a line separator, a no-break space, a form feed, a delete
+  character, a unit separator, four invisible characters of other Unicode classes and a letter outside the
+  list fail); a heading outside the template, a template heading repeated, out of order or missing, text
+  before the first heading; an HTML comment, a line that starts with `<`, a tag outside code spans (`<`
+  before a letter, `/`, `!` or `?`), a run of backticks unpaired on its line; footnote syntax; a fence line
+  outside the one form; a Status log with a free-text line, a line with hyphens for the dashes, dates out of
+  order, an impossible date or an unknown status; a copy of a requirement file in a subdirectory.
+- A heading in a form a Markdown reader renders → fails: a line is judged after its leading spaces and again
+  after each container marker (`>`, `-`, `*`, `+`, `N.`, `N)`), so an ATX heading at any indentation, on a
   continuation line of a list item, inside a list item or a quote, a run of `=` or of `-` alone in any of
-  these places, and an HTML heading tag (levels 1 to 6) anywhere on a line outside fenced blocks all fail.
-- A tag inside a line (`<details>`, `<s>`, a closing tag, a declaration, a placeholder in angle brackets)
-  → fails outside code spans and fenced blocks, behind a backslash too; a code span opens and closes on
-  one line, so the spans the reader pairs are the spans a Markdown reader pairs (AC-3).
+  these places, and an HTML heading tag (levels 1 to 6, either letter case, opening or closing, in a code
+  span too) on a line outside fenced blocks all fail (AC-3, AC-4).
+- Footnote syntax (`[^`, and the inline form `^[` of other Markdown readers) outside code spans and fenced
+  blocks → fails, in a requirement and in a feature file: a footnote definition is a container whose first
+  line opens a heading, a quote or a list item for GitHub, and the canonical form holds none (AC-3, AC-4).
+- A fenced block outside the one form → fails: three backticks at column 0, alone or with one word of
+  letters, digits, `_` or `-`, open a block and three backticks at column 0 close it. Every other line that
+  opens with three or more backticks or tildes behind leading spaces or a container marker fails (a fence
+  behind one or four spaces, in a quote, in a list item, a tilde fence, also behind an ordered marker, four
+  backticks, a plus sign, a dot or a backtick in the info word, a space before it, a code span of three
+  backticks at a line start), inside a block too (a second fence line, a tilde line, a fence line in a
+  quote, spaces behind the closing backticks, a closing line of four backticks), as does a block left open.
+  A refused line opens no block, so the lines behind it are judged as lines of the file. The reader and a
+  Markdown reader so agree on every line that opens or closes a fenced block (AC-3, AC-4).
+- A tag inside a line (`<details>`, `<s>`, a closing tag, a declaration, a processing instruction, a
+  placeholder in angle brackets) → fails outside code spans and fenced blocks, behind a backslash and
+  between escaped backticks too; a code span opens and closes on one line, so the spans the reader pairs
+  are the spans a Markdown reader pairs (AC-3).
+- What a Markdown reader shows beside what the gates read → the rules above leave one reading of the
+  headings, the Description, the criteria and the Status log; inspection covers that claim: a comparison of
+  the gate with cmark-gfm (GitHub's Markdown, footnotes on) and markdown-it-py, recorded in part 1 of the
+  handback of the fix brief `2026-10-07-m0-review-2-fixes`, found each compared construct either refused by
+  the gate or shown as read (AC-3, AC-4, inspection). Limits: GitHub shows the frontmatter as a table of its
+  own; what GitHub renders beyond CommonMark and its Markdown specification (math delimiters, diagrams in
+  fenced blocks) was compared with no renderer; a construct outside the comparison is judged by the rule's
+  text in `scripts/reqfile.py`, which `verify-requirement` reviews.
 - Text inside § Acceptance criteria that is no criterion line (a continuation line under a criterion, a fenced
   block, a capital-X tick) → fails: the section holds criterion lines only, so nothing can qualify or waive a
   criterion in place (AC-3).
 - A symbolic link added inside the package (a file or a directory) → fails with "baseline changed" (AC-1).
 - A future requirement made ready, or a version-one requirement deferred → fails (AC-3).
-- A version-one requirement superseded by a requirement that does not exist, is future scope or deferred, has a
-  lower priority, another type, source `derived` for a human requirement, fewer origins or scenarios, another
-  Description, a criterion of its own or a missing baseline criterion without the marker line in the old
-  file's Status log (`AC-n dropped by <ID>`, `<ID> AC-m added [<mark>]`, `Description replaced by <ID> [<mark>]`),
+- A version-one requirement superseded by a requirement that does not exist, is `proposed`, future scope or
+  deferred, has a lower priority, another type, source `derived` for a human requirement, fewer origins or
+  scenarios, another Description, a criterion of its own or a missing baseline criterion without the marker
+  line in the old file's Status log
+  (`AC-n dropped by <ID>`, `<ID> AC-m added [<mark>]`, `Description replaced by <ID> [<mark>]`),
   or superseded without a `superseded` log line → fails; a replacement that carries the baseline Description
-  and every baseline criterion is reported as a supersession, through a chain of replacements too: every
-  requirement on the chain of a human requirement keeps source `human`, and a replacement under another
-  milestone than the baseline gate is reported as a gate change (AC-3).
+  and every baseline criterion is reported as a supersession. Through a chain of replacements the rules hold
+  for the end of the chain: every requirement on the chain of a human requirement keeps source `human`, and
+  a replacement under another milestone than the baseline gate is reported as a gate change. `proposed` is
+  the status the rule of the imported file closes to its replacement; a replacement that is `blocked` is
+  reported like the others (AC-3).
 - A future-scope requirement (an exclusion) superseded by a requirement that is version-one scope or not
   `deferred` → fails: an exclusion enters version one only through a new baseline from the human (AC-3).
 - A baseline feature or epic set to `superseded` while a baseline child under it is not superseded → fails (AC-3).
@@ -87,14 +119,51 @@ The implementing agent shall integrate this specification into the existing boot
   with the line → reported (AC-3).
 - A requirement that is not superseded and stands on no ROADMAP.md list or on two, a version-one requirement
   under another milestone than its primary gate or in the Deferred group, an exclusion on a milestone list, a
-  primary gate that names no milestone, or a milestone with Status done that lists an unfinished requirement
-  → fails (AC-3).
-- A milestone entry of ROADMAP.md without exactly one Status line that reads `- **Status:** planned`,
+  primary gate that names no milestone, a requirement past `proposed` on a Proposed line, a listed ID
+  without a working file, or a milestone with Status done that lists an unfinished requirement → fails (AC-3).
+- `docs/ROADMAP.md` outside the form the gate reads (ROADMAP.md § Rules 8) → fails (AC-3). The file: a
+  character outside the allow-list of the requirement files and the horizontal ellipsis, written out or as a
+  character reference (a Cyrillic letter in a label, a tab, a carriage return, a no-break space as a
+  reference); an HTML comment; raw HTML outside code spans (a processing instruction around a Status line
+  or a link, `details` around an entry, a closing tag); a run of backticks unpaired on its line; footnote
+  syntax; a fence line outside the one form of the requirement files (a tilde fence, four backticks, an
+  indented fence, a fence in a quote, a dot in the info word, a fence line inside a block, a block left
+  open); a line of `=` or of `-` alone, in a quote too; a link outside the one form `[<words>](<path>)` (a
+  link without words, an image, a reference link of two bracket pairs, a target with parentheses or a title).
+- A heading of `docs/ROADMAP.md` that the gate would read otherwise than a Markdown reader → fails (AC-3): a
+  heading behind a space, in a quote or on a continuation line; a heading that reads as an entry heading
+  (its letters and digits, link targets and digits at the start aside, open with `M` and a digit or with
+  `Deferred`) outside the template form `### M<n> — <name>` or `### Deferred — <text>` (a hyphen for the
+  dash, a leading zero, level 2 or 4, bold, the letter as a character reference, a number or a link before
+  it, no name, `Deferred` with a colon); a second entry for a milestone or for the Deferred group. An entry
+  runs to the next heading of level 1 to 3: a sub-heading and hashes without a space end none, and a Status
+  line under a phase heading is free text.
+- A milestone entry of `docs/ROADMAP.md` without exactly one Status line that reads `- **Status:** planned`,
   `- **Status:** in-progress` or `- **Status:** done` (another letter case, a full stop or a note after the
-  word, bold around it, another word, an indented line, no line, a second line), a list line under another
-  label than the template's three, a second list of one kind in an entry, or a fence line outside the form
-  of the requirement files → fails, so the rule for a finished milestone and the lists the gate reads are
-  the ones readers see; other text of an entry is free text the diff review judges (AC-3).
+  word, bold around it, another word, an indented line, no line, a second line) → fails. Every line of the
+  entry whose letters open with `status`, read with character references resolved and without link targets
+  and ticked task boxes, counts as a Status line, so a second line in another form fails beside the true one
+  (underscore bold, star emphasis, no emphasis, upper case, a quote, a star bullet, an ordered marker, no
+  bullet, a nested item, a table row, a code span or a link as its label, a link or a ticked task box before
+  it, a character reference, escaped stars, text behind a hard line break), as does a continuation of the
+  Status line (an indented line, a text line); the Status line of the Deferred group is free text (AC-3).
+- A requirement list of `docs/ROADMAP.md` outside the template → fails (AC-3): a line of an entry whose
+  letters open with `requirement` or `proposed` under another label than the template's three (another
+  wording, bullet, indentation or letter case, underscore bold, no emphasis, the singular, a quote, a
+  character reference, the label of the other group), a second list of one kind; a requirement list that
+  holds anything besides its links (a struck link, a link in a code span, behind a backslash or with a
+  title, text or spaces behind the list, no link), in the Deferred group too; a Proposed line that holds
+  anything besides links and plain words (a struck word, a code span, emphasis); a continuation of a list
+  line (a nested item, a paragraph behind a blank line, an indented line under a Proposed line); a link
+  text that names another file than its target. A list inside a fenced block is no list for the gate.
+- What a Markdown reader shows of `docs/ROADMAP.md` beside what the gate reads → the four rules above make
+  the entries, the Status of a milestone and the links of its lists the ones a reader sees, so the rule for
+  a finished milestone holds for the Status a reader sees; inspection covers that claim: the comparison
+  named above found each compared construct either refused by the gate or shown as read (AC-3, inspection).
+  Limits, free text that the diff review judges: the word Status or a milestone number behind other words
+  of a line or a heading, another word for a label, bold text that imitates a heading, a code sample, an
+  entry under another milestone number, and what GitHub renders beyond CommonMark and its Markdown
+  specification (an emoji shortcode before a label, for example).
 - A baseline requirement set back to `proposed` → fails. An epic or feature set to `done`, or a box of its
   acceptance section ticked, while a child that is neither superseded nor deferred is not `done` → fails
   (AC-3, AC-4).
@@ -136,20 +205,20 @@ The implementing agent shall integrate this specification into the existing boot
 None.
 
 ## Verification strategy
-- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, an edited package validator, a file edited, added or removed behind an edited validator, and a symbolic link added inside the package fail with "baseline changed"; an edited validator is never run; started as `python3 scripts/check_baseline.py`, a planted bytecode cache of the import tool, a `hashlib` or a `__future__` beside the checker or on `PYTHONPATH` and a cache under `PYTHONPYCACHEPREFIX` change no result, and the isolated start `python3 -I -B` passes on a clean import; a `sitecustomize` module on `PYTHONPATH` lies outside every start but the isolated one, as § Edge cases states), exactly one working file per baseline ID and one ID per number of a kind, each child linked from its parent's own list section, a current IMPORT_MAPPING.md; step "Requirements baseline integrity" runs `python3 -I -B scripts/check_baseline.py` on the real repository in every tier.
+- AC-1 — integration — `scripts/tests/test-check-baseline.sh` (tagged comment lines): immutability of the package (the checker verifies the manifest's inventory and every file's size and SHA-256 itself and pins the manifest hash outside the package, so an edited, removed, duplicated or re-hashed MANIFEST.json, a manifest with another size entry, an edited package validator, a file edited or added behind an edited validator, a removed file and a symbolic link added inside the package fail with "baseline changed"; an edited validator is never run; started as `python3 scripts/check_baseline.py`, a planted bytecode cache of the import tool, a `hashlib` or a `__future__` beside the checker or on `PYTHONPATH` and a cache under `PYTHONPYCACHEPREFIX` change no result, and the isolated start `python3 -I -B` passes on a clean import; a `sitecustomize` module on `PYTHONPATH` lies outside every start but the isolated one, as § Edge cases states), exactly one working file per baseline ID and one ID per number of a kind, each child linked from its parent's own list section, a current IMPORT_MAPPING.md; inspection: `scripts/verify.d/10-requirements.sh` declares the fast step "Requirements baseline integrity", which runs `python3 -I -B scripts/check_baseline.py` on the real repository.
 - AC-2 — inspection — the six documents are populated from the baseline and keep their bootstrap content (Git history of each file since `f605c6c`); automation cannot judge "meaningful content".
-- AC-3 — integration and inspection — `scripts/tests/test-check-baseline.sh`: demoted priority, changed scope, type, source, parent, dependencies, origins or scenarios, a demoted epic or feature or a changed epic goal, deferring a version-one requirement, readying a future one, rewording or removing a criterion or the Description without its marker line (a line that quotes the rule, names another requirement, carries a placeholder reason, a reason without a letter or a digit or a mark of eight digits, or covers an earlier edit does not count), weakening a criterion in the baseline, its JSON and the working file, with a re-hashed manifest or behind an edited package validator, the forms outside the canonical form that the suite lists (repeated, quoted, unknown or misordered frontmatter keys, a second block or a stray character at the frontmatter, carriage returns, a tab, a unit separator, a delete character, four invisible characters of other Unicode classes and a letter outside the allow-list, HTML comments, headings outside the template at column 0, as bare hashes, indented by one space, indented by four spaces on a continuation line of an ordered and of a wide-bullet list item, inside a quote with and without a space, behind a dash, star, plus and wide bullet, behind an ordered marker with a dot and, in a quote, with a parenthesis, underlined at column 0, with trailing spaces, by one character, inside a quote, inside a list item and behind a bullet, and as an HTML tag, in a requirement file and a feature file, a tag inside a line (an opening tag, a closing tag, a declaration, a tag behind an escaped backtick, a tag between two spans that reach over a line end), a run of backticks unpaired on its line, irregular fences, undated or unordered Status lines, a copy in a subdirectory), a line inside § Acceptance criteria that is no criterion (baseline and derived requirements), an added criterion without its marker line, superseding a version-one requirement by a missing, weaker, future-scope or deferred requirement or by one of another type, source, Description, origins or scenarios, or by one that drops or adds a criterion without a marker line, a derived requirement in the middle of a human chain, superseding a future-scope requirement by one that is version-one or not deferred, superseding a baseline feature or epic whose baseline children live on, a baseline requirement back in `proposed`, an epic or feature that is `done` or carries a ticked box (under a dash, star, plus or ordered marker, without a done log line or after a reopening) before its children are done, a requirement missing from the roadmap, listed twice, under another milestone than its gate or in the wrong group, a done milestone with an unfinished requirement, a milestone Status line in six other spellings, missing or doubled, a requirement or Proposed list under another label, bullet, indentation or letter case, a second list of one kind, a tilde, four-backtick, indented or unclosed fence and a fence line inside a fence in the roadmap, a version-one requirement that depends on an exclusion directly or through a superseded one or on a requirement whose replacement is deferred or missing, a dependency cycle and a § Dependencies section that differs from the frontmatter all fail; a replacement that carries the baseline Description and criteria, a faithful chain of replacements, a gate change of a requirement or of its replacement and every recorded change are reported; the canonical-form rules are general (README § Canonical form), and a form the suite does not list is judged by the rule's text in `scripts/reqfile.py`, which `verify-requirement` reviews; inspection for what no checker can read: criteria bind as written (README § Changing requirements rule 6, reviewer rule 4), the reason of a recorded change is free text, and a change to the checker, the reader, the pin or the import mappings shows in the diff that `verify-requirement` reviews.
-- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked; a ticked criterion on a requirement that is not `done` fails, after a reopening and on a superseded requirement that never was done included; a capital-X tick, a quoted or repeated status key and a second criteria heading fail as outside the canonical form; an epic or feature that is `done`, or carries a ticked acceptance box, before its children are done fails); `scripts/tests/test_evidence.py` (the done gate reads requirement files through the same reader: every spelling that hides `done` or a criterion fails `check-done`); `scripts/evidence.py check-done` refuses, in every tier, a `done` requirement with a criterion whose evidence in this run is failed, contract-only or missing; the release tier, which runs every tagged test, also refuses a tagged test that did not run, so there every criterion has a passing non-contract test or a recorded inspection that its Verification strategy line names, while the fast and media tiers accept a criterion whose tagged tests exist and did not run (`scripts/verify.d/95-evidence.sh`, README § Definition of Done item 4); the inspection itself is judged by `verify-requirement`.
+- AC-3 — integration and inspection — `scripts/tests/test-check-baseline.sh`: each form that § Edge cases maps to AC-3 as failing, passing or reported is a case of the suite. Its groups: the identity and frontmatter of requirements, features and epics; criteria, the Description and their marker lines; the canonical form (characters, frontmatter, headings behind leading spaces and container markers, raw HTML and code spans, footnote syntax, the one fence form, the criteria section, the Status log); supersession, its chains and the status of the replacement; the statuses of requirements, features and epics; dependencies; the roadmap (placement of requirements, the file's characters, raw HTML, backtick runs, footnote syntax, fences and links, headings and entry headings, Status lines, requirement lists, items of one line). Inspection for what no checker can read: criteria bind as written (README § Changing requirements rule 6, reviewer rule 4), the reason of a recorded change is free text, a change to the checker, the reader, the pin or the import mappings shows in the diff that `verify-requirement` reviews, and what a Markdown reader shows beside what the gate reads rests on the comparison with two renderers that § Edge cases names, with the limits stated there.
+- AC-4 — integration and inspection — `scripts/tests/test-check-baseline.sh` (import starts unverified: statuses `ready`/`deferred`, 0 of 404 criteria ticked; a ticked criterion on a requirement that is not `done` fails, after a reopening and on a superseded requirement that never was done included; a capital-X tick, a quoted or repeated status key and a second criteria heading fail as outside the canonical form; an epic or feature that is `done`, or carries a ticked acceptance box, before its children are done fails); `scripts/tests/test_evidence.py` (the done gate reads requirement files through the same reader: a `done` requirement without evidence fails it, and so do the nine spellings of its unit test that hide `done` or a criterion; `done_problems` refuses a criterion of a `done` requirement whose evidence in the run is failed, contract-only or missing; the fast and media tiers accept a criterion whose tagged tests exist and did not run, and the release tier refuses it); so in the release tier every criterion of a `done` requirement has a passing non-contract test or a recorded inspection that its Verification strategy line names (`scripts/verify.d/95-evidence.sh`, README § Definition of Done item 4); the inspection itself is judged by `verify-requirement`.
 - Acceptance scenarios [AT-29](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-29), [AT-30](../../ai-video-editor-requirements/spec/ACCEPTANCE_TESTS.md#at-30) — whole-product scenarios (application walkthrough, handover, final review); they run at the final milestone review (M7, AVE-REQ-100) and count as evidence once they pass on the current tree. This requirement's criteria are evidenced now by the levels above.
 
 ## Implementation evidence
 - `ai-video-editor-requirements/` — the baseline package, committed unchanged at `6160278`; its MANIFEST.json lists every file's size and SHA-256, and its `tools/validate_package.py` checks package consistency (AC-1)
-- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (canonical form, identity, one ID per number of a kind, Description, criteria, marker lines bound to the text they cover, ticks, supersession and its chains, dependencies, statuses of requirements, features and epics, the roadmap's lists by template label, its milestone Status lines and its fence lines, mapping); the restart into isolated mode as the first statements, and tools loaded from source (AC-1, AC-3, AC-4)
-- `scripts/reqfile.py` — the one reader of working requirement files, shared by `scripts/check_baseline.py` and `scripts/evidence.py`; it reports every form outside the canonical form: characters by allow-list (`EXTRA_CHARACTERS`), headings and underlines judged after leading spaces and container markers (`readings`), marks of sixteen hex digits (`digest`), marker reasons with a letter or a digit (`recorded`) (AC-3, AC-4)
-- `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, the 131 imported `docs/requirements/AVE-*.md` files (derived requirements continue at AVE-REQ-102) — idempotent import and the ID mapping (AC-1, AC-4)
+- `scripts/check_baseline.py` — the manifest hash pinned outside the package (`BASELINE_MANIFEST_SHA256`), the inventory and every file's size and SHA-256 verified by the checker itself before the package validator runs, package validation, and working-file integrity (canonical form, identity, one ID per number of a kind, Description, criteria, marker lines bound to the text they cover, ticks, supersession, its chains and the status of the replacement, dependencies, statuses of requirements, features and epics, mapping); the roadmap reader `read_roadmap` (characters by allow-list with character references resolved, the reader's fence and inline rules, one link form, headings at column 0, entry headings of the template form, Status lines and list labels found by the letters a line opens with (`roadmap_key`), lists of links only, items of one line); the restart into isolated mode as the first statements, and tools loaded from source (AC-1, AC-3, AC-4)
+- `scripts/reqfile.py` — the one reader of working requirement files, shared by `scripts/check_baseline.py` and `scripts/evidence.py`; it reports the forms outside the canonical form: characters by allow-list (`EXTRA_CHARACTERS`), headings and underlines judged after leading spaces and container markers (`readings`), raw HTML, backtick runs and footnote syntax outside code spans (`inline_problems`), fence lines by the one form (`fence_like`, `FENCE_OPEN`), marks of sixteen hex digits (`digest`), marker reasons with a letter or a digit (`recorded`) (AC-3, AC-4)
+- `scripts/requirements/import_baseline.py`, `docs/requirements/IMPORT_MAPPING.md`, the 131 imported `docs/requirements/AVE-*.md` files (derived requirements continue at AVE-REQ-102) — the import that keeps every existing working file, and the ID mapping (AC-1, AC-4)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `docs/TRACEABILITY.md` — populated from the baseline, bootstrap content kept (AC-2)
-- `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — package checks never certify completion (AC-4)
-- Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — AVE-REQ-093 AC-4 (done requirements need run evidence, whatever the spelling of the file)
+- `scripts/evidence.py` (`check-done`), `scripts/verify.d/95-evidence.sh` — completion is judged by the done gate, a verify step apart from the package checks (AC-4)
+- Tests: `scripts/tests/test-check-baseline.sh` — AVE-REQ-093 AC-1, AVE-REQ-093 AC-3, AVE-REQ-093 AC-4; `scripts/tests/test_evidence.py` — AVE-REQ-093 AC-4 (a done requirement needs evidence of the run, and nine spellings that hide `done` or a criterion fail the done gate)
 - Decisions: [ADR-003](../decisions/ADR-003-requirements-baseline-import.md), [ASM-004](../ASSUMPTIONS.md)
 
 ## Test evidence
@@ -175,3 +244,4 @@ _TBD: filled by the lead from the verify-requirement report._
 - 2026-10-06 — in-progress — fixes of the final review merged on branch `m0-final-integration` ([fix brief](../briefs/2026-10-06-m0-final-review-fixes.md), [handback part 1](../briefs/handbacks/2026-10-06-m0-final-review-fixes.part-1.md)): characters by allow-list, headings judged behind leading spaces and container markers, raw HTML outside code spans refused, one exact Status line per milestone entry, roadmap lists by template label, the restart as the checker's first statements with the guarantee scoped to the isolated start, marks of sixteen digits, status rules for imported requirements, features and epics. ADR-003 decision 5 names the change marker by its opening words and stays as accepted (an accepted ADR admits typo and link fixes); `docs/requirements/README.md` holds the full form of each marker (lead)
 - 2026-10-06 — verification — fixes of the final review integrated on branch `m0-final-integration`; independent verification with a skeptic requested from [the review brief](../briefs/2026-10-06-m0-final-review-2.md) (lead)
 - 2026-10-07 — in-progress — verify-requirement FAIL at `f996c17` (workflow `wf_b18a5f3e-54e`, briefed in [the review brief](../briefs/2026-10-06-m0-final-review-2b.md); [handback part 1](../briefs/handbacks/2026-10-06-m0-final-review-2b.part-1.md)): AC-3 — a heading on the first line of a footnote definition passes the canonical form while GitHub renders it, and in `docs/ROADMAP.md` raw HTML other than a comment and a Status line in another emphasis form pass, so two consequences that § Edge cases states do not hold; AC-1, AC-2 and AC-4 PASS, and the blocking findings of the first round are closed. The fixes go through [the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), track A (lead)
+- 2026-10-07 — in-progress — fixes of the second review round merged on branch `m0-final-integration` ([the fix brief](../briefs/2026-10-07-m0-review-2-fixes.md), [handback part 1](../briefs/handbacks/2026-10-07-m0-review-2-fixes.part-1.md)): working files hold no footnote syntax and one fence form, the roadmap is read by the reader's rules with Status lines and lists found by their letters, and the replacement of an imported requirement is never `proposed`; a comparison with two Markdown renderers over 188 constructs shows none that a reader sees otherwise than the gate reads it; § Edge cases names the pinned forms and the limits (lead)
