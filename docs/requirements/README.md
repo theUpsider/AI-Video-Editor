@@ -95,7 +95,10 @@ Status log the gates check are the ones a Markdown reader sees.
    `N.`, `N)`): what remains opens no ATX heading (`#` to `######` before a space or the line's end) and is
    no run of `=` or of `-` alone. So a heading of another level, an indented heading, a heading inside a
    list item or a quote and an underline fail at any indentation; a heading tag `<h1>` to `<h6>` fails
-   anywhere on such a line. New content goes into an existing section.
+   anywhere on such a line. The file holds no footnote syntax: `[^` and `^[` fail outside code spans and
+   fenced blocks, so the footnote definition (a further container of GitHub's Markdown, whose first line
+   can open a heading), the footnote reference and the inline footnote of other Markdown readers do not
+   occur. New content goes into an existing section.
 4. HTML: no comment (`<!--` anywhere in the file), no line outside fenced blocks that opens with `<` at
    column 0 or behind one to three spaces, no heading tag (rule 3), and no tag outside code spans and
    fenced blocks: there `<` before a letter, `/`, `!` or `?` fails (`<details>`, `</s>`, a declaration, a
@@ -104,8 +107,14 @@ Status log the gates check are the ones a Markdown reader sees.
    run that stays unpaired on its line fails, so no span reaches over a line end and the reader pairs the
    spans a Markdown reader pairs. A backslash before a backtick outside a span makes that backtick plain
    text.
-5. Fenced blocks open with three backticks, alone or followed by a language word, at column 0, and close
-   with three backticks at column 0.
+5. Fenced blocks have one form: a line of exactly three backticks at column 0, alone or followed by one
+   word of letters, digits, `_` or `-`, opens a block, and a line of exactly three backticks at column 0
+   closes it. Every other line that opens with three or more backticks or tildes, after its leading spaces
+   or after a container marker of rule 3, fails, inside a block too: an indented fence, a fence in a quote
+   or a list item, a tilde fence, a run of four backticks, another character in the info word, a space
+   before it, spaces or text behind the closing backticks, a code span of three backticks at a line
+   start. Such a line opens no block for the reader, which judges the lines behind it by rules 3 and 4.
+   The reader and a Markdown reader so agree on every line that opens or closes a fenced block.
 6. `## Acceptance criteria` holds criterion lines only: `- [ ] AC-n <text>`, `- [x] AC-n <text>` once ticked.
 7. `## Status` holds log lines only: `- YYYY-MM-DD — <status> — <text>` with a real date and a lifecycle
    status, oldest first.
@@ -412,7 +421,9 @@ means status `ready` or later, and `deferred`. For an approved requirement:
 2. In the old file set `status: superseded`, add `superseded_by: <new ID>` as the last
    frontmatter key, and log the reason in a `superseded` Status-log line. For a baseline
    requirement, check_baseline.py also requires that the replacement (the end of any
-   `superseded_by` chain) exists and keeps what the human asked for. For version one it keeps scope
+   `superseded_by` chain) exists and keeps what the human asked for. It is never `proposed`: the rule
+   that keeps an imported requirement out of that status ([Status lifecycle](#status-lifecycle) rule 8)
+   holds for the end of its chain. For version one it keeps scope
    `v1`, is not `deferred` and has a priority not below the baseline's; a future-scope requirement
    is superseded only by a future-scope, `deferred` requirement (an exclusion enters version one
    only through a new baseline from the human). Either way the replacement keeps the type,
